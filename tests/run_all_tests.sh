@@ -4,8 +4,12 @@
 echo "🧪 Lancement des tests d'intégration"
 echo "=" 70 | tr ' ' '='
 
-VENV_PYTHON="./venvpwdmanager/bin/python"
+VENV_PYTHON="./venv-dev/bin/python"
+REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
+export PYTHONPATH="$REPO_ROOT"
+export DEV_MODE=1
 TEST_DIR="tests/integration"
+LOG_TEST_SCRIPT="$REPO_ROOT/tests/test-logging.sh"
 
 # Couleurs
 GREEN='\033[0;32m'
@@ -37,6 +41,19 @@ for test_file in $TEST_DIR/test_*.py; do
     fi
 done
 
+if [ -x "$LOG_TEST_SCRIPT" ]; then
+    echo ""
+    echo "▶️  Test: logging rotation"
+    echo "─────────────────────────────────────"
+    if "$LOG_TEST_SCRIPT" > /dev/null 2>&1; then
+        echo -e "${GREEN}✅ PASS${NC}"
+        passed=$((passed + 1))
+    else
+        echo -e "${RED}❌ FAIL${NC}"
+        failed=$((failed + 1))
+        "$LOG_TEST_SCRIPT"
+    fi
+fi
 # Résumé
 echo ""
 echo "=" 70 | tr ' ' '='

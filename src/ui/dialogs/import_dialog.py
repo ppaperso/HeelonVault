@@ -5,9 +5,11 @@ Dialogue d'importation de CSV
 import gi
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib
+from gi.repository import Gtk, Adw, GLib, Gio
 from pathlib import Path
 import logging
+
+from .helpers import present_alert
 
 logger = logging.getLogger(__name__)
 
@@ -99,7 +101,9 @@ class ImportCSVDialog(Adw.Window):
             self.format_list.append(format_name)
         
         format_row.set_model(format_model)
-        format_row.set_selected(0)  # LastPass par défaut
+        # Sélectionner CSV (,) par défaut (generic_comma est généralement en position 1)
+        default_index = self.format_list.index('generic_comma') if 'generic_comma' in self.format_list else 0
+        format_row.set_selected(default_index)
         self.format_row = format_row
         
         options_group.add(format_row)
@@ -244,6 +248,12 @@ class ImportCSVDialog(Adw.Window):
             format_name=format_name,
             has_header=has_header
         )
+        logger.info(
+            "Import CSV lance pour %s (format=%s, header=%s)",
+            self.selected_file,
+            format_name,
+            has_header
+        )
         
         self.import_result = result
         
@@ -255,7 +265,7 @@ class ImportCSVDialog(Adw.Window):
             for entry in result['entries']:
                 try:
                     self.db.add_entry(
-                        name=entry['name'],
+                        title=entry['name'],
                         username=entry['username'],
                         password=entry['password'],
                         url=entry['url'],
@@ -269,6 +279,12 @@ class ImportCSVDialog(Adw.Window):
                     failed_count += 1
             
             # Afficher le résumé
+            logger.info(
+                "Import CSV termine: %d enregistres, %d echecs, %d avertissements",
+                saved_count,
+                failed_count,
+                len(result.get('warnings', []))
+            )
             self.show_import_summary(saved_count, failed_count, result)
         else:
             # Afficher les erreurs
@@ -303,17 +319,26 @@ class ImportCSVDialog(Adw.Window):
         buffer = self.preview_text.get_buffer()
         buffer.set_text(summary)
         
-        # Mettre à jour l'interface parent
-        if hasattr(self.parent_window, 'refresh_list'):
-            self.parent_window.refresh_list()
-        
         # Afficher une notification
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Import terminé")
-        dialog.set_body(f"{saved_count} mots de passe ont été importés avec succès.")
-        dialog.add_response("ok", "OK")
-        dialog.connect("response", lambda d, r: self.close())
-        dialog.present()
+        present_alert(
+            self,
+            "Import terminé",
+            f"{saved_count} mots de passe ont été importés avec succès.",
+            [("ok", "OK")],
+            default="ok",
+            on_response=lambda response: self.on_import_complete(),
+        )
+    
+    def on_import_complete(self):
+        """Appelé quand l'import est terminé et que l'utilisateur ferme la notification"""
+        # Rafraîchir la liste dans la fenêtre principale
+        if hasattr(self.parent_window, 'load_entries'):
+            self.parent_window.load_entries()
+        if hasattr(self.parent_window, 'load_tags'):
+            self.parent_window.load_tags()
+        
+        # Fermer la fenêtre d'import
+        self.close()
     
     def show_import_errors(self, result):
         """Affiche les erreurs d'importation"""
@@ -328,8 +353,10 @@ class ImportCSVDialog(Adw.Window):
         buffer.set_text(error_text)
         
         # Afficher un dialogue d'erreur
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Erreur d'import")
-        dialog.set_body("L'importation a échoué. Vérifiez le format du fichier.")
-        dialog.add_response("ok", "OK")
-        dialog.present()
+        present_alert(
+            self,
+            "Erreur d'import",
+            "L'importation a échoué. Vérifiez le format du fichier.",
+            [("ok", "OK")],
+            default="ok",
+        )

@@ -6,6 +6,7 @@ Fonctionnalités: Générateur de mots de passe, Catégories/Tags
 """
 
 import gi
+
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib, Gio
@@ -27,55 +28,21 @@ from datetime import datetime
 # Imports pour l'import CSV
 from src.services.csv_importer import CSVImporter
 from src.ui.dialogs.import_dialog import ImportCSVDialog
+from src.ui.dialogs.helpers import present_alert
+from src.ui.dialogs.entry_details_dialog import EntryDetailsDialog
+from src.ui.dialogs.add_edit_dialog import AddEditDialog
+from src.ui.dialogs.password_generator_dialog import PasswordGeneratorDialog
 
 # Imports pour la version et À propos
 from src.version import get_version, get_version_info
 from src.ui.dialogs.about_dialog import show_about_dialog
+from src.config.environment import get_data_directory, is_dev_mode
+from src.config.logging_config import configure_logging
 
-# Configuration du logging de base (sans fichier d'abord)
-logging.basicConfig(
-    level=logging.INFO,
-    format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
-    handlers=[
-        logging.StreamHandler()
-    ]
-)
+configure_logging()
 logger = logging.getLogger(__name__)
 
-# Répertoire de données selon l'environnement (DEV vs PROD)
-import os
-
-def get_data_directory() -> Path:
-    """Retourne le répertoire de données selon l'environnement
-    
-    - DEV/TEST: ./data/ (local au projet)
-    - PROD: /var/lib/passwordmanager-shared/ (système partagé)
-    """
-    if os.environ.get('DEV_MODE', '').lower() in ('1', 'true', 'yes'):
-        # Mode développement : données locales au projet
-        dev_dir = Path(__file__).parent / "data"
-        dev_dir.mkdir(parents=True, exist_ok=True)
-        print("🔧 Mode DÉVELOPPEMENT - Données dans ./data/")
-        return dev_dir
-    else:
-        # Mode production : données système partagées
-        prod_dir = Path("/var/lib/passwordmanager-shared")
-        prod_dir.mkdir(parents=True, exist_ok=True)
-        print("🚀 Mode PRODUCTION - Données dans /var/lib/passwordmanager-shared/")
-        return prod_dir
-
-# Répertoire de données partagé entre tous les utilisateurs du système
-# Architecture multi-utilisateurs: base de données commune, encryption par utilisateur
 DATA_DIR = get_data_directory()
-
-# Ajouter le FileHandler après avoir déterminé DATA_DIR
-try:
-    file_handler = logging.FileHandler(DATA_DIR / 'security.log')
-    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
-    logger.addHandler(file_handler)
-    logger.info(f"📝 Log de sécurité: {DATA_DIR / 'security.log'}")
-except Exception as e:
-    logger.warning(f"Impossible de créer le fichier de log: {e}")
 
 class UserManager:
     """Gestion des utilisateurs et authentification"""
@@ -84,6 +51,7 @@ class UserManager:
         self.db_path = users_db_path
         self.conn = sqlite3.connect(str(users_db_path))
         self._init_db()
+        logger.debug("UserManager initialise avec DB %s", users_db_path)
     
     def _init_db(self):
         """Initialise la base de données des utilisateurs"""
@@ -100,11 +68,16 @@ class UserManager:
             )
         ''')
         self.conn.commit()
+        logger.debug("Structure de la base initialisee pour %s", self.db_path)
         
         # Créer un utilisateur admin par défaut si aucun utilisateur n'existe
         cursor.execute('SELECT COUNT(*) FROM users')
-        if cursor.fetchone()[0] == 0:
+        current_users = cursor.fetchone()[0]
+        if current_users == 0:
             self.create_user('admin', 'admin', role='admin')
+            cursor.execute('SELECT COUNT(*) FROM users')
+            current_users = cursor.fetchone()[0]
+        logger.info("Base utilisateurs initialisee (%d comptes)", current_users)
     
     def _hash_password(self, password: str, salt: bytes = None) -> tuple:
         """Hash un mot de passe avec PBKDF2"""
@@ -140,8 +113,10 @@ class UserManager:
                 VALUES (?, ?, ?, ?)
             ''', (username, password_hash, salt, role))
             self.conn.commit()
+            logger.info("Utilisateur cree: %s (role=%s)", username, role)
             return True
         except sqlite3.IntegrityError:
+            logger.warning("Utilisateur deja existant: %s", username)
             return False
     
     def authenticate(self, username: str, password: str) -> dict:
@@ -162,6 +137,7 @@ class UserManager:
         row = cursor.fetchone()
         
         if not row:
+            logger.warning("Authentification echouee: utilisateur inconnu %s", username)
             return None
         
         user_id, username, stored_hash, salt_b64, role = row
@@ -175,13 +151,14 @@ class UserManager:
                 WHERE id = ?
             ''', (user_id,))
             self.conn.commit()
-            
+            logger.info("Authentification reussie: %s", username)
             return {
                 'id': user_id,
                 'username': username,
                 'role': role,
                 'salt': salt
             }
+        logger.warning("Authentification echouee: mauvais mot de passe pour %s", username)
         return None
     
     def get_all_users(self) -> list:
@@ -192,7 +169,9 @@ class UserManager:
             FROM users 
             ORDER BY username
         ''')
-        return cursor.fetchall()
+        users = cursor.fetchall()
+        logger.debug("Recuperation de %d utilisateurs", len(users))
+        return users
     
     def verify_user(self, username: str, password: str) -> bool:
         """Vérifie le mot de passe d'un utilisateur sans authentifier
@@ -212,13 +191,15 @@ class UserManager:
         row = cursor.fetchone()
         
         if not row:
+            logger.debug("Verification echouee: utilisateur inconnu %s", username)
             return False
         
         stored_hash, salt_b64 = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
-        
-        return password_hash == stored_hash
+        result = password_hash == stored_hash
+        logger.debug("Verification utilisateur %s: %s", username, result)
+        return result
     
     def change_user_password(self, username: str, old_password: str, new_password: str) -> bool:
         """Change le mot de passe d'un utilisateur après vérification de l'ancien
@@ -233,6 +214,10 @@ class UserManager:
         """
         # Vérifier l'ancien mot de passe
         if not self.verify_user(username, old_password):
+            logger.warning(
+                "Changement de mot de passe bloque: ancien mot de passe incorrect pour %s",
+                username
+            )
             return False
         
         try:
@@ -245,9 +230,14 @@ class UserManager:
                 WHERE username = ?
             ''', (password_hash, salt, username))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            if success:
+                logger.info("Mot de passe change pour %s", username)
+            else:
+                logger.warning("Aucune ligne mise a jour pour %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors du changement de mot de passe: {e}")
+            logger.exception("Erreur lors du changement de mot de passe pour %s", username)
             return False
     
     def reset_user_password(self, username: str, new_password: str) -> bool:
@@ -269,9 +259,14 @@ class UserManager:
                 WHERE username = ?
             ''', (password_hash, salt, username))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            if success:
+                logger.info("Mot de passe reinitialise pour %s", username)
+            else:
+                logger.warning("Aucune ligne modifiee pour la reinitialisation de %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors de la réinitialisation: {e}")
+            logger.exception("Erreur lors de la reinitialisation du mot de passe pour %s", username)
             return False
     
     def delete_user(self, username: str) -> bool:
@@ -280,19 +275,27 @@ class UserManager:
             cursor = self.conn.cursor()
             cursor.execute('DELETE FROM users WHERE username = ?', (username,))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            if success:
+                logger.info("Utilisateur supprime: %s", username)
+            else:
+                logger.warning("Aucune ligne supprimee pour %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors de la suppression: {e}")
+            logger.exception("Erreur lors de la suppression de %s", username)
             return False
     
     def user_exists(self, username: str) -> bool:
         """Vérifie si un utilisateur existe"""
         cursor = self.conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE username = ?', (username,))
-        return cursor.fetchone()[0] > 0
+        exists = cursor.fetchone()[0] > 0
+        logger.debug("Utilisateur %s existe: %s", username, exists)
+        return exists
     
     def close(self):
         self.conn.close()
+        logger.debug("Connexion a la base %s fermee", self.db_path)
 
 
 class PasswordGenerator:
@@ -387,6 +390,7 @@ class PasswordDatabase:
         self.crypto = crypto
         self.conn = sqlite3.connect(str(db_path))
         self._init_db()
+        logger.debug("Initialisation de la base de donnees %s", db_path)
     
     def _init_db(self):
         """Initialise la structure de la base"""
@@ -451,6 +455,7 @@ class PasswordDatabase:
         ''', (title, username, json.dumps(encrypted_pass), url, 
               json.dumps(encrypted_notes) if notes else "", category, tags_str))
         self.conn.commit()
+        logger.info("Entree ajoutee: %s (categorie=%s)", title, category or "Aucune")
         return cursor.lastrowid
     
     def get_all_entries(self, category_filter=None, tag_filter=None, search_text=None):
@@ -480,6 +485,12 @@ class PasswordDatabase:
         query += ' ORDER BY title COLLATE NOCASE'
         cursor.execute(query, params)
         entries = cursor.fetchall()
+        logger.debug(
+            "Chargement de %d entrees (categorie=%s, tag=%s)",
+            len(entries),
+            category_filter or "Toutes",
+            tag_filter or "Aucun"
+        )
         
         # Filtre par tag si nécessaire (optimisé avec compréhension de liste)
         if tag_filter:
@@ -517,7 +528,7 @@ class PasswordDatabase:
             
             tags = json.loads(row[7]) if row[7] else []
             
-            return {
+            entry_data = {
                 'id': row[0],
                 'title': row[1],
                 'username': row[2],
@@ -527,8 +538,10 @@ class PasswordDatabase:
                 'category': row[6] or "",
                 'tags': tags
             }
+            logger.debug("Entree %s decryptee et retournee", entry_id)
+            return entry_data
         except Exception as e:
-            print(f"Erreur lors du déchiffrement de l'entrée {entry_id}: {e}")
+            logger.exception("Erreur lors du dechiffrement de l'entree %s", entry_id)
             return None
     
     def delete_entry(self, entry_id: int):
@@ -536,6 +549,7 @@ class PasswordDatabase:
         cursor = self.conn.cursor()
         cursor.execute('DELETE FROM passwords WHERE id = ?', (entry_id,))
         self.conn.commit()
+        logger.info("Entree supprimee: %s", entry_id)
     
     def update_entry(self, entry_id: int, title: str, username: str, password: str, 
                      url: str = "", notes: str = "", category: str = "", tags: list = None):
@@ -553,6 +567,7 @@ class PasswordDatabase:
         ''', (title, username, json.dumps(encrypted_pass), url, 
               json.dumps(encrypted_notes) if notes else "", category, tags_str, entry_id))
         self.conn.commit()
+        logger.info("Entree %s mise a jour (titre=%s)", entry_id, title)
     
     def get_all_categories(self):
         """Récupère toutes les catégories"""
@@ -576,6 +591,7 @@ class PasswordDatabase:
         cursor.execute('INSERT INTO categories (name, color, icon) VALUES (?, ?, ?)',
                       (name, color, icon))
         self.conn.commit()
+        logger.debug("Categorie ajoutee: %s", name)
     
     def close(self):
         self.conn.close()
@@ -756,381 +772,6 @@ class PasswordCard(Gtk.FlowBoxChild):
         return 'dialog-password-symbolic'  # Icône par défaut
 
 
-class EntryDetailsDialog(Adw.Window):
-    """Dialogue moderne pour afficher les détails d'une entrée"""
-    
-    def __init__(self, parent, db: PasswordDatabase, entry: dict, edit_callback, delete_callback):
-        super().__init__()
-        self.set_transient_for(parent)
-        self.set_modal(True)
-        self.set_default_size(550, 600)
-        self.db = db
-        self.entry = entry
-        self.edit_callback = edit_callback
-        self.delete_callback = delete_callback
-        
-        # Layout principal
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        
-        # Header avec titre
-        header = Adw.HeaderBar()
-        header.set_show_end_title_buttons(True)
-        box.append(header)
-        
-        # Contenu scrollable
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
-        scrolled.set_vexpand(True)
-        
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
-        content.set_margin_start(30)
-        content.set_margin_end(30)
-        content.set_margin_top(30)
-        content.set_margin_bottom(30)
-        
-        # Titre principal
-        title_label = Gtk.Label(label=entry['title'], xalign=0)
-        title_label.set_css_classes(['title-1'])
-        title_label.set_wrap(True)
-        content.append(title_label)
-        
-        # Métadonnées (catégorie + tags)
-        meta_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        meta_box.set_margin_bottom(10)
-        
-        if entry['category']:
-            cat_label = Gtk.Label(label=f"📁 {entry['category']}")
-            cat_label.set_css_classes(['caption'])
-            meta_box.append(cat_label)
-        
-        for tag in entry['tags']:
-            tag_label = Gtk.Label(label=f"#{tag}")
-            tag_label.set_css_classes(['caption', 'accent'])
-            meta_box.append(tag_label)
-        
-        content.append(meta_box)
-        
-        # Séparateur
-        sep1 = Gtk.Separator()
-        content.append(sep1)
-        
-        # Nom d'utilisateur
-        if entry['username']:
-            username_box = self._create_field_box("👤 Nom d'utilisateur", entry['username'], copyable=True)
-            content.append(username_box)
-        
-        # Mot de passe
-        password_box = self._create_field_box("🔑 Mot de passe", entry['password'], copyable=True, is_password=True)
-        content.append(password_box)
-        
-        # URL
-        if entry['url']:
-            url_box = self._create_field_box("🌐 URL", entry['url'], copyable=True, is_url=True)
-            content.append(url_box)
-        
-        # Notes
-        if entry['notes']:
-            notes_label = Gtk.Label(label="📝 Notes", xalign=0)
-            notes_label.set_css_classes(['title-4'])
-            notes_label.set_margin_top(10)
-            content.append(notes_label)
-            
-            notes_frame = Gtk.Frame()
-            notes_frame.set_css_classes(['card'])
-            
-            notes_text = Gtk.Label(label=entry['notes'], xalign=0, wrap=True)
-            notes_text.set_margin_start(15)
-            notes_text.set_margin_end(15)
-            notes_text.set_margin_top(15)
-            notes_text.set_margin_bottom(15)
-            notes_frame.set_child(notes_text)
-            content.append(notes_frame)
-        
-        # Séparateur
-        sep2 = Gtk.Separator()
-        sep2.set_margin_top(10)
-        content.append(sep2)
-        
-        # Boutons d'action
-        action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        action_box.set_halign(Gtk.Align.CENTER)
-        action_box.set_margin_top(10)
-        
-        edit_btn = Gtk.Button(label="✏️  Modifier")
-        edit_btn.set_css_classes(['suggested-action'])
-        edit_btn.connect("clicked", lambda x: self._on_edit())
-        action_box.append(edit_btn)
-        
-        delete_btn = Gtk.Button(label="🗑️  Supprimer")
-        delete_btn.set_css_classes(['destructive-action'])
-        delete_btn.connect("clicked", lambda x: self._on_delete())
-        action_box.append(delete_btn)
-        
-        content.append(action_box)
-        
-        scrolled.set_child(content)
-        box.append(scrolled)
-        
-        self.set_content(box)
-    
-    def _create_field_box(self, label_text, value, copyable=False, is_password=False, is_url=False):
-        """Crée une box pour un champ avec label et actions"""
-        field_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        
-        # Label
-        label = Gtk.Label(label=label_text, xalign=0)
-        label.set_css_classes(['title-4'])
-        field_box.append(label)
-        
-        # Valeur + actions
-        value_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        
-        value_entry = Gtk.Entry()
-        value_entry.set_text(value)
-        value_entry.set_editable(False)
-        value_entry.set_hexpand(True)
-        
-        if is_password:
-            value_entry.set_visibility(False)
-        
-        value_box.append(value_entry)
-        
-        # Bouton afficher/masquer pour mot de passe
-        if is_password:
-            show_btn = Gtk.Button(icon_name="view-reveal-symbolic")
-            show_btn.set_tooltip_text("Afficher/masquer")
-            show_btn.connect("clicked", lambda x: value_entry.set_visibility(not value_entry.get_visibility()))
-            value_box.append(show_btn)
-        
-        # Bouton copier
-        if copyable:
-            copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-            copy_btn.set_tooltip_text("Copier")
-            copy_btn.connect("clicked", lambda x: self._copy_to_clipboard(value))
-            value_box.append(copy_btn)
-        
-        # Bouton ouvrir URL
-        if is_url and value:
-            open_btn = Gtk.Button(icon_name="web-browser-symbolic")
-            open_btn.set_tooltip_text("Ouvrir dans le navigateur")
-            open_btn.connect("clicked", lambda x: self._open_url(value))
-            value_box.append(open_btn)
-        
-        field_box.append(value_box)
-        return field_box
-    
-    def _copy_to_clipboard(self, text):
-        """Copie le texte dans le presse-papiers"""
-        clipboard = self.get_clipboard()
-        clipboard.set(text)
-        
-        # TODO: Afficher un toast de confirmation
-    
-    def _open_url(self, url):
-        """Ouvre l'URL dans le navigateur par défaut"""
-        import subprocess
-        try:
-            subprocess.Popen(['xdg-open', url])
-        except Exception as e:
-            print(f"Erreur lors de l'ouverture de l'URL: {e}")
-    
-    def _on_edit(self):
-        """Callback pour éditer l'entrée"""
-        self.close()
-        self.edit_callback(self.entry['id'])
-    
-    def _on_delete(self):
-        """Callback pour supprimer l'entrée"""
-        self.close()
-        self.delete_callback(self.entry['id'])
-
-
-class PasswordGeneratorDialog(Adw.Window):
-    """Dialogue de génération de mot de passe"""
-    
-    def __init__(self, parent, callback):
-        super().__init__()
-        self.set_transient_for(parent)
-        self.set_modal(True)
-        self.set_default_size(500, 550)
-        self.set_title("Générateur de mots de passe")
-        self.callback = callback
-        
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        
-        header = Adw.HeaderBar()
-        box.append(header)
-        
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
-        content.set_margin_start(20)
-        content.set_margin_end(20)
-        content.set_margin_top(20)
-        content.set_margin_bottom(20)
-        
-        # Zone d'affichage du mot de passe
-        self.password_display = Gtk.Entry()
-        self.password_display.set_editable(False)
-        self.password_display.set_css_classes(['title-3'])
-        content.append(self.password_display)
-        
-        # Boutons Copier / Utiliser
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        button_box.set_halign(Gtk.Align.CENTER)
-        button_box.set_margin_bottom(10)
-        
-        copy_btn = Gtk.Button(label="Copier")
-        copy_btn.connect("clicked", self.on_copy_clicked)
-        button_box.append(copy_btn)
-        
-        use_btn = Gtk.Button(label="Utiliser ce mot de passe")
-        use_btn.set_css_classes(['suggested-action'])
-        use_btn.connect("clicked", self.on_use_clicked)
-        button_box.append(use_btn)
-        
-        content.append(button_box)
-        
-        # Séparateur
-        separator = Gtk.Separator()
-        separator.set_margin_top(10)
-        separator.set_margin_bottom(10)
-        content.append(separator)
-        
-        # Type de génération
-        type_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        type_box.set_homogeneous(True)
-        
-        self.random_btn = Gtk.ToggleButton(label="Aléatoire")
-        self.random_btn.set_active(True)
-        self.random_btn.connect("toggled", self.on_type_changed)
-        type_box.append(self.random_btn)
-        
-        self.passphrase_btn = Gtk.ToggleButton(label="Phrase de passe")
-        self.passphrase_btn.connect("toggled", self.on_type_changed)
-        type_box.append(self.passphrase_btn)
-        
-        content.append(type_box)
-        
-        # Options aléatoire
-        self.random_options = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        
-        # Longueur
-        length_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        length_label = Gtk.Label(label="Longueur:")
-        length_label.set_xalign(0)
-        length_label.set_hexpand(True)
-        length_box.append(length_label)
-        
-        self.length_spin = Gtk.SpinButton()
-        self.length_spin.set_range(8, 64)
-        self.length_spin.set_increments(1, 4)
-        self.length_spin.set_value(16)
-        self.length_spin.connect("value-changed", lambda x: self.generate_password())
-        length_box.append(self.length_spin)
-        self.random_options.append(length_box)
-        
-        # Cases à cocher
-        self.uppercase_check = Gtk.CheckButton(label="Majuscules (A-Z)")
-        self.uppercase_check.set_active(True)
-        self.uppercase_check.connect("toggled", lambda x: self.generate_password())
-        self.random_options.append(self.uppercase_check)
-        
-        self.lowercase_check = Gtk.CheckButton(label="Minuscules (a-z)")
-        self.lowercase_check.set_active(True)
-        self.lowercase_check.connect("toggled", lambda x: self.generate_password())
-        self.random_options.append(self.lowercase_check)
-        
-        self.digits_check = Gtk.CheckButton(label="Chiffres (0-9)")
-        self.digits_check.set_active(True)
-        self.digits_check.connect("toggled", lambda x: self.generate_password())
-        self.random_options.append(self.digits_check)
-        
-        self.symbols_check = Gtk.CheckButton(label="Symboles (!@#$...)")
-        self.symbols_check.set_active(True)
-        self.symbols_check.connect("toggled", lambda x: self.generate_password())
-        self.random_options.append(self.symbols_check)
-        
-        self.ambiguous_check = Gtk.CheckButton(label="Exclure caractères ambigus (0, O, l, 1, I)")
-        self.ambiguous_check.set_active(True)
-        self.ambiguous_check.connect("toggled", lambda x: self.generate_password())
-        self.random_options.append(self.ambiguous_check)
-        
-        content.append(self.random_options)
-        
-        # Options phrase de passe
-        self.passphrase_options = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
-        self.passphrase_options.set_visible(False)
-        
-        words_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        words_label = Gtk.Label(label="Nombre de mots:")
-        words_label.set_xalign(0)
-        words_label.set_hexpand(True)
-        words_box.append(words_label)
-        
-        self.words_spin = Gtk.SpinButton()
-        self.words_spin.set_range(3, 8)
-        self.words_spin.set_increments(1, 1)
-        self.words_spin.set_value(4)
-        self.words_spin.connect("value-changed", lambda x: self.generate_password())
-        words_box.append(self.words_spin)
-        self.passphrase_options.append(words_box)
-        
-        content.append(self.passphrase_options)
-        
-        # Bouton régénérer
-        regenerate_btn = Gtk.Button(label="Régénérer")
-        regenerate_btn.set_margin_top(10)
-        regenerate_btn.connect("clicked", lambda x: self.generate_password())
-        content.append(regenerate_btn)
-        
-        box.append(content)
-        self.set_content(box)
-        
-        # Générer le premier mot de passe
-        self.generate_password()
-    
-    def on_type_changed(self, button):
-        """Bascule entre aléatoire et phrase de passe"""
-        if button == self.random_btn and button.get_active():
-            self.passphrase_btn.set_active(False)
-            self.random_options.set_visible(True)
-            self.passphrase_options.set_visible(False)
-            self.generate_password()
-        elif button == self.passphrase_btn and button.get_active():
-            self.random_btn.set_active(False)
-            self.random_options.set_visible(False)
-            self.passphrase_options.set_visible(True)
-            self.generate_password()
-    
-    def generate_password(self):
-        """Génère un nouveau mot de passe"""
-        if self.random_btn.get_active():
-            password = PasswordGenerator.generate(
-                length=int(self.length_spin.get_value()),
-                use_uppercase=self.uppercase_check.get_active(),
-                use_lowercase=self.lowercase_check.get_active(),
-                use_digits=self.digits_check.get_active(),
-                use_symbols=self.symbols_check.get_active(),
-                exclude_ambiguous=self.ambiguous_check.get_active()
-            )
-        else:
-            password = PasswordGenerator.generate_passphrase(
-                word_count=int(self.words_spin.get_value())
-            )
-        
-        self.password_display.set_text(password)
-    
-    def on_copy_clicked(self, button):
-        """Copie le mot de passe"""
-        password = self.password_display.get_text()
-        clipboard = self.get_clipboard()
-        clipboard.set(password)
-    
-    def on_use_clicked(self, button):
-        """Utilise le mot de passe généré"""
-        password = self.password_display.get_text()
-        self.callback(password)
-        self.close()
-
 class PasswordManagerApp(Adw.ApplicationWindow):
     """Fenêtre principale de l'application"""
     
@@ -1168,6 +809,11 @@ class PasswordManagerApp(Adw.ApplicationWindow):
             admin_badge = Gtk.Label(label="Admin")
             admin_badge.set_css_classes(['caption', 'accent'])
             welcome_box.append(admin_badge)
+
+        if is_dev_mode():
+            dev_badge = Gtk.Label(label="🔧 MODE DÉVELOPPEMENT")
+            dev_badge.set_css_classes(['caption', 'warning'])
+            welcome_box.append(dev_badge)
         
         header.set_title_widget(welcome_box)
         
@@ -1380,6 +1026,11 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         self.load_categories()
         self.load_tags()
         self.load_entries()
+        logger.info(
+            "Fenetre principale prete pour %s (role=%s)",
+            user_info['username'],
+            user_info['role']
+        )
     
     def load_categories(self):
         """Charge les catégories"""
@@ -1411,6 +1062,7 @@ class PasswordManagerApp(Adw.ApplicationWindow):
             row.set_child(label)
             row.category_name = cat_name
             self.category_listbox.append(row)
+        logger.debug("Categories chargees: %d", len(categories))
     
     def load_tags(self):
         """Charge les tags dans un format compact"""
@@ -1440,6 +1092,7 @@ class PasswordManagerApp(Adw.ApplicationWindow):
             child.tag_name = tag
             
             self.tag_flowbox.append(child)
+        logger.debug("Tags charges: %d", len(tags))
     
     def load_entries(self):
         """Charge toutes les entrées dans le FlowBox"""
@@ -1453,6 +1106,12 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         entries = self.db.get_all_entries(
             category_filter=self.current_category_filter,
             tag_filter=self.current_tag_filter
+        )
+        logger.debug(
+            "Affichage de %d entrees (categorie=%s, tag=%s)",
+            len(entries),
+            self.current_category_filter,
+            self.current_tag_filter or "Aucun"
         )
         
         # Afficher/masquer l'état vide
@@ -1512,6 +1171,7 @@ class PasswordManagerApp(Adw.ApplicationWindow):
     def on_card_activated(self, flowbox, child):
         """Ouvre le dialogue de détails quand une card est cliquée"""
         if child and hasattr(child, 'entry_id'):
+            logger.info("Card selectionnee pour l'entree %s", child.entry_id)
             entry = self.db.get_entry(child.entry_id)
             if entry:
                 dialog = EntryDetailsDialog(self, self.db, entry, self.on_edit_clicked, self.on_delete_clicked)
@@ -1647,6 +1307,7 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         """Copie du texte dans le presse-papiers"""
         clipboard = self.get_clipboard()
         clipboard.set(text)
+        logger.debug("Texte copie dans le presse-papiers (%d caracteres)", len(text))
     
     def open_url(self, url):
         """Ouvre une URL dans le navigateur par défaut
@@ -1661,12 +1322,14 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
         
+        logger.info("Ouverture d'une URL: %s", url)
         try:
             # Utiliser xdg-open sur Linux pour ouvrir avec le navigateur par défaut
             subprocess.Popen(['xdg-open', url], 
                            stdout=subprocess.DEVNULL, 
                            stderr=subprocess.DEVNULL)
         except Exception as e:
+            logger.exception("Erreur lors de l'ouverture de l'URL %s", url)
             # En cas d'erreur, afficher un message
             dialog = Adw.MessageDialog.new(self)
             dialog.set_heading("❌ Erreur")
@@ -1676,29 +1339,35 @@ class PasswordManagerApp(Adw.ApplicationWindow):
     
     def on_add_clicked(self, button):
         """Ouvre le dialogue d'ajout"""
+        logger.info("Dialogue d'ajout d'entree lance")
         dialog = AddEditDialog(self, self.db)
         dialog.present()
     
     def on_edit_clicked(self, entry_id):
         """Ouvre le dialogue d'édition"""
+        logger.info("Ouverture du dialogue d'edition pour l'entree %s", entry_id)
         entry = self.db.get_entry(entry_id)
         dialog = AddEditDialog(self, self.db, entry)
         dialog.present()
     
     def on_delete_clicked(self, entry_id):
         """Supprime une entrée après confirmation"""
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Confirmer la suppression")
-        dialog.set_body("Êtes-vous sûr de vouloir supprimer cette entrée ?")
-        dialog.add_response("cancel", "Annuler")
-        dialog.add_response("delete", "Supprimer")
-        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
-        dialog.connect("response", lambda d, r: self.delete_confirmed(r, entry_id))
-        dialog.present()
+        logger.warning("Demande de suppression pour l'entree %s", entry_id)
+        present_alert(
+            self,
+            "Confirmer la suppression",
+            "Êtes-vous sûr de vouloir supprimer cette entrée ?",
+            [("cancel", "Annuler"), ("delete", "Supprimer")],
+            default="cancel",
+            close="cancel",
+            destructive="delete",
+            on_response=lambda response: self.delete_confirmed(response, entry_id),
+        )
     
     def delete_confirmed(self, response, entry_id):
         """Callback de confirmation de suppression"""
         if response == "delete":
+            logger.info("Suppression confirmee pour l'entree %s", entry_id)
             self.db.delete_entry(entry_id)
             self.load_entries()
             self.load_tags()
@@ -1709,217 +1378,6 @@ class PasswordManagerApp(Adw.ApplicationWindow):
                 if child is None:
                     break
                 self.detail_box.remove(child)
-
-class AddEditDialog(Adw.Window):
-    """Dialogue d'ajout/édition d'entrée"""
-    
-    def __init__(self, parent, db: PasswordDatabase, entry=None):
-        super().__init__()
-        self.set_transient_for(parent)
-        self.set_modal(True)
-        self.set_default_size(550, 650)
-        self.db = db
-        self.entry = entry
-        self.parent_window = parent
-        
-        self.set_title("Modifier l'entrée" if entry else "Nouvelle entrée")
-        
-        # Layout
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        
-        header = Adw.HeaderBar()
-        box.append(header)
-        
-        scrolled = Gtk.ScrolledWindow()
-        scrolled.set_vexpand(True)
-        
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=15)
-        content.set_margin_start(20)
-        content.set_margin_end(20)
-        content.set_margin_top(20)
-        content.set_margin_bottom(20)
-        
-        # Champs
-        self.title_entry = self.create_entry_row("Titre *", entry['title'] if entry else "")
-        content.append(self.title_entry)
-        
-        # Catégorie
-        cat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        cat_label = Gtk.Label(label="Catégorie", xalign=0)
-        cat_box.append(cat_label)
-        
-        self.category_dropdown = Gtk.DropDown()
-        categories = self.db.get_all_categories()
-        cat_names = [cat[0] for cat in categories]
-        string_list = Gtk.StringList()
-        for cat in cat_names:
-            string_list.append(cat)
-        self.category_dropdown.set_model(string_list)
-        
-        if entry and entry['category']:
-            try:
-                idx = cat_names.index(entry['category'])
-                self.category_dropdown.set_selected(idx)
-            except ValueError:
-                pass
-        
-        cat_box.append(self.category_dropdown)
-        content.append(cat_box)
-        
-        # Tags
-        tags_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        tags_label = Gtk.Label(label="Tags (séparés par des virgules)", xalign=0)
-        tags_box.append(tags_label)
-        
-        self.tags_entry = Gtk.Entry()
-        if entry and entry['tags']:
-            self.tags_entry.set_text(", ".join(entry['tags']))
-        tags_box.append(self.tags_entry)
-        content.append(tags_box)
-        
-        # Nom d'utilisateur avec icône
-        username_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        username_label = Gtk.Label(label="👤 Nom d'utilisateur / Login (optionnel)", xalign=0)
-        username_box.append(username_label)
-        
-        self.username_entry = Gtk.Entry()
-        self.username_entry.set_text(entry['username'] if entry and entry['username'] else "")
-        self.username_entry.set_placeholder_text("Ex: user@exemple.com ou mon_login")
-        username_box.append(self.username_entry)
-        
-        username_hint = Gtk.Label(label="Pour les sites web, entrez votre identifiant de connexion", xalign=0)
-        username_hint.set_css_classes(['caption', 'dim-label'])
-        username_box.append(username_hint)
-        
-        content.append(username_box)
-        
-        # Mot de passe avec générateur
-        pass_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        pass_label = Gtk.Label(label="Mot de passe *", xalign=0)
-        pass_box.append(pass_label)
-        
-        pass_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        self.password_entry = Gtk.PasswordEntry()
-        if entry:
-            self.password_entry.set_text(entry['password'])
-        self.password_entry.set_show_peek_icon(True)
-        self.password_entry.set_hexpand(True)
-        pass_input_box.append(self.password_entry)
-        
-        gen_btn = Gtk.Button(label="Générer")
-        gen_btn.connect("clicked", self.on_generate_clicked)
-        pass_input_box.append(gen_btn)
-        
-        pass_box.append(pass_input_box)
-        content.append(pass_box)
-        
-        # URL avec icône et placeholder
-        url_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        url_label = Gtk.Label(label="🌐 URL (optionnel)", xalign=0)
-        url_box.append(url_label)
-        
-        self.url_entry = Gtk.Entry()
-        self.url_entry.set_text(entry['url'] if entry and entry['url'] else "")
-        self.url_entry.set_placeholder_text("https://exemple.com")
-        url_box.append(self.url_entry)
-        
-        url_hint = Gtk.Label(label="Pour les sites web, entrez l'URL de connexion", xalign=0)
-        url_hint.set_css_classes(['caption', 'dim-label'])
-        url_box.append(url_hint)
-        
-        content.append(url_box)
-        
-        # Notes
-        notes_label = Gtk.Label(label="Notes", xalign=0)
-        content.append(notes_label)
-        
-        notes_scroll = Gtk.ScrolledWindow()
-        notes_scroll.set_min_content_height(100)
-        self.notes_text = Gtk.TextView()
-        self.notes_text.set_wrap_mode(Gtk.WrapMode.WORD)
-        if entry and entry['notes']:
-            buffer = self.notes_text.get_buffer()
-            buffer.set_text(entry['notes'])
-        notes_scroll.set_child(self.notes_text)
-        content.append(notes_scroll)
-        
-        # Boutons
-        button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        button_box.set_halign(Gtk.Align.END)
-        button_box.set_margin_top(10)
-        
-        cancel_btn = Gtk.Button(label="Annuler")
-        cancel_btn.connect("clicked", lambda x: self.close())
-        button_box.append(cancel_btn)
-        
-        save_btn = Gtk.Button(label="Enregistrer")
-        save_btn.set_css_classes(['suggested-action'])
-        save_btn.connect("clicked", self.on_save_clicked)
-        button_box.append(save_btn)
-        
-        content.append(button_box)
-        
-        scrolled.set_child(content)
-        box.append(scrolled)
-        self.set_content(box)
-    
-    def create_entry_row(self, label_text, value, is_password=False):
-        """Crée une ligne avec label et entrée"""
-        box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        
-        label = Gtk.Label(label=label_text, xalign=0)
-        box.append(label)
-        
-        entry = Gtk.Entry()
-        entry.set_text(value)
-        if is_password:
-            entry.set_visibility(False)
-        box.append(entry)
-        
-        return entry
-    
-    def on_generate_clicked(self, button):
-        """Ouvre le générateur de mots de passe"""
-        def callback(password):
-            self.password_entry.set_text(password)
-        
-        gen_dialog = PasswordGeneratorDialog(self, callback)
-        gen_dialog.present()
-    
-    def on_save_clicked(self, button):
-        """Enregistre l'entrée"""
-        title = self.title_entry.get_text()
-        username = self.username_entry.get_text()
-        password = self.password_entry.get_text()
-        url = self.url_entry.get_text()
-        
-        # Catégorie
-        selected = self.category_dropdown.get_selected()
-        category = self.category_dropdown.get_model().get_string(selected) if selected != Gtk.INVALID_LIST_POSITION else ""
-        
-        # Tags
-        tags_text = self.tags_entry.get_text()
-        tags = [tag.strip() for tag in tags_text.split(",") if tag.strip()]
-        
-        buffer = self.notes_text.get_buffer()
-        notes = buffer.get_text(buffer.get_start_iter(), buffer.get_end_iter(), False)
-        
-        if not title or not password:
-            dialog = Adw.MessageDialog.new(self)
-            dialog.set_heading("Champs requis")
-            dialog.set_body("Le titre et le mot de passe sont obligatoires.")
-            dialog.add_response("ok", "OK")
-            dialog.present()
-            return
-        
-        if self.entry:
-            self.db.update_entry(self.entry['id'], title, username, password, url, notes, category, tags)
-        else:
-            self.db.add_entry(title, username, password, url, notes, category, tags)
-        
-        self.parent_window.load_entries()
-        self.parent_window.load_tags()
-        self.close()
 
 class UserSelectionDialog(Adw.ApplicationWindow):
     """Dialogue de sélection d'utilisateur"""
@@ -2023,10 +1481,13 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             
             row.set_child(user_box)
             self.users_listbox.append(row)
+        logger.debug("Gestion des utilisateurs: %d comptes charges", len(users))
+        logger.debug("%d utilisateurs affiches dans la selection", len(users))
     
     def on_user_selected(self, listbox, row):
         """Utilisateur sélectionné, demander le mot de passe"""
         username = row.username
+        logger.info("Utilisateur choisi pour connexion: %s", username)
         LoginDialog(self, self.user_manager, username, self.callback).present()
 
 
@@ -2100,16 +1561,20 @@ class LoginDialog(Adw.Window):
     def on_login(self):
         """Tente de se connecter"""
         password = self.password_entry.get_text()
+        logger.debug("Tentative de connexion pour %s", self.username)
         if not password:
+            logger.warning("Mot de passe vide pour %s", self.username)
             self.show_error("Veuillez entrer votre mot de passe")
             return
         
         user_info = self.user_manager.authenticate(self.username, password)
         if user_info:
+            logger.info("Connexion reussie pour %s", self.username)
             self.callback(user_info, password)
             self.get_transient_for().close()  # Fermer la fenêtre de sélection
             self.close()
         else:
+            logger.warning("Connexion echouee pour %s", self.username)
             self.show_error("Mot de passe incorrect")
             self.password_entry.set_text("")
             self.password_entry.grab_focus()
@@ -2222,22 +1687,27 @@ class CreateUserDialog(Adw.Window):
         
         # Validations
         if not username:
+            logger.warning("Creation utilisateur: nom vide")
             self.show_error("Le nom d'utilisateur est requis")
             return
         
         if len(username) < 3:
+            logger.warning("Creation utilisateur: nom trop court (%s)", username)
             self.show_error("Le nom d'utilisateur doit contenir au moins 3 caractères")
             return
         
         if not password:
+            logger.warning("Creation utilisateur: mot de passe vide pour %s", username)
             self.show_error("Le mot de passe est requis")
             return
         
         if len(password) < 8:
+            logger.warning("Creation utilisateur: mot de passe trop court pour %s", username)
             self.show_error("Le mot de passe doit contenir au moins 8 caractères")
             return
         
         if password != confirm:
+            logger.warning("Creation utilisateur: mots de passe differents pour %s", username)
             self.show_error("Les mots de passe ne correspondent pas")
             return
         
@@ -2247,8 +1717,10 @@ class CreateUserDialog(Adw.Window):
         # Créer l'utilisateur
         if self.user_manager.create_user(username, password, role):
             self.on_success_callback()
+            logger.info("Utilisateur cree via l'interface: %s (role=%s)", username, role)
             self.close()
         else:
+            logger.warning("Creation utilisateur echouee (existe deja): %s", username)
             self.show_error("Ce nom d'utilisateur existe déjà")
     
     def show_error(self, message: str):
@@ -2479,16 +1951,19 @@ class ChangeOwnPasswordDialog(Adw.Window):
     
     def on_change_clicked(self, button):
         """Changer le mot de passe"""
+        logger.info("Demande de changement de mot de passe pour %s", self.username)
         current = self.current_entry.get_text()
         new_password = self.password_entry.get_text()
         confirm = self.confirm_entry.get_text()
         
         # Vérifier le mot de passe actuel
         if not current:
+            logger.warning("Changement mot de passe: ancien mot de passe vide pour %s", self.username)
             self.show_error("Veuillez saisir votre mot de passe actuel")
             return
         
         if not self.user_manager.verify_user(self.username, current):
+            logger.warning("Changement mot de passe: mauvais mot de passe actuel pour %s", self.username)
             self.show_error("❌ Mot de passe actuel incorrect")
             self.current_entry.set_text("")
             self.current_entry.grab_focus()
@@ -2496,23 +1971,28 @@ class ChangeOwnPasswordDialog(Adw.Window):
         
         # Vérifier le nouveau mot de passe
         if not new_password:
+            logger.warning("Changement mot de passe: nouveau mot de passe vide pour %s", self.username)
             self.show_error("Le nouveau mot de passe est requis")
             return
         
         if len(new_password) < 8:
+            logger.warning("Changement mot de passe: nouveau mot de passe trop court pour %s", self.username)
             self.show_error("Le mot de passe doit contenir au moins 8 caractères")
             return
         
         if new_password == current:
+            logger.warning("Changement mot de passe: nouveau mot de passe identique pour %s", self.username)
             self.show_error("Le nouveau mot de passe doit être différent de l'ancien")
             return
         
         if new_password != confirm:
+            logger.warning("Changement mot de passe: confirmation differente pour %s", self.username)
             self.show_error("Les mots de passe ne correspondent pas")
             return
         
         # Changer le mot de passe
         if self.user_manager.change_user_password(self.username, current, new_password):
+            logger.info("Mot de passe mis a jour pour %s", self.username)
             success_dialog = Adw.MessageDialog.new(self)
             success_dialog.set_heading("✅ Succès")
             success_dialog.set_body("Votre mot de passe maître a été changé avec succès.\n\nVous devrez utiliser ce nouveau mot de passe lors de votre prochaine connexion.")
@@ -2593,22 +2073,27 @@ class ResetPasswordDialog(Adw.Window):
     
     def on_reset_clicked(self, button):
         """Réinitialiser le mot de passe"""
+        logger.info("Demande de reinitialisation pour %s", self.username)
         password = self.password_entry.get_text()
         confirm = self.confirm_entry.get_text()
         
         if not password:
+            logger.warning("Reinitialisation: mot de passe vide pour %s", self.username)
             self.show_error("Le mot de passe est requis")
             return
         
         if len(password) < 8:
+            logger.warning("Reinitialisation: mot de passe trop court pour %s", self.username)
             self.show_error("Le mot de passe doit contenir au moins 8 caractères")
             return
         
         if password != confirm:
+            logger.warning("Reinitialisation: confirmations differents pour %s", self.username)
             self.show_error("Les mots de passe ne correspondent pas")
             return
         
         if self.user_manager.reset_user_password(self.username, password):
+            logger.info("Mot de passe reinitialise pour %s", self.username)
             success_dialog = Adw.MessageDialog.new(self)
             success_dialog.set_heading("Succès")
             success_dialog.set_body(f"Le mot de passe de '{self.username}' a été réinitialisé.")
@@ -2659,9 +2144,11 @@ class PasswordManagerApplication(Adw.Application):
         about_action = Gio.SimpleAction.new("about", None)
         about_action.connect("activate", self.on_about)
         self.add_action(about_action)
+        logger.info("Application initialisee (mode %s)", "DEV" if is_dev_mode() else "PROD")
     
     def do_activate(self):
         """Lance l'application"""
+        logger.info("Activation de l'application")
         # Initialiser le gestionnaire d'utilisateurs
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         
@@ -2673,6 +2160,7 @@ class PasswordManagerApplication(Adw.Application):
     
     def show_user_selection(self):
         """Affiche l'écran de sélection d'utilisateur"""
+        logger.debug("Affichage du dialogue de selection utilisateur")
         self.selection_dialog = UserSelectionDialog(self, self.user_manager, self.on_user_authenticated)
         self.selection_dialog.set_application(self)  # Important: lier à l'application
         self.selection_dialog.present()
@@ -2686,9 +2174,8 @@ class PasswordManagerApplication(Adw.Application):
         """
         try:
             self.current_user = user_info
-            
-            # Workspace séparé par utilisateur
             username = user_info['username']
+            logger.info("Utilisateur authentifie: %s (role=%s)", username, user_info['role'])
             db_path = DATA_DIR / f"passwords_{username}.db"
             salt_path = DATA_DIR / f"salt_{username}.bin"
             
@@ -2719,10 +2206,9 @@ class PasswordManagerApplication(Adw.Application):
                 self.window = PasswordManagerApp(self, self.db, user_info, self.user_manager)
             
             self.window.present()
+            logger.debug("Fenetre principale affichee pour %s", username)
         except Exception as e:
-            print(f"Erreur lors de l'initialisation: {e}")
-            import traceback
-            traceback.print_exc()
+            logger.exception("Erreur lors de l'initialisation de l'application pour %s", user_info.get('username'))
             dialog = Adw.MessageDialog.new(None)
             dialog.set_heading("Erreur")
             dialog.set_body(f"Impossible d'initialiser l'application: {e}")
@@ -2731,6 +2217,7 @@ class PasswordManagerApplication(Adw.Application):
     
     def on_logout(self, action, param):
         """Déconnexion"""
+        logger.info("Demande de deconnexion")
         if self.window:
             self.window.close()
             self.window = None
@@ -2742,27 +2229,32 @@ class PasswordManagerApplication(Adw.Application):
     
     def on_switch_user(self, action, param):
         """Changer d'utilisateur"""
+        logger.info("Changement d'utilisateur demande")
         self.on_logout(action, param)
     
     def on_manage_users(self, action, param):
         """Gérer les utilisateurs (admin uniquement)"""
         if self.current_user and self.current_user['role'] == 'admin' and self.window:
+            logger.info("Ouverture du dialogue de gestion des utilisateurs")
             ManageUsersDialog(self.window, self.user_manager, self.current_user['username']).present()
     
     def on_change_own_password(self, action, param):
         """Changer son propre mot de passe"""
         if self.current_user and self.window:
+            logger.info("Dialogue de changement de mot de passe lance pour %s", self.current_user['username'])
             ChangeOwnPasswordDialog(self.window, self.user_manager, self.current_user['username']).present()
     
     def on_import_csv(self, action, param):
         """Importer des mots de passe depuis un fichier CSV"""
         if self.window and self.db:
+            logger.info("Import CSV lance")
             csv_importer = CSVImporter()
             ImportCSVDialog(self.window, self.db, csv_importer).present()
     
     def on_about(self, action, param):
         """Afficher le dialogue À propos"""
         if self.window:
+            logger.info("Affichage du dialogue A propos")
             show_about_dialog(self.window)
 
 def main():

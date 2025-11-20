@@ -3,7 +3,10 @@ Service de génération de mots de passe sécurisés.
 """
 import secrets
 import string
+import logging
 from typing import List
+
+logger = logging.getLogger(__name__)
 
 
 class PasswordGenerator:
@@ -66,6 +69,7 @@ class PasswordGenerator:
         
         # Génération cryptographiquement sécurisée
         password = "".join(secrets.choice(charset) for _ in range(length))
+        logger.debug("PasswordGenerator: mot de passe genere (longueur=%d)", length)
         return password
     
     @classmethod
@@ -96,7 +100,9 @@ class PasswordGenerator:
         ]
         
         # Ajouter un chiffre à la fin
-        return separator.join(chosen_words) + str(secrets.randbelow(100))
+        result = separator.join(chosen_words) + str(secrets.randbelow(100))
+        logger.debug("PasswordGenerator: phrase de passe generee (mots=%d)", word_count)
+        return result
     
     @staticmethod
     def estimate_strength(password: str) -> dict:

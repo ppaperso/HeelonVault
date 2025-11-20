@@ -10,11 +10,14 @@ Ce module gère :
 import sqlite3
 import secrets
 import base64
+import logging
 from pathlib import Path
 from typing import Optional, Dict
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.backends import default_backend
+
+logger = logging.getLogger(__name__)
 
 
 class AuthService:
@@ -56,6 +59,9 @@ class AuthService:
         cursor.execute('SELECT COUNT(*) FROM users')
         if cursor.fetchone()[0] == 0:
             self.create_user('admin', 'admin', role='admin')
+        cursor.execute('SELECT COUNT(*) FROM users')
+        total_users = cursor.fetchone()[0]
+        logger.info("AuthService: %d comptes utilisateurs disponibles", total_users)
     
     def _hash_password(self, password: str, salt: bytes = None) -> tuple:
         """Hache un mot de passe avec PBKDF2HMAC.
@@ -99,8 +105,10 @@ class AuthService:
                 VALUES (?, ?, ?, ?)
             ''', (username, password_hash, salt, role))
             self.conn.commit()
+            logger.info("AuthService: utilisateur cree %s (role=%s)", username, role)
             return True
         except sqlite3.IntegrityError:
+            logger.warning("AuthService: utilisateur deja existant %s", username)
             return False
     
     def authenticate(self, username: str, password: str) -> Optional[Dict]:
@@ -122,6 +130,7 @@ class AuthService:
         row = cursor.fetchone()
         
         if not row:
+            logger.warning("AuthService: authentification echouee, utilisateur inconnu %s", username)
             return None
         
         user_id, username, stored_hash, salt_b64, role = row
@@ -135,6 +144,7 @@ class AuthService:
                 WHERE id = ?
             ''', (user_id,))
             self.conn.commit()
+            logger.info("AuthService: authentification reussie %s (role=%s)", username, role)
             
             return {
                 'id': user_id,
@@ -142,6 +152,7 @@ class AuthService:
                 'role': role,
                 'salt': salt
             }
+        logger.warning("AuthService: authentification echouee, mauvais mot de passe pour %s", username)
         return None
     
     def verify_user(self, username: str, password: str) -> bool:
@@ -162,13 +173,15 @@ class AuthService:
         row = cursor.fetchone()
         
         if not row:
+            logger.debug("AuthService: verification echouee, utilisateur inconnu %s", username)
             return False
         
         stored_hash, salt_b64 = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
-        
-        return password_hash == stored_hash
+        result = password_hash == stored_hash
+        logger.debug("AuthService: verification %s -> %s", username, result)
+        return result
     
     def change_user_password(self, username: str, old_password: str, new_password: str) -> bool:
         """Change le mot de passe d'un utilisateur après vérification de l'ancien.
@@ -183,6 +196,7 @@ class AuthService:
         """
         # Vérifier l'ancien mot de passe
         if not self.verify_user(username, old_password):
+            logger.warning("AuthService: ancien mot de passe incorrect pour %s", username)
             return False
         
         try:
@@ -195,9 +209,11 @@ class AuthService:
                 WHERE username = ?
             ''', (password_hash, salt, username))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            logger.info("AuthService: mot de passe change pour %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors du changement de mot de passe: {e}")
+            logger.exception("AuthService: erreur lors du changement de mot de passe pour %s", username)
             return False
     
     def reset_user_password(self, username: str, new_password: str) -> bool:
@@ -219,9 +235,11 @@ class AuthService:
                 WHERE username = ?
             ''', (password_hash, salt, username))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            logger.info("AuthService: mot de passe reinitialise pour %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors de la réinitialisation: {e}")
+            logger.exception("AuthService: erreur lors de la reinitialisation pour %s", username)
             return False
     
     def delete_user(self, username: str) -> bool:
@@ -237,9 +255,11 @@ class AuthService:
             cursor = self.conn.cursor()
             cursor.execute('DELETE FROM users WHERE username = ?', (username,))
             self.conn.commit()
-            return cursor.rowcount > 0
+            success = cursor.rowcount > 0
+            logger.info("AuthService: utilisateur supprime %s", username)
+            return success
         except Exception as e:
-            print(f"Erreur lors de la suppression: {e}")
+            logger.exception("AuthService: erreur lors de la suppression de %s", username)
             return False
     
     def get_all_users(self) -> list:
@@ -254,7 +274,9 @@ class AuthService:
             FROM users 
             ORDER BY username
         ''')
-        return cursor.fetchall()
+        users = cursor.fetchall()
+        logger.debug("AuthService: %d utilisateurs recus", len(users))
+        return users
     
     def user_exists(self, username: str) -> bool:
         """Vérifie si un utilisateur existe.
@@ -267,8 +289,11 @@ class AuthService:
         """
         cursor = self.conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE username = ?', (username,))
-        return cursor.fetchone()[0] > 0
+        exists = cursor.fetchone()[0] > 0
+        logger.debug("AuthService: utilisateur %s existe=%s", username, exists)
+        return exists
     
     def close(self):
         """Ferme la connexion à la base de données."""
         self.conn.close()
+        logger.debug("AuthService: connexion aux utilisateurs fermee")

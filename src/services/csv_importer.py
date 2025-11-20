@@ -19,17 +19,17 @@ class CSVImporter:
         'lastpass': {
             'delimiter': ';',
             'columns': ['url', 'username', 'password', 'name'],
-            'description': 'LastPass (url;username;password;name)'
+            'description': 'CSV (;)'
         },
         'generic_comma': {
             'delimiter': ',',
             'columns': ['url', 'username', 'password', 'name'],
-            'description': 'Format générique CSV (url,username,password,name)'
+            'description': 'CSV (,)'
         },
         'generic_semicolon': {
             'delimiter': ';',
             'columns': ['url', 'username', 'password', 'name'],
-            'description': 'Format générique CSV (url;username;password;name)'
+            'description': 'CSV (;)'
         }
     }
     
@@ -179,20 +179,23 @@ class CSVImporter:
             elif col_name == 'name':
                 entry['name'] = value
         
+        # Log pour debug
+        logger.debug(f"Ligne {line_num}: name='{entry.get('name')}', password='{entry.get('password')[:3] if entry.get('password') else 'VIDE'}...')")
+        
         # Validation minimale
-        if not entry.get('name'):
+        if not entry.get('name') or not entry.get('name').strip():
             self.warnings.append(f"Ligne {line_num}: nom d'entrée vide, utilisation d'un nom par défaut")
             entry['name'] = f"Entrée importée {line_num}"
         
-        if not entry.get('password'):
+        if not entry.get('password') or not entry.get('password').strip():
             self.warnings.append(f"Ligne {line_num}: mot de passe vide")
         
-        # Valeurs par défaut
+        # Valeurs par défaut (sans forcer de catégorie/tags)
         entry.setdefault('url', '')
         entry.setdefault('username', '')
         entry.setdefault('notes', f'Importé depuis CSV (ligne {line_num})')
-        entry.setdefault('category', 'Importé')
-        entry.setdefault('tags', ['import'])
+        entry.setdefault('category', '')  # Pas de catégorie par défaut
+        entry.setdefault('tags', [])  # Pas de tags par défaut
         
         return entry
     

@@ -1,6 +1,6 @@
 #!/bin/bash
 # Script de test de l'application gestionnaire de mots de passe
-# Utilise le venv venvpwdmanager avec accès aux packages système
+# Utilise le venv venv-dev avec accès aux packages système
 # Usage: ./test-app.sh [run]
 #   sans argument: lance les tests
 #   avec "run": lance l'application
@@ -8,7 +8,7 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${SCRIPT_DIR}/venvpwdmanager"
+VENV_DIR="${SCRIPT_DIR}/venv-dev"
 APP_FILE="${SCRIPT_DIR}/password_manager.py"
 
 # Si l'argument est "run", lancer directement l'application
@@ -22,7 +22,7 @@ echo ""
 
 # Vérifier que le venv existe
 if [ ! -d "$VENV_DIR" ]; then
-    echo "❌ Erreur: Le venv 'venvpwdmanager' n'existe pas"
+    echo "❌ Erreur: Le venv 'venv-dev' n'existe pas"
     echo ""
     echo "Création du venv avec accès aux packages système..."
     python3 -m venv --system-site-packages "$VENV_DIR"
@@ -30,7 +30,7 @@ if [ ! -d "$VENV_DIR" ]; then
 fi
 
 # Activer le venv
-echo "📦 Activation du venv venvpwdmanager..."
+echo "📦 Activation du venv venv-dev..."
 source "${VENV_DIR}/bin/activate"
 
 # Vérifier Python

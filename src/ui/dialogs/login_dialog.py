@@ -6,6 +6,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, GLib
 
 from src.services.login_attempt_tracker import LoginAttemptTracker
+from src.config.environment import is_dev_mode
 
 
 class LoginDialog(Adw.Window):
@@ -57,6 +58,14 @@ class LoginDialog(Adw.Window):
         username_label = Gtk.Label(label=self.username)
         username_label.set_css_classes(['title-2'])
         box.append(username_label)
+
+        if is_dev_mode():
+            dev_badge = Gtk.Label(label="🔧 MODE DÉVELOPPEMENT")
+            dev_badge.set_css_classes(['caption', 'warning'])
+            dev_badge.set_margin_top(6)
+            dev_badge.set_margin_bottom(6)
+            dev_badge.set_halign(Gtk.Align.CENTER)
+            box.append(dev_badge)
         
         # Champ mot de passe
         password_label = Gtk.Label(label="Mot de passe maître", xalign=0)
@@ -89,7 +98,13 @@ class LoginDialog(Adw.Window):
         box.append(button_box)
         
         self.set_content(box)
-        self.password_entry.grab_focus()
+        # Focus sur le champ mot de passe (après affichage complet)
+        def set_focus():
+            if self.password_entry.get_root():
+                self.password_entry.grab_focus()
+                return False
+            return True
+        GLib.idle_add(set_focus)
     
     def _check_lockout_status(self):
         """Vérifie l'état de verrouillage au démarrage."""
@@ -188,7 +203,13 @@ class LoginDialog(Adw.Window):
                     self.show_error("❌ Mot de passe incorrect")
             
             self.password_entry.set_text("")
-            self.password_entry.grab_focus()
+            # Reporter le focus après l'affichage de l'erreur
+            def set_focus():
+                if self.password_entry.get_root():
+                    self.password_entry.grab_focus()
+                    return False
+                return True
+            GLib.idle_add(set_focus)
     
     def show_error(self, message: str):
         """Affiche un message d'erreur.

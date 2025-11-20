@@ -26,6 +26,8 @@ Ce guide vous accompagne dans la migration du fichier monolithique `password_man
 - ⏳ Séparer les dialogues
 - ⏳ Séparer les fenêtres
 - ⏳ Créer des widgets réutilisables
+- ✅ Mutualiser les boîtes de dialogue avec `present_alert()` (`src/ui/dialogs/helpers.py`)
+- ✅ Utiliser `GLib.idle_add` avec retour `True` tant que les widgets ne sont pas rattachés pour gérer les focus
 
 ### Phase 5 : Finalisation (À FAIRE)
 - ⏳ Créer `main.py` et `app.py`
