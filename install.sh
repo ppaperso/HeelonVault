@@ -41,16 +41,17 @@ fi
 
 echo "✅ Toutes les dépendances système sont présentes"
 
-# Créer l'environnement virtuel si nécessaire
-if [ ! -d "venvpwdmanager" ]; then
+# Créer l'environnement virtuel de PRODUCTION si nécessaire
+VENV_DIR="venv-prod"
+if [ ! -d "$VENV_DIR" ]; then
     echo ""
-    echo "📦 Création de l'environnement virtuel..."
-    python3 -m venv venvpwdmanager
-    echo "✅ Environnement virtuel créé"
+    echo "📦 Création de l'environnement virtuel de production..."
+    python3 -m venv "$VENV_DIR"
+    echo "✅ Environnement virtuel de production créé: $VENV_DIR/"
 fi
 
 # Activer l'environnement virtuel
-source venvpwdmanager/bin/activate
+source "$VENV_DIR/bin/activate"
 
 # Installer les dépendances Python
 echo ""

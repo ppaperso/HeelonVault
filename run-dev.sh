@@ -9,14 +9,19 @@ set -e
 export DEV_MODE=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${SCRIPT_DIR}/venvpwdmanager"
+VENV_DIR="${SCRIPT_DIR}/venv-dev"
 APP_FILE="${SCRIPT_DIR}/password_manager.py"
 
-# Vérifier que le venv existe
+# Vérifier que le venv de dev existe, sinon le créer
 if [ ! -d "$VENV_DIR" ]; then
-    echo "❌ Erreur: Le venv 'venvpwdmanager' n'existe pas"
-    echo "   Lancez d'abord: ./test-app.sh"
-    exit 1
+    echo "📦 Environnement virtuel de dev non trouvé. Création..."
+    python3 -m venv "$VENV_DIR"
+    source "$VENV_DIR/bin/activate"
+    pip install --upgrade pip > /dev/null 2>&1
+    pip install -r "${SCRIPT_DIR}/requirements.txt" > /dev/null 2>&1
+    echo "✅ Environnement virtuel de dev créé: $VENV_DIR/"
+else
+    source "$VENV_DIR/bin/activate"
 fi
 
 echo "🔐 Lancement du gestionnaire de mots de passe (mode développement)"
