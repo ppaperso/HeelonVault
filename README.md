@@ -2,7 +2,7 @@
 
 Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé avec GTK4 et Python.
 
-![Version](https://img.shields.io/badge/version-0.1.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.2.0--beta-blue)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 ![GTK Version](https://img.shields.io/badge/GTK-4.0-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
@@ -151,7 +151,6 @@ Ce script vérifie automatiquement :
 ## 📖 Utilisation
 
 ### Lancement de l'application
-
 #### Depuis le menu Applications
 Après installation, l'application apparaît dans : **Menu → Utilitaires → Gestionnaire de mots de passe**
 
@@ -537,6 +536,11 @@ vim password_manager.py
 | `run-dev.sh` | Lancement en mode développement avec venv | `./run-dev.sh` |
 | `build-container.sh` | Construction de l'image Podman | `./build-container.sh` |
 | `run-container.sh` | Lancement de l'application conteneurisée | `./run-container.sh` |
+
+### Directives UI (libadwaita)
+- Utilisez `present_alert()` (`src/ui/dialogs/helpers.py`) pour toutes les boîtes de dialogue afin de garantir un rendu cohérent et de centraliser les callbacks.
+- Lorsque vous devez donner le focus à un champ fraîchement créé, encapsulez `grab_focus()` dans `GLib.idle_add(...)` et retournez `True` tant que le widget n'est pas encore rattaché (`get_root()` renvoie `None`).
+- Créez un parent temporaire (`Adw.ApplicationWindow`) uniquement si aucune fenêtre n'est disponible, puis fermez-le dans le callback de réponse pour éviter les warnings `GDK_IS_FRAME_CLOCK`.
 
 ### Contribuer
 Les contributions sont les bienvenues ! Pour contribuer :

@@ -1,145 +1,75 @@
-# 🎉 Version 0.1.0-beta - Récapitulatif
+# 🎉 Version 0.2.0-beta - Récapitulatif
 
-## ✅ Système de versioning implémenté avec succès !
+## 🚀 Release du 20 novembre 2025
 
-### 📋 Ce qui a été fait
+Cette version consolide toute l'infrastructure de logs et facilite le support en production :
 
-#### 1. Création du système de versioning
-- ✅ Fichier `src/version.py` créé avec la version **0.1.0-beta**
-- ✅ Fonctions `get_version()` et `get_version_info()`
-- ✅ Informations complètes : nom, description, auteur, licence, copyright
+- ✅ Nouveau module `src/config/logging_config.py`
+- ✅ Rotation automatique (7 jours) + répertoires dédiés DEV/PROD
+- ✅ Instrumentation détaillée dans les services, dialogues et UI
+- ✅ Script automatisé `tests/test-logging.sh`
+- ✅ Intégration du test de rotation dans `tests/run_all_tests.sh`
 
-#### 2. Affichage de la version dans l'interface
+## 🆕 Ce qui change pour 0.2.0-beta
 
-**Page de sélection d'utilisateur :**
-```
-🔐 Gestionnaire de mots de passe
-Version 0.1.0-beta           ← NOUVEAU
-Sélectionnez votre compte
-```
+### 1. Journaux robustes
+- Initialisation unique via `configure_logging()` (stdout + fichier horodaté)
+- Répertoires séparés : `./logs/` en DEV, `/var/log/password_manager/` en PROD
+- Gestion de repli vers `/tmp/password_manager_logs` en cas de permission refusée
 
-**Page de connexion :**
-```
-Bonjour, admin
-Entrez votre mot de passe maître
-[champ de mot de passe]
-[Retour] [Se connecter]
-v0.1.0-beta                  ← NOUVEAU
-```
+### 2. Visibilité accrue
+- Ajout de logs structurés dans :
+  - `password_manager.py` (cycle de vie complet)
+  - Services (`auth_service`, `crypto_service`, `login_attempt_tracker`, `password_generator`, `csv_importer`…)
+  - Dialogues GTK (import CSV, gestion utilisateurs, etc.)
+- Messages adaptés aux niveaux INFO/DEBUG/WARNING/ERROR
 
-**Menu principal (hamburger ☰) :**
-```
-Importer depuis CSV
-Changer mon mot de passe
-Gérer les utilisateurs
-Changer de compte
-Déconnexion
-─────────────────────        ← SÉPARATEUR
-À propos                     ← NOUVEAU
-```
+### 3. Tests dédiés
+- `tests/test-logging.sh` génère 9 journaux et vérifie la rotation
+- `tests/run_all_tests.sh` exécute désormais ce script après la suite d'intégration
+- `tests/test-version.sh` attend la nouvelle version `0.2.0-beta`
 
-#### 3. Dialogue "À propos"
-- ✅ Dialogue natif Adw.AboutDialog
-- ✅ Version, description, copyright
-- ✅ Licence MIT
-- ✅ Liste des développeurs
-- ✅ Notes de version détaillées avec fonctionnalités
-- ✅ Technologies utilisées
+### 4. Documentation & métadonnées
+- `README.md` : badge mis à jour
+- `CHANGELOG.md` : nouvelle section 0.2.0-beta
+- `VERSION_0.2.0-beta.md` : notes de version détaillées
+- `password-manager.desktop` : champ `Version` synchronisé
 
-#### 4. Documentation
-- ✅ `CHANGELOG.md` - Historique complet des versions
-- ✅ `VERSION_0.1.0-beta.md` - Présentation de cette version
-- ✅ `README.md` mis à jour avec badge de version
-- ✅ Script de test `test-version.sh`
-
-### 🧪 Tests
-
-**Tous les tests passent : 17/17** ✅
+## 🧪 Tests
 
 ```bash
-./test-version.sh
-# ✅ Module version OK
-# ✅ Version correcte: 0.1.0-beta
-# ✅ Toutes les informations sont présentes
-# ✅ Module about_dialog OK
-
-python -m unittest discover tests -v
-# Ran 17 tests in 2.608s
-# OK
+tests/run_all_tests.sh
+# ▶️ ...
+# ✅ logging rotation
+# 🎉 Tous les tests ont réussi !
 ```
 
-### 📁 Fichiers créés/modifiés
+## 📁 Fichiers notables
 
-#### Nouveaux fichiers
-1. `src/version.py` - Gestion du versioning
-2. `src/ui/dialogs/about_dialog.py` - Dialogue "À propos"
-3. `test-version.sh` - Script de test du versioning
-4. `CHANGELOG.md` - Historique des versions
-5. `VERSION_0.1.0-beta.md` - Notes de version
-6. `VERSION_SUMMARY.md` - Ce fichier
+- `src/version.py` → `__version__ = "0.2.0-beta"`
+- `src/config/logging_config.py` (nouveau)
+- `tests/test-logging.sh` (nouveau)
+- `tests/run_all_tests.sh` (mise à jour)
+- `README.md`, `CHANGELOG.md`, `password-manager.desktop`, `tests/test-version.sh`
+- `VERSION_0.2.0-beta.md` (nouveau) + `VERSION_SUMMARY.md` (ce fichier)
 
-#### Fichiers modifiés
-1. `password_manager.py`
-   - Import de `get_version()` et `show_about_dialog()`
-   - Ajout de la version sur les pages de login
-   - Ajout de l'action "À propos" dans le menu
-   - Handler `on_about()` pour afficher le dialogue
+## 🗺️ Rappel utilisation
 
-2. `README.md`
-   - Badge de version ajouté
-
-### 🚀 Utilisation
-
-#### Voir la version en ligne de commande
 ```bash
 python3 -c "from src.version import get_version; print(get_version())"
-# 0.1.0-beta
+# 0.2.0-beta
+
+./run-dev.sh
+# Les premières lignes de logs confirment le mode + répertoire utilisés
 ```
 
-#### Voir la version dans l'application
-1. Lancez l'application : `./run-dev.sh`
-2. Sur l'écran de sélection : "Version 0.1.0-beta"
-3. Sur l'écran de connexion : "v0.1.0-beta" en bas
-4. Menu → "À propos" pour voir tous les détails
+## 🔭 Roadmap preview (0.3.0)
 
-### 📊 Statistiques de la version
-
-- **Version** : 0.1.0-beta
-- **Date** : 19 novembre 2025
-- **Tests** : 17/17 (100% ✅)
-- **Lignes de code** : ~2700 Python
-- **Documentation** : 10+ fichiers markdown
-- **Fonctionnalités** : Import CSV, Multi-utilisateurs, Générateur, etc.
-
-### 🎯 Prochaines étapes
-
-Pour la version **0.2.0** :
 - Export CSV
-- Plus de formats d'import (KeePass, Dashlane)
-- Détection des doublons
-- Sauvegarde/restauration
-- Amélioration de l'UI
-
-### 💡 Comment changer la version
-
-Pour passer à une nouvelle version, modifiez simplement :
-
-```python
-# src/version.py
-__version__ = "0.2.0"  # ou "0.1.1-beta", etc.
-```
-
-La version sera automatiquement mise à jour partout dans l'application !
-
-### 🎊 Résultat final
-
-✅ Version **0.1.0-beta** créée et affichée
-✅ Dialogue "À propos" fonctionnel
-✅ Menu amélioré avec séparateur
-✅ Tests : 17/17
-✅ Documentation complète
-✅ Prêt pour la production !
+- Détection de doublons à l'import
+- Synchronisation optionnelle
+- Support d'autres gestionnaires (KeePass, Dashlane)
 
 ---
 
-**Bon gestionnage de mots de passe avec la version 0.1.0-beta ! 🔐**
+**Profitez de la tranquillité d'esprit avec la version 0.2.0-beta ! 🔐**

@@ -25,10 +25,10 @@ echo "📦 Test 2: Récupération de la version"
 VERSION=$(python3 -c "from src.version import get_version; print(get_version())")
 echo "   Version actuelle: $VERSION"
 
-if [ "$VERSION" == "0.1.0-beta" ]; then
+if [ "$VERSION" == "0.2.0-beta" ]; then
     echo "✅ Version correcte: $VERSION"
 else
-    echo "❌ Version incorrecte. Attendu: 0.1.0-beta, Obtenu: $VERSION"
+    echo "❌ Version incorrecte. Attendu: 0.2.0-beta, Obtenu: $VERSION"
     exit 1
 fi
 
@@ -62,6 +62,6 @@ echo "📋 Version de l'application: $VERSION"
 echo ""
 echo "🚀 Pour voir le versioning dans l'application:"
 echo "   1. Lancez l'application: ./run-dev.sh"
-echo "   2. Sur l'écran de sélection, vous verrez 'Version 0.1.0-beta'"
-echo "   3. Sur l'écran de connexion, vous verrez 'v0.1.0-beta'"
+echo "   2. Sur l'écran de sélection, vous verrez 'Version 0.2.0-beta'"
+echo "   3. Sur l'écran de connexion, vous verrez 'v0.2.0-beta'"
 echo "   4. Dans le menu principal → 'À propos' pour voir tous les détails"

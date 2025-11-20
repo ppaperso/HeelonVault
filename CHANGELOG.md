@@ -5,6 +5,24 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [0.2.0-beta] - 2025-11-20
+
+### ✨ Ajouté
+- Module `src/config/logging_config.py` avec rotation quotidienne, niveaux adaptés (DEBUG en DEV, INFO en PROD) et répertoires distincts (`./logs` vs `/var/log/password_manager`).
+- Script `tests/test-logging.sh` qui génère plusieurs journaux, valide la suppression des plus anciens et échoue si la rotation ne respecte pas la rétention de 7 fichiers.
+- Fichier `VERSION_0.2.0-beta.md` et mise à jour complète du `VERSION_SUMMARY.md`.
+
+### 🔧 Modifié
+- `password_manager.py`, services (`auth_service`, `crypto_service`, `password_generator`, `csv_importer`, etc.) et dialogues GTK reçoivent une instrumentation détaillée pour tracer les actions clés.
+- `tests/run_all_tests.sh` exécute désormais `tests/test-logging.sh` afin que la CI couvre la rotation des journaux.
+- `tests/test-version.sh`, `README.md`, `password-manager.desktop` et `src/version.py` reflètent la nouvelle version `0.2.0-beta`.
+- Documentation (README, CHANGELOG, VERSION_SUMMARY) mise à jour pour décrire l'infrastructure de logs et les nouveaux scripts.
+
+### 🛠️ Technique
+- Gestion de fallback automatique vers `/tmp/password_manager_logs` si l'écriture dans `/var/log/password_manager` échoue (droits insuffisants).
+- Nettoyage automatique des anciens fichiers de log (7 derniers conservés) à chaque initialisation.
+- Amélioration de la visibilité sur l'application grâce à des messages structurés aux niveaux INFO/WARNING/ERROR.
+
 ## [0.1.0-beta] - 2025-11-19
 
 ### ✨ Ajouté
@@ -86,6 +104,14 @@ et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 ---
 
 ## [Non publié]
+
+### ✨ Modifié
+- Centralisation de la création des boîtes de dialogue via `present_alert()` pour harmoniser l'interface et réduire la duplication.
+- Gestion améliorée du focus initial avec `GLib.idle_add` afin d'éviter les warnings GTK lors de l'ouverture des fenêtres.
+
+### 🐛 Corrigé
+- Correction des boîtes de dialogue de confirmation qui provoquaient une exception (`Task.get_string`).
+- Prévention des warnings `gdk_frame_clock_get_frame_time` en retardant la création d'un parent temporaire avant d'afficher un dialogue sans fenêtre active.
 
 ### 🔮 Prévu pour les futures versions
 - Export vers CSV

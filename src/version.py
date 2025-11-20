@@ -2,7 +2,7 @@
 Informations de version de l'application
 """
 
-__version__ = "0.1.0-beta"
+__version__ = "0.2.0-beta"
 __app_name__ = "Gestionnaire de Mots de Passe"
 __description__ = "Gestionnaire de mots de passe sécurisé pour Linux"
 __author__ = "Password Manager Team"
