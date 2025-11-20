@@ -1,8 +1,12 @@
 #!/bin/bash
 # Script de lancement de l'application en mode développement
 # Utilise le venv venvpwdmanager
+# Données stockées dans ./data/ (isolées de la production)
 
 set -e
+
+# IMPORTANT: Mode développement activé
+export DEV_MODE=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/venvpwdmanager"

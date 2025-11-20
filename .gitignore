@@ -17,6 +17,9 @@ env/
 *.sqlite
 *.sqlite3
 
+# Development data directory (SENSITIVE - test data)
+data/
+
 # CSV exports and imports (SENSITIVE - may contain passwords)
 export-csv/
 *.csv

@@ -32,22 +32,50 @@ from src.ui.dialogs.import_dialog import ImportCSVDialog
 from src.version import get_version, get_version_info
 from src.ui.dialogs.about_dialog import show_about_dialog
 
-# Répertoire de données partagé entre tous les utilisateurs du système
-# Architecture multi-utilisateurs: base de données commune, encryption par utilisateur
-DATA_DIR = Path("/var/lib/passwordmanager-shared")
-
-# Configuration du logging
-DATA_DIR.mkdir(parents=True, exist_ok=True)
-
+# Configuration du logging de base (sans fichier d'abord)
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(DATA_DIR / 'security.log'),
         logging.StreamHandler()
     ]
 )
 logger = logging.getLogger(__name__)
+
+# Répertoire de données selon l'environnement (DEV vs PROD)
+import os
+
+def get_data_directory() -> Path:
+    """Retourne le répertoire de données selon l'environnement
+    
+    - DEV/TEST: ./data/ (local au projet)
+    - PROD: /var/lib/passwordmanager-shared/ (système partagé)
+    """
+    if os.environ.get('DEV_MODE', '').lower() in ('1', 'true', 'yes'):
+        # Mode développement : données locales au projet
+        dev_dir = Path(__file__).parent / "data"
+        dev_dir.mkdir(parents=True, exist_ok=True)
+        print("🔧 Mode DÉVELOPPEMENT - Données dans ./data/")
+        return dev_dir
+    else:
+        # Mode production : données système partagées
+        prod_dir = Path("/var/lib/passwordmanager-shared")
+        prod_dir.mkdir(parents=True, exist_ok=True)
+        print("🚀 Mode PRODUCTION - Données dans /var/lib/passwordmanager-shared/")
+        return prod_dir
+
+# Répertoire de données partagé entre tous les utilisateurs du système
+# Architecture multi-utilisateurs: base de données commune, encryption par utilisateur
+DATA_DIR = get_data_directory()
+
+# Ajouter le FileHandler après avoir déterminé DATA_DIR
+try:
+    file_handler = logging.FileHandler(DATA_DIR / 'security.log')
+    file_handler.setFormatter(logging.Formatter('%(asctime)s - %(name)s - %(levelname)s - %(message)s'))
+    logger.addHandler(file_handler)
+    logger.info(f"📝 Log de sécurité: {DATA_DIR / 'security.log'}")
+except Exception as e:
+    logger.warning(f"Impossible de créer le fichier de log: {e}")
 
 class UserManager:
     """Gestion des utilisateurs et authentification"""
