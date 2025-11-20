@@ -32,12 +32,18 @@ from src.ui.dialogs.import_dialog import ImportCSVDialog
 from src.version import get_version, get_version_info
 from src.ui.dialogs.about_dialog import show_about_dialog
 
+# Répertoire de données partagé entre tous les utilisateurs du système
+# Architecture multi-utilisateurs: base de données commune, encryption par utilisateur
+DATA_DIR = Path("/var/lib/passwordmanager-shared")
+
 # Configuration du logging
+DATA_DIR.mkdir(parents=True, exist_ok=True)
+
 logging.basicConfig(
     level=logging.INFO,
     format='%(asctime)s - %(name)s - %(levelname)s - %(message)s',
     handlers=[
-        logging.FileHandler(Path.home() / '.local/share/passwordmanager/security.log'),
+        logging.FileHandler(DATA_DIR / 'security.log'),
         logging.StreamHandler()
     ]
 )
@@ -2349,9 +2355,8 @@ class ManageUsersDialog(Adw.Window):
         if response == "delete":
             if self.user_manager.delete_user(username):
                 # Supprimer aussi le workspace de l'utilisateur
-                data_dir = Path.home() / ".local" / "share" / "passwordmanager"
-                user_db = data_dir / f"passwords_{username}.db"
-                user_salt = data_dir / f"salt_{username}.bin"
+                user_db = DATA_DIR / f"passwords_{username}.db"
+                user_salt = DATA_DIR / f"salt_{username}.bin"
                 
                 if user_db.exists():
                     user_db.unlink()
@@ -2630,10 +2635,9 @@ class PasswordManagerApplication(Adw.Application):
     def do_activate(self):
         """Lance l'application"""
         # Initialiser le gestionnaire d'utilisateurs
-        data_dir = Path.home() / ".local" / "share" / "passwordmanager"
-        data_dir.mkdir(parents=True, exist_ok=True)
+        DATA_DIR.mkdir(parents=True, exist_ok=True)
         
-        users_db_path = data_dir / "users.db"
+        users_db_path = DATA_DIR / "users.db"
         self.user_manager = UserManager(users_db_path)
         
         # Afficher l'écran de sélection utilisateur
@@ -2654,12 +2658,11 @@ class PasswordManagerApplication(Adw.Application):
         """
         try:
             self.current_user = user_info
-            data_dir = Path.home() / ".local" / "share" / "passwordmanager"
             
             # Workspace séparé par utilisateur
             username = user_info['username']
-            db_path = data_dir / f"passwords_{username}.db"
-            salt_path = data_dir / f"salt_{username}.bin"
+            db_path = DATA_DIR / f"passwords_{username}.db"
+            salt_path = DATA_DIR / f"salt_{username}.bin"
             
             # Charger ou créer le salt spécifique à l'utilisateur
             if salt_path.exists():

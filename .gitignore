@@ -21,6 +21,10 @@ env/
 export-csv/
 *.csv
 
+# Backups (SENSITIVE)
+*-backups/
+backup_*.tar.gz
+
 # IDE
 .vscode/
 .idea/

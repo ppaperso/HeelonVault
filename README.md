@@ -70,44 +70,44 @@ pip install cryptography
 
 ## 🚀 Installation
 
-### Option 1 : Installation conteneurisée (Recommandé pour Fedora/RHEL) 🐋
+### Installation automatique
 
-L'application est fournie avec un Dockerfile utilisant RHEL 9 UBI et Python 3.12, parfait pour Podman sur Fedora.
+Un script d'installation automatique configure l'application et ses dépendances :
 
-#### Prérequis
 ```bash
-# Installer Podman (si pas déjà installé)
-sudo dnf install podman
+# Cloner le dépôt
+git clone https://github.com/ppaperso/Gestionnaire_mot_passe.git
+cd Gestionnaire_mot_passe
 
-# Autoriser l'accès X11 pour les containers
-xhost +local:
+# Lancer l'installation
+./install.sh
 ```
 
-#### Build et lancement rapide
-```bash
-# 1. Construire l'image
-./build-container.sh
+Le script :
+- ✅ Vérifie les prérequis système (Python, GTK4, libadwaita)
+- ✅ Crée l'environnement virtuel Python
+- ✅ Installe les dépendances Python
+- ✅ Crée le répertoire de données partagé `/var/lib/passwordmanager-shared`
+- ✅ Configure les permissions multi-utilisateurs
+- ✅ Installe le lanceur dans le menu Applications
 
-# 2. Lancer l'application
-./run-container.sh
-```
+### Architecture multi-utilisateurs
 
-#### Avantages de la conteneurisation
-- ✅ Isolation complète des dépendances
-- ✅ Pas d'installation de paquets GTK4 sur l'hôte
-- ✅ Même environnement partout (dev, prod)
-- ✅ Données persistantes dans `~/.local/share/passwordmanager-container/`
-- ✅ Facile à mettre à jour et supprimer
+L'application utilise une **base de données partagée** pour tous les utilisateurs du système :
 
-### Installation locale classique
+- 📂 **Emplacement** : `/var/lib/passwordmanager-shared/`
+- 🔐 **Séparation** : Chaque utilisateur a ses propres fichiers de base de données
+- 🔑 **Sécurité** : Chaque utilisateur chiffre ses données avec son propre mot de passe maître
+- 👥 **Partage** : Tous les utilisateurs du système peuvent utiliser l'application
+- 🛡️ **Isolation** : Un utilisateur ne peut pas accéder aux données d'un autre
 
-#### 1. Cloner le dépôt
-```bash
-git clone https://github.com/votre-utilisateur/gestionnaire-mot-passe.git
-cd gestionnaire-mot-passe
-```
+**Note** : Vous devez être membre du groupe `users` pour accéder au répertoire partagé. Le script d'installation le fait automatiquement.
 
-#### 2. Installer les dépendances système
+### Installation manuelle
+
+Si vous préférez installer manuellement :
+
+#### 1. Installer les dépendances système
 ```bash
 # Fedora/RHEL
 sudo dnf install python3-gobject gtk4 libadwaita
@@ -119,18 +119,23 @@ sudo apt install python3-gi python3-gi-cairo gir1.2-gtk-4.0 gir1.2-adw-1
 sudo pacman -S python-gobject gtk4 libadwaita
 ```
 
-#### 3. Créer et activer le venv
+#### 2. Créer l'environnement virtuel
 ```bash
 python3 -m venv venvpwdmanager
 source venvpwdmanager/bin/activate
-```
-
-#### 4. Installer les dépendances Python
-```bash
 pip install -r requirements.txt
 ```
 
-#### 5. Tester l'installation
+#### 3. Créer le répertoire de données partagé
+```bash
+sudo mkdir -p /var/lib/passwordmanager-shared
+sudo chown root:users /var/lib/passwordmanager-shared
+sudo chmod 775 /var/lib/passwordmanager-shared
+sudo usermod -a -G users $USER
+# Vous devez vous déconnecter/reconnecter après cette étape
+```
+
+#### 4. Tester l'installation
 ```bash
 ./test-app.sh
 ```
@@ -145,27 +150,18 @@ Ce script vérifie automatiquement :
 
 ## 📖 Utilisation
 
-### Avec Podman (Recommandé pour la production)
-```bash
-# Lancer l'application conteneurisée
-./run-container.sh
-```
+### Lancement de l'application
 
-### Mode développement (avec venv)
-```bash
-# Tester l'application avant conteneurisation
-./test-app.sh
+#### Depuis le menu Applications
+Après installation, l'application apparaît dans : **Menu → Utilitaires → Gestionnaire de mots de passe**
 
-# Lancer l'application en mode développement
+#### En ligne de commande
+```bash
+# Mode développement (avec venv)
 ./run-dev.sh
-```
 
-### Installation locale directe
-```bash
-# Activer le venv
+# Ou directement
 source venvpwdmanager/bin/activate
-
-# Lancer l'application
 python3 password_manager.py
 ```
 

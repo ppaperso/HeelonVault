@@ -15,7 +15,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 ### Séparation des données
 
 ```
-~/.local/share/passwordmanager/
+/var/lib/passwordmanager-shared/
 ├── users.db                    # Base des utilisateurs (hash des mots de passe)
 ├── passwords_alice.db          # Workspace d'Alice (chiffré)
 ├── salt_alice.bin             # Salt d'Alice
@@ -24,6 +24,8 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 ├── passwords_admin.db          # Workspace de l'admin (chiffré)
 └── salt_admin.bin             # Salt de l'admin
 ```
+
+**Note** : Le répertoire `/var/lib/passwordmanager-shared` est partagé entre tous les utilisateurs du système (permissions 775, groupe `users`).
 
 ### Niveaux de sécurité
 
