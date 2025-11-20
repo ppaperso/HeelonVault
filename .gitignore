@@ -1,0 +1,49 @@
+# Python
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+
+# Virtual Environment
+venvpwdmanager/
+venv/
+ENV/
+env/
+.venv
+
+# Database files (SENSITIVE)
+*.db
+*.sqlite
+*.sqlite3
+
+# CSV exports and imports (SENSITIVE - may contain passwords)
+export-csv/
+*.csv
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Logs
+*.log
+
+# Distribution / packaging
+build/
+dist/
+*.egg-info/
+
+# Test coverage
+.coverage
+htmlcov/
+
+# Backup files
+*.bak
+*.backup
