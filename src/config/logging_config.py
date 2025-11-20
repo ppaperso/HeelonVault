@@ -60,7 +60,8 @@ def configure_logging() -> None:
 
     log_dir, fallback_reason = _ensure_directory(log_dir)
 
-    log_filename = log_dir / f"{LOG_PREFIX}_{datetime.now().strftime('%Y%m%d_%H%M%S')}.log"
+    today = datetime.now().date()
+    log_filename = log_dir / f"{LOG_PREFIX}_{today.strftime('%Y%m%d')}.log"
     level = logging.DEBUG if is_dev_mode() else logging.INFO
 
     root_logger = logging.getLogger()
