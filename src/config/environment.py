@@ -29,7 +29,7 @@ def get_data_directory() -> Path:
         logger.info('Mode DEVELOPPEMENT - Donnees dans %s', dev_dir)
         return dev_dir
 
-    prod_dir = Path('/var/lib/passwordmanager-shared')
+    prod_dir = Path('/var/lib/password-manager-shared')
     prod_dir.mkdir(parents=True, exist_ok=True)
     logger.info('Mode PRODUCTION - Donnees dans %s', prod_dir)
     return prod_dir

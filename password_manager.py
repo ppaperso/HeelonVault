@@ -51,6 +51,11 @@ class UserManager:
         self.db_path = users_db_path
         self.conn = sqlite3.connect(str(users_db_path))
         self._init_db()
+        # Assurer que la base de données utilisateurs est accessible par le groupe
+        try:
+            users_db_path.chmod(0o664)
+        except Exception:
+            pass
         logger.debug("UserManager initialise avec DB %s", users_db_path)
     
     def _init_db(self):
@@ -390,6 +395,11 @@ class PasswordDatabase:
         self.crypto = crypto
         self.conn = sqlite3.connect(str(db_path))
         self._init_db()
+        # Assurer que la base de données est accessible par le groupe
+        try:
+            db_path.chmod(0o664)
+        except Exception:
+            pass
         logger.debug("Initialisation de la base de donnees %s", db_path)
     
     def _init_db(self):
@@ -1571,8 +1581,7 @@ class LoginDialog(Adw.Window):
         if user_info:
             logger.info("Connexion reussie pour %s", self.username)
             self.callback(user_info, password)
-            self.get_transient_for().close()  # Fermer la fenêtre de sélection
-            self.close()
+            self.close()  # Fermer seulement le dialogue de login
         else:
             logger.warning("Connexion echouee pour %s", self.username)
             self.show_error("Mot de passe incorrect")
@@ -2187,8 +2196,8 @@ class PasswordManagerApplication(Adw.Application):
                 salt = user_info['salt']
                 with open(salt_path, 'wb') as f:
                     f.write(salt)
-                # Sécuriser les permissions du fichier salt
-                salt_path.chmod(0o600)
+                # Sécuriser les permissions du fichier salt (lisible par le groupe)
+                salt_path.chmod(0o640)
             
             crypto = PasswordCrypto(master_password, salt)
             self.db = PasswordDatabase(db_path, crypto)

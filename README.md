@@ -87,7 +87,7 @@ Le script :
 - ✅ Vérifie les prérequis système (Python, GTK4, libadwaita)
 - ✅ Crée l'environnement virtuel Python
 - ✅ Installe les dépendances Python
-- ✅ Crée le répertoire de données partagé `/var/lib/passwordmanager-shared`
+- ✅ Crée le répertoire de données partagé `/var/lib/password-manager-shared`
 - ✅ Configure les permissions multi-utilisateurs
 - ✅ Installe le lanceur dans le menu Applications
 
@@ -95,7 +95,7 @@ Le script :
 
 L'application utilise une **base de données partagée** pour tous les utilisateurs du système :
 
-- 📂 **Emplacement** : `/var/lib/passwordmanager-shared/`
+- 📂 **Emplacement** : `/var/lib/password-manager-shared/`
 - 🔐 **Séparation** : Chaque utilisateur a ses propres fichiers de base de données
 - 🔑 **Sécurité** : Chaque utilisateur chiffre ses données avec son propre mot de passe maître
 - 👥 **Partage** : Tous les utilisateurs du système peuvent utiliser l'application
@@ -126,11 +126,13 @@ source venvpwdmanager/bin/activate
 pip install -r requirements.txt
 ```
 
+> PyGObject (bindings GTK4/libadwaita) est fourni via les paquets système listés ci-dessus ; `requirements.txt` ne contient que les dépendances Python gérées par pip.
+
 #### 3. Créer le répertoire de données partagé
 ```bash
-sudo mkdir -p /var/lib/passwordmanager-shared
-sudo chown root:users /var/lib/passwordmanager-shared
-sudo chmod 775 /var/lib/passwordmanager-shared
+sudo mkdir -p /var/lib/password-manager-shared
+sudo chown root:users /var/lib/password-manager-shared
+sudo chmod 2775 /var/lib/password-manager-shared
 sudo usermod -a -G users $USER
 # Vous devez vous déconnecter/reconnecter après cette étape
 ```
@@ -487,6 +489,8 @@ source venvpwdmanager/bin/activate
 # Installer les dépendances Python
 pip install -r requirements.txt
 ```
+
+> PyGObject (bindings GTK4/libadwaita) doit être installé via les paquets système listés ci-dessus ; `requirements.txt` ne contient que les dépendances Python gérées par pip.
 
 #### 2. Tests et validation
 ```bash

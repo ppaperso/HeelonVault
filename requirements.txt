@@ -1,2 +1,2 @@
+# PyGObject (GTK4 bindings) est fourni par les paquets système (python3-gi, libadwaita).
 cryptography>=41.0.0
-PyGObject>=3.42.0

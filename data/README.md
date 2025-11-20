@@ -9,7 +9,7 @@ L'application utilise deux répertoires distincts selon le mode :
 | Mode | Variable | Emplacement | Usage |
 |------|----------|-------------|-------|
 | **DEV** | `DEV_MODE=1` | `./data/` | Développement et tests |
-| **PROD** | (par défaut) | `/var/lib/passwordmanager-shared/` | Production |
+| **PROD** | (par défaut) | `/var/lib/password-manager-shared/` | Production |
 
 ## 🛡️ Sécurité
 
@@ -39,7 +39,7 @@ DEV_MODE=1 python3 password_manager.py
 
 ### Mode production
 ```bash
-python3 password_manager.py    # Utilise /var/lib/passwordmanager-shared/
+python3 password_manager.py    # Utilise /var/lib/password-manager-shared/
 # OU via l'icône du menu Applications
 ```
 

@@ -41,8 +41,8 @@ class AddEditDialog(Adw.Window):
         content.set_margin_top(20)
         content.set_margin_bottom(20)
 
-        self.title_entry = self.create_entry_row("Titre *", entry['title'] if entry else "")
-        content.append(self.title_entry)
+        title_row, self.title_entry = self.create_entry_row("Titre *", entry['title'] if entry else "")
+        content.append(title_row)
 
         cat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
         cat_label = Gtk.Label(label="Catégorie", xalign=0)
@@ -158,7 +158,7 @@ class AddEditDialog(Adw.Window):
         entry = Gtk.Entry()
         entry.set_text(value)
         box.append(entry)
-        return entry
+        return box, entry
 
     def on_generate_clicked(self, button):
         dialog = PasswordGeneratorDialog(self, self.set_generated_password)
@@ -168,7 +168,7 @@ class AddEditDialog(Adw.Window):
         self.password_entry.set_text(password)
 
     def on_save_clicked(self, button):
-        title = self.title_entry.get_children()[1].get_text()
+        title = self.title_entry.get_text()
         username = self.username_entry.get_text()
         password = self.password_entry.get_text()
         url = self.url_entry.get_text()
