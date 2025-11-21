@@ -5,6 +5,16 @@
 
 set -e
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo ""
 echo "🧪 Test de la fonctionnalité d'import CSV"
 echo "=========================================="
 

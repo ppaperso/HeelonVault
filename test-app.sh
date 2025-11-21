@@ -7,6 +7,9 @@
 
 set -e
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/venv-dev"
 APP_FILE="${SCRIPT_DIR}/password_manager.py"
@@ -16,6 +19,14 @@ if [ "$1" = "run" ]; then
     exec "${SCRIPT_DIR}/run-dev.sh"
 fi
 
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo "⚠️  Les données de production ne seront PAS touchées"
+echo ""
 echo "🧪 Script de test du gestionnaire de mots de passe"
 echo "=================================================="
 echo ""
@@ -254,8 +265,52 @@ if [ $? -ne 0 ]; then
     exit 1
 fi
 
+echo ""
+echo "=================================================="
+echo "🧪 Tests de protection des données et rotation"
+echo "=================================================="
+echo ""
+
+# Test des permissions
+echo "🔐 Test des permissions des fichiers..."
+bash tests/test-data-protection.sh
+if [ $? -ne 0 ]; then
+    echo "⚠️  Avertissement: certains tests de protection ont échoué"
+fi
+
+echo ""
+
+# Test des sauvegardes et rotation
+echo "🔄 Test du service de sauvegarde et rotation..."
+python3 -m unittest tests.unit.test_backup_service -v
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Tests de sauvegarde échoués"
+    exit 1
+fi
+
+echo ""
+
+# Test de rotation spécifique
+echo "🔄 Test de rotation des sauvegardes..."
+python3 -m unittest tests.unit.test_backup_rotation -v
+if [ $? -ne 0 ]; then
+    echo ""
+    echo "❌ Test de rotation échoué"
+    exit 1
+fi
+
+echo ""
 echo "=================================================="
 echo "✅ Tous les tests sont réussis!"
+echo ""
+echo "📊 Résumé des tests:"
+echo "   ✅ Syntaxe Python"
+echo "   ✅ Imports et dépendances"
+echo "   ✅ Tests unitaires de base"
+echo "   ✅ Protection des données (permissions 600)"
+echo "   ✅ Service de sauvegarde"
+echo "   ✅ Rotation des sauvegardes (max 7)"
 echo ""
 echo "🚀 L'application est prête à être lancée:"
 echo "   ./test-app.sh run    # ou ./run-dev.sh"

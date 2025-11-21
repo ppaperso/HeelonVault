@@ -2,7 +2,7 @@
 
 Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé avec GTK4 et Python.
 
-![Version](https://img.shields.io/badge/version-0.2.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 ![GTK Version](https://img.shields.io/badge/GTK-4.0-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
@@ -15,6 +15,11 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Mot de passe maître individuel** : Chaque utilisateur a son propre mot de passe
 - **Générateur cryptographiquement sécurisé** utilisant `secrets`
 - **Workspaces isolés** : Séparation complète des données entre utilisateurs
+- **Sauvegarde automatique système** : Backup complet de tous les utilisateurs au logout 🆕
+- **Rotation intelligente** : Conservation des 7 sauvegardes les plus récentes 🆕
+- **Permissions strictes** : Fichiers protégés avec permissions 600 (propriétaire uniquement) 🆕
+- **Protection multi-niveaux** : Système de fichiers + chiffrement + authentification 🆕
+- **Interface de gestion des sauvegardes** : Menu admin pour gérer et restaurer les backups 🆕
 
 ### 👥 Gestion multi-utilisateurs
 - **Comptes utilisateurs séparés** : Chaque utilisateur a son propre espace
@@ -207,6 +212,11 @@ En plus des fonctionnalités utilisateur standard :
 - **Voir tous les comptes** avec dates de création et dernière connexion
 - **Réinitialiser un mot de passe** : Pour un utilisateur qui l'a oublié
 - **Supprimer un compte** : Supprime l'utilisateur et toutes ses données
+- **Gérer les sauvegardes** : Menu "Gérer les sauvegardes" 🆕
+  - Voir la liste de toutes les sauvegardes système
+  - Créer une sauvegarde manuelle
+  - Consulter les détails de chaque backup
+  - Accéder aux instructions de restauration
 - **Badge "Admin"** visible dans l'interface
 
 #### Réinitialiser un mot de passe oublié (Admin)

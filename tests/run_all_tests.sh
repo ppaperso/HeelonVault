@@ -1,13 +1,22 @@
 #!/bin/bash
 # Script pour lancer tous les tests d'intégration
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo ""
 echo "🧪 Lancement des tests d'intégration"
 echo "=" 70 | tr ' ' '='
 
 VENV_PYTHON="./venv-dev/bin/python"
 REPO_ROOT="$(cd "$(dirname "$0")/.." && pwd)"
 export PYTHONPATH="$REPO_ROOT"
-export DEV_MODE=1
 TEST_DIR="tests/integration"
 LOG_TEST_SCRIPT="$REPO_ROOT/tests/test-logging.sh"
 

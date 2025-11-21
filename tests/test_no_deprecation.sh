@@ -1,6 +1,16 @@
 #!/bin/bash
 # Script pour vérifier l'absence de DeprecationWarning et d'erreurs critiques
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo ""
 echo "🔍 Test de l'absence de DeprecationWarning et erreurs critiques GTK"
 echo "====================================================================="
 echo ""

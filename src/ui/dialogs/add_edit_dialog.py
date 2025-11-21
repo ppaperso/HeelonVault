@@ -124,11 +124,25 @@ class AddEditDialog(Adw.Window):
         notes_label = Gtk.Label(label="📝 Notes", xalign=0)
         notes_box.append(notes_label)
 
+        # Créer un ScrolledWindow pour le TextView
+        notes_scrolled = Gtk.ScrolledWindow()
+        notes_scrolled.set_min_content_height(150)
+        notes_scrolled.set_vexpand(True)
+        notes_scrolled.set_hexpand(True)
+        
         self.notes_text = Gtk.TextView()
+        self.notes_text.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
+        self.notes_text.set_left_margin(10)
+        self.notes_text.set_right_margin(10)
+        self.notes_text.set_top_margin(10)
+        self.notes_text.set_bottom_margin(10)
+        
         if entry and entry['notes']:
             buffer = self.notes_text.get_buffer()
             buffer.set_text(entry['notes'])
-        notes_box.append(self.notes_text)
+        
+        notes_scrolled.set_child(self.notes_text)
+        notes_box.append(notes_scrolled)
         content.append(notes_box)
 
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)

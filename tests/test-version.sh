@@ -2,6 +2,16 @@
 
 # Test du système de versioning
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo ""
 echo "🔍 Test du système de versioning"
 echo "=================================="
 

@@ -4,6 +4,17 @@ set -euo pipefail
 # Vérifie que la configuration de logs crée les fichiers au bon endroit
 # et que la rotation conserve uniquement les 7 dernières traces.
 
+# ⚠️ SÉCURITÉ: Forcer le mode développement pour les tests
+export DEV_MODE=1
+
+echo "╔════════════════════════════════════════════════════╗"
+echo "║   🧪 TESTS SUR ENVIRONNEMENT DE DÉVELOPPEMENT    ║"
+echo "╚════════════════════════════════════════════════════╝"
+echo ""
+echo "🔒 Mode DEV activé: DEV_MODE=$DEV_MODE"
+echo "📂 Données de test: src/data/"
+echo ""
+
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 LOG_DIR="${ROOT_DIR}/logs"
 KEEP_COUNT=7
@@ -12,7 +23,6 @@ ITERATIONS=$((KEEP_COUNT + 2))
 rm -rf "${LOG_DIR}"
 mkdir -p "${LOG_DIR}"
 
-export DEV_MODE=1
 export PYTHONPATH="${ROOT_DIR}"
 
 declare -a created_logs=()

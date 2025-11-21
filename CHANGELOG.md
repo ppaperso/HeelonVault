@@ -5,6 +5,74 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [0.3.0-beta] - 2025-11-21
+
+### ✨ Ajouté
+
+#### Sauvegarde Automatique
+- **BackupService** : Service complet de gestion des sauvegardes
+  - Sauvegarde automatique au logout si modifications détectées
+  - Sauvegarde système complète (users.db + passwords_*.db + salt_*.bin)
+  - Rotation intelligente : conservation des 7 sauvegardes les plus récentes
+  - Format structuré : dossiers `system_backup_YYYYMMDD_HHMMSS/` avec MANIFEST.txt
+  - Permissions sécurisées 0o700 pour tous les backups
+
+#### Interface de Gestion des Sauvegardes
+- **Menu admin** : "Gérer les sauvegardes" (accessible uniquement aux administrateurs)
+- **BackupManagerDialog** : Interface complète de gestion
+  - Liste des sauvegardes avec date, taille et nombre de fichiers
+  - Bouton de sauvegarde manuelle
+  - Vue détaillée du contenu de chaque backup
+  - Instructions de restauration en 6 étapes
+  - Bouton d'ouverture du dossier de sauvegardes
+
+#### Sécurité Renforcée
+- **Permissions strictes** : Tous les fichiers sensibles en mode 0o600 (au lieu de 0o664)
+  - users.db, passwords_*.db, salt_*.bin
+  - Application automatique au démarrage
+- **Détection des modifications** : Tracking des changements pour optimiser les sauvegardes
+- **Sécurisation des tests** : Tous les scripts de test forcent `DEV_MODE=1`
+  - Bannière de sécurité visible dans tous les scripts
+  - Protection contre l'accès accidentel aux données de production
+  - Documentation complète : `tests/SECURITY_TESTING.md`
+
+#### Tests
+- **test_backup_service.py** : 14 tests unitaires pour le service de sauvegarde
+- **test_backup_rotation.py** : 5 tests de rotation (7, 9, 10, 15 sauvegardes)
+- **test-data-protection.sh** : Tests des permissions et de la protection
+- **Amélioration de test-app.sh** : Ajout des tests de sauvegarde et rotation
+
+### 🐛 Corrigé
+- **Champ Notes** : Zone de texte maintenant accessible dans les dialogues d'ajout/édition
+  - TextView correctement enveloppé dans un ScrolledWindow
+  - Hauteur minimale de 150px pour une meilleure utilisation
+  - Wrap automatique et marges de 10px
+
+### 🔧 Modifié
+- **Organisation de la documentation** : Déplacement de 7 fichiers .md vers `docs/`
+  - RESUME_PROTECTION_DONNEES.md
+  - CHANGELOG_DATA_PROTECTION.md
+  - VERSION_0.1.0-beta.md, VERSION_0.2.0-beta.md
+  - VERSION_SUMMARY.md
+  - CHANGELOG_CSV_IMPORT.md
+  - MULTI_USER_GUIDE.md
+- **PasswordDatabase** : Ajout du tracking des modifications
+  - Méthodes `has_unsaved_changes()` et `mark_as_saved()`
+  - Flag `_has_changes` pour optimiser les sauvegardes
+- **test-app.sh** : Amélioration avec tests de protection et rotation
+
+### 📚 Documentation
+- **docs/VERSION_0.3.0-beta.md** : Documentation complète de la version
+- **tests/SECURITY_TESTING.md** : Guide de sécurité pour les tests
+- **tests/CHANGELOG_SECURITY_FIX.md** : Résumé des corrections de sécurité
+- Mise à jour de tous les fichiers .md avec les nouvelles fonctionnalités
+
+### 🛠️ Technique
+- 250+ lignes : `src/services/backup_service.py`
+- 350+ lignes : `src/ui/dialogs/backup_manager_dialog.py`
+- 19 nouveaux tests unitaires (tous passent ✅)
+- 7 scripts de test sécurisés avec bannière `DEV_MODE=1`
+
 ## [0.2.0-beta] - 2025-11-20
 
 ### ✨ Ajouté

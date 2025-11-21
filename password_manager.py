@@ -32,12 +32,14 @@ from src.ui.dialogs.helpers import present_alert
 from src.ui.dialogs.entry_details_dialog import EntryDetailsDialog
 from src.ui.dialogs.add_edit_dialog import AddEditDialog
 from src.ui.dialogs.password_generator_dialog import PasswordGeneratorDialog
+from src.ui.dialogs.backup_manager_dialog import BackupManagerDialog
 
 # Imports pour la version et À propos
 from src.version import get_version, get_version_info
 from src.ui.dialogs.about_dialog import show_about_dialog
 from src.config.environment import get_data_directory, is_dev_mode
 from src.config.logging_config import configure_logging
+from src.services.backup_service import BackupService
 
 configure_logging()
 logger = logging.getLogger(__name__)
@@ -395,11 +397,15 @@ class PasswordDatabase:
         self.crypto = crypto
         self.conn = sqlite3.connect(str(db_path))
         self._init_db()
-        # Assurer que la base de données est accessible par le groupe
+        self._has_changes = False  # Tracker pour détecter les modifications
+        
+        # Sécuriser les permissions : lecture/écriture propriétaire uniquement
         try:
-            db_path.chmod(0o664)
-        except Exception:
-            pass
+            db_path.chmod(0o600)
+            logger.debug("Permissions sécurisées pour %s (600)", db_path.name)
+        except Exception as e:
+            logger.warning("Impossible de définir les permissions pour %s: %s", db_path, e)
+        
         logger.debug("Initialisation de la base de donnees %s", db_path)
     
     def _init_db(self):
@@ -465,6 +471,7 @@ class PasswordDatabase:
         ''', (title, username, json.dumps(encrypted_pass), url, 
               json.dumps(encrypted_notes) if notes else "", category, tags_str))
         self.conn.commit()
+        self._has_changes = True  # Marquer comme modifié
         logger.info("Entree ajoutee: %s (categorie=%s)", title, category or "Aucune")
         return cursor.lastrowid
     
@@ -559,6 +566,7 @@ class PasswordDatabase:
         cursor = self.conn.cursor()
         cursor.execute('DELETE FROM passwords WHERE id = ?', (entry_id,))
         self.conn.commit()
+        self._has_changes = True  # Marquer comme modifié
         logger.info("Entree supprimee: %s", entry_id)
     
     def update_entry(self, entry_id: int, title: str, username: str, password: str, 
@@ -577,6 +585,7 @@ class PasswordDatabase:
         ''', (title, username, json.dumps(encrypted_pass), url, 
               json.dumps(encrypted_notes) if notes else "", category, tags_str, entry_id))
         self.conn.commit()
+        self._has_changes = True  # Marquer comme modifié
         logger.info("Entree %s mise a jour (titre=%s)", entry_id, title)
     
     def get_all_categories(self):
@@ -603,7 +612,20 @@ class PasswordDatabase:
         self.conn.commit()
         logger.debug("Categorie ajoutee: %s", name)
     
+    def has_unsaved_changes(self) -> bool:
+        """Vérifie si la base de données a des modifications non sauvegardées.
+        
+        Returns:
+            bool: True si des modifications ont été effectuées depuis le dernier backup
+        """
+        return self._has_changes
+    
+    def mark_as_saved(self):
+        """Marque la base de données comme sauvegardée."""
+        self._has_changes = False
+    
     def close(self):
+        """Ferme la connexion à la base de données."""
         self.conn.close()
 
 class PasswordEntryRow(Gtk.ListBoxRow):
@@ -838,6 +860,7 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         
         if user_info['role'] == 'admin':
             menu.append("Gérer les utilisateurs", "app.manage_users")
+            menu.append("Gérer les sauvegardes", "app.manage_backups")
         
         menu.append("Changer de compte", "app.switch_user")
         menu.append("Déconnexion", "app.logout")
@@ -2127,6 +2150,7 @@ class PasswordManagerApplication(Adw.Application):
         self.window = None
         self.user_manager = None
         self.current_user = None
+        self.backup_service = BackupService(DATA_DIR)
         self.selection_dialog = None  # Garder une référence à la fenêtre de sélection
         
         # Actions
@@ -2150,6 +2174,10 @@ class PasswordManagerApplication(Adw.Application):
         import_csv_action.connect("activate", self.on_import_csv)
         self.add_action(import_csv_action)
         
+        manage_backups_action = Gio.SimpleAction.new("manage_backups", None)
+        manage_backups_action.connect("activate", self.on_manage_backups)
+        self.add_action(manage_backups_action)
+        
         about_action = Gio.SimpleAction.new("about", None)
         about_action.connect("activate", self.on_about)
         self.add_action(about_action)
@@ -2170,9 +2198,37 @@ class PasswordManagerApplication(Adw.Application):
     def show_user_selection(self):
         """Affiche l'écran de sélection d'utilisateur"""
         logger.debug("Affichage du dialogue de selection utilisateur")
+        
+        # Sécuriser les fichiers sensibles au démarrage
+        self._secure_sensitive_files()
+        
         self.selection_dialog = UserSelectionDialog(self, self.user_manager, self.on_user_authenticated)
         self.selection_dialog.set_application(self)  # Important: lier à l'application
         self.selection_dialog.present()
+    
+    def _secure_sensitive_files(self):
+        """Sécurise les permissions de tous les fichiers sensibles."""
+        try:
+            # Sécuriser users.db
+            users_db = DATA_DIR / "users.db"
+            if users_db.exists():
+                users_db.chmod(0o600)
+                logger.debug("Permissions sécurisées: %s (600)", users_db.name)
+            
+            # Sécuriser tous les fichiers salt_*.bin
+            for salt_file in DATA_DIR.glob("salt_*.bin"):
+                salt_file.chmod(0o600)
+                logger.debug("Permissions sécurisées: %s (600)", salt_file.name)
+            
+            # Sécuriser toutes les bases de données passwords_*.db
+            for db_file in DATA_DIR.glob("passwords_*.db"):
+                db_file.chmod(0o600)
+                logger.debug("Permissions sécurisées: %s (600)", db_file.name)
+            
+            logger.info("Sécurisation des fichiers sensibles terminée")
+            
+        except Exception as e:
+            logger.warning("Erreur lors de la sécurisation des fichiers: %s", e)
     
     def on_user_authenticated(self, user_info: dict, master_password: str):
         """Callback après authentification réussie
@@ -2196,8 +2252,9 @@ class PasswordManagerApplication(Adw.Application):
                 salt = user_info['salt']
                 with open(salt_path, 'wb') as f:
                     f.write(salt)
-                # Sécuriser les permissions du fichier salt (lisible par le groupe)
-                salt_path.chmod(0o640)
+                # Sécuriser les permissions du fichier salt (lecture/écriture propriétaire uniquement)
+                salt_path.chmod(0o600)
+                logger.info("Fichier salt créé avec permissions sécurisées: %s", salt_path.name)
             
             crypto = PasswordCrypto(master_password, salt)
             self.db = PasswordDatabase(db_path, crypto)
@@ -2225,8 +2282,34 @@ class PasswordManagerApplication(Adw.Application):
             dialog.present()
     
     def on_logout(self, action, param):
-        """Déconnexion"""
+        """Déconnexion avec sauvegarde automatique"""
         logger.info("Demande de deconnexion")
+        
+        # Sauvegarde automatique avant de fermer
+        if self.db and self.current_user:
+            username = self.current_user['username']
+            
+            # Vérifier si des modifications ont été effectuées
+            if self.db.has_unsaved_changes():
+                logger.info("Modifications détectées pour %s, création d'une sauvegarde...", username)
+                backup_path = self.backup_service.create_user_db_backup(username)
+                
+                if backup_path:
+                    logger.info("Sauvegarde automatique créée: %s", backup_path.name)
+                    self.db.mark_as_saved()
+                    
+                    # Afficher une notification discrète
+                    if self.window:
+                        toast = Adw.Toast.new(f"💾 Sauvegarde créée: {backup_path.name}")
+                        toast.set_timeout(3)
+                        if hasattr(self.window, 'toast_overlay'):
+                            self.window.toast_overlay.add_toast(toast)
+                else:
+                    logger.warning("Échec de la sauvegarde automatique pour %s", username)
+            else:
+                logger.debug("Aucune modification détectée pour %s, sauvegarde ignorée", username)
+        
+        # Fermer la fenêtre et la base de données
         if self.window:
             self.window.close()
             self.window = None
@@ -2259,6 +2342,16 @@ class PasswordManagerApplication(Adw.Application):
             logger.info("Import CSV lance")
             csv_importer = CSVImporter()
             ImportCSVDialog(self.window, self.db, csv_importer).present()
+    
+    def on_manage_backups(self, action, param):
+        """Gérer les sauvegardes (admin uniquement)"""
+        if self.current_user and self.current_user['role'] == 'admin' and self.window:
+            logger.info("Ouverture du dialogue de gestion des sauvegardes")
+            BackupManagerDialog(
+                self.window, 
+                self.backup_service, 
+                self.current_user['username']
+            ).present()
     
     def on_about(self, action, param):
         """Afficher le dialogue À propos"""
