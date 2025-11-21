@@ -156,6 +156,41 @@ if [ "$(id -u)" -ne 0 ]; then
     error_exit "Ce script doit être lancé avec sudo."
 fi
 
+# Détecter si c'est une mise à jour
+if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/password_manager.py" ]; then
+    echo ""
+    echo "⚠️  Une installation existante a été détectée dans $INSTALL_DIR"
+    echo ""
+    if [ -f "$SCRIPT_DIR/update.sh" ]; then
+        echo "🔄 Pour une mise à jour sécurisée avec backup automatique, utilisez:"
+        echo "   sudo bash update.sh"
+        echo ""
+        echo "⚠️  Le script install.sh va ÉCRASER l'installation existante sans backup!"
+        echo ""
+        echo "Continuer quand même avec install.sh (non recommandé)? [o/N]"
+        read -r response
+        if [[ ! "$response" =~ ^[oO]$ ]]; then
+            echo "Installation annulée. Utilisez update.sh pour une mise à jour sécurisée."
+            exit 0
+        fi
+        echo ""
+        echo "⚠️  Vous avez choisi de continuer sans backup automatique."
+        echo "   Assurez-vous d'avoir sauvegardé vos données manuellement!"
+        echo ""
+        sleep 3
+    else
+        echo "⚠️  ATTENTION: Cette opération va écraser l'installation existante."
+        echo "   Assurez-vous d'avoir sauvegardé $DATA_DIR avant de continuer!"
+        echo ""
+        echo "Continuer? [o/N]"
+        read -r response
+        if [[ ! "$response" =~ ^[oO]$ ]]; then
+            echo "Installation annulée."
+            exit 0
+        fi
+    fi
+fi
+
 # Vérifier les prérequis système
 echo "📋 Vérification des prérequis système..."
 if ! command -v python3 &> /dev/null; then
