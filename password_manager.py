@@ -9,7 +9,7 @@ import gi
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib, Gio
+from gi.repository import Gtk, Adw, GLib, Gio, Gdk
 
 import sqlite3
 import json
@@ -422,9 +422,19 @@ class PasswordDatabase:
                 category TEXT,
                 tags TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
-                modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+                modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                last_changed TIMESTAMP
             )
         ''')
+        
+        # Migration : ajouter la colonne last_changed si elle n'existe pas
+        cursor.execute("PRAGMA table_info(passwords)")
+        columns = [col[1] for col in cursor.fetchall()]
+        if 'last_changed' not in columns:
+            cursor.execute('ALTER TABLE passwords ADD COLUMN last_changed TIMESTAMP')
+            # Initialiser last_changed avec created_at pour les entrées existantes
+            cursor.execute('UPDATE passwords SET last_changed = created_at WHERE last_changed IS NULL')
+            logger.info("Colonne last_changed ajoutée à la table passwords")
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS categories (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
@@ -466,8 +476,8 @@ class PasswordDatabase:
         
         cursor = self.conn.cursor()
         cursor.execute('''
-            INSERT INTO passwords (title, username, password_data, url, notes, category, tags)
-            VALUES (?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO passwords (title, username, password_data, url, notes, category, tags, last_changed)
+            VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
         ''', (title, username, json.dumps(encrypted_pass), url, 
               json.dumps(encrypted_notes) if notes else "", category, tags_str))
         self.conn.commit()
@@ -484,10 +494,10 @@ class PasswordDatabase:
             search_text: Texte de recherche dans titre, username ou URL
             
         Returns:
-            List[Tuple]: Liste des entrées correspondantes
+            List[Tuple]: Liste des entrées correspondantes (id, title, username, password_data, url, tags, category)
         """
         cursor = self.conn.cursor()
-        query = 'SELECT id, title, username, url, category, tags FROM passwords WHERE 1=1'
+        query = 'SELECT id, title, username, password_data, url, tags, category, last_changed FROM passwords WHERE 1=1'
         params = []
         
         if category_filter and category_filter != "Toutes":
@@ -576,17 +586,41 @@ class PasswordDatabase:
         encrypted_notes = self.crypto.encrypt(notes) if notes else ""
         tags_str = json.dumps(tags if tags else [])
         
+        # Vérifier si le mot de passe a changé
         cursor = self.conn.cursor()
-        cursor.execute('''
-            UPDATE passwords 
-            SET title=?, username=?, password_data=?, url=?, notes=?, 
-                category=?, tags=?, modified_at=CURRENT_TIMESTAMP
-            WHERE id=?
-        ''', (title, username, json.dumps(encrypted_pass), url, 
-              json.dumps(encrypted_notes) if notes else "", category, tags_str, entry_id))
+        cursor.execute('SELECT password_data FROM passwords WHERE id=?', (entry_id,))
+        old_pass_data = cursor.fetchone()
+        password_changed = False
+        
+        if old_pass_data:
+            try:
+                old_encrypted = json.loads(old_pass_data[0])
+                old_password = self.crypto.decrypt(old_encrypted)
+                password_changed = (old_password != password)
+            except:
+                password_changed = True
+        
+        # Mettre à jour last_changed seulement si le mot de passe a changé
+        if password_changed:
+            cursor.execute('''
+                UPDATE passwords 
+                SET title=?, username=?, password_data=?, url=?, notes=?, 
+                    category=?, tags=?, modified_at=CURRENT_TIMESTAMP, last_changed=CURRENT_TIMESTAMP
+                WHERE id=?
+            ''', (title, username, json.dumps(encrypted_pass), url, 
+                  json.dumps(encrypted_notes) if notes else "", category, tags_str, entry_id))
+        else:
+            cursor.execute('''
+                UPDATE passwords 
+                SET title=?, username=?, password_data=?, url=?, notes=?, 
+                    category=?, tags=?, modified_at=CURRENT_TIMESTAMP
+                WHERE id=?
+            ''', (title, username, json.dumps(encrypted_pass), url, 
+                  json.dumps(encrypted_notes) if notes else "", category, tags_str, entry_id))
+        
         self.conn.commit()
         self._has_changes = True  # Marquer comme modifié
-        logger.info("Entree %s mise a jour (titre=%s)", entry_id, title)
+        logger.info("Entree %s mise a jour (titre=%s, mdp_change=%s)", entry_id, title, password_changed)
     
     def get_all_categories(self):
         """Récupère toutes les catégories"""
@@ -623,6 +657,66 @@ class PasswordDatabase:
     def mark_as_saved(self):
         """Marque la base de données comme sauvegardée."""
         self._has_changes = False
+    
+    def get_duplicate_passwords(self):
+        """Détecte les mots de passe dupliqués.
+        
+        Returns:
+            dict: Dictionnaire {entry_id: [autres_entry_ids_avec_meme_mdp]}
+        """
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT id, password_data FROM passwords')
+        entries = cursor.fetchall()
+        
+        # Créer un mapping password_hash -> [entry_ids]
+        password_map = {}
+        for entry_id, encrypted_pass_json in entries:
+            try:
+                encrypted_pass = json.loads(encrypted_pass_json)
+                password = self.crypto.decrypt(encrypted_pass)
+                # Utiliser un hash pour comparer sans stocker le mot de passe en clair
+                pwd_hash = hashlib.sha256(password.encode()).hexdigest()
+                
+                if pwd_hash not in password_map:
+                    password_map[pwd_hash] = []
+                password_map[pwd_hash].append(entry_id)
+            except Exception as e:
+                logger.warning("Erreur lors de la vérification des doublons pour l'entrée %s: %s", entry_id, e)
+        
+        # Identifier les doublons (hash avec plus d'une entrée)
+        duplicates = {}
+        for pwd_hash, entry_ids in password_map.items():
+            if len(entry_ids) > 1:
+                for entry_id in entry_ids:
+                    # Chaque entrée pointe vers les autres avec le même mot de passe
+                    duplicates[entry_id] = [eid for eid in entry_ids if eid != entry_id]
+        
+        logger.debug("Détection des doublons: %d entrées avec mots de passe dupliqués", len(duplicates))
+        return duplicates
+    
+    def get_password_age_days(self, entry_id: int):
+        """Calcule l'âge d'un mot de passe en jours.
+        
+        Args:
+            entry_id: ID de l'entrée
+            
+        Returns:
+            int: Nombre de jours depuis le dernier changement ou None si erreur
+        """
+        cursor = self.conn.cursor()
+        cursor.execute('SELECT last_changed FROM passwords WHERE id=?', (entry_id,))
+        result = cursor.fetchone()
+        
+        if not result or not result[0]:
+            return None
+        
+        try:
+            last_changed = datetime.fromisoformat(result[0])
+            age = (datetime.now() - last_changed).days
+            return age
+        except Exception as e:
+            logger.warning("Erreur lors du calcul de l'âge du mot de passe %s: %s", entry_id, e)
+            return None
     
     def close(self):
         """Ferme la connexion à la base de données."""
@@ -674,104 +768,244 @@ class PasswordEntryRow(Gtk.ListBoxRow):
         self.set_child(box)
 
 
+def analyze_password_strength(password):
+    """Analyse la force d'un mot de passe et retourne (score, label, color_class)
+    
+    Returns:
+        tuple: (score 0-4, label descriptif, classe CSS)
+    """
+    if not password:
+        return (0, "Aucun", "error")
+    
+    score = 0
+    length = len(password)
+    
+    # Longueur (max 2 points)
+    if length >= 12:
+        score += 2
+    elif length >= 8:
+        score += 1
+    
+    # Complexité (max 2 points)
+    has_lower = any(c.islower() for c in password)
+    has_upper = any(c.isupper() for c in password)
+    has_digit = any(c.isdigit() for c in password)
+    has_special = any(not c.isalnum() for c in password)
+    
+    complexity = sum([has_lower, has_upper, has_digit, has_special])
+    if complexity >= 3:
+        score += 2
+    elif complexity >= 2:
+        score += 1
+    
+    # Mapping score -> label, color
+    if score >= 4:
+        return (4, "Très fort", "success")
+    elif score >= 3:
+        return (3, "Fort", "success")
+    elif score >= 2:
+        return (2, "Moyen", "warning")
+    else:
+        return (1, "Faible", "error")
+
+
 class PasswordCard(Gtk.FlowBoxChild):
     """Card moderne pour afficher une entrée de mot de passe dans un FlowBox"""
     
-    def __init__(self, entry_id, title, username, url, category, tags):
+    def __init__(self, entry_id, title, username, password, url, category, tags, parent_window, 
+                 password_age=None, is_duplicate=False):
         super().__init__()
         self.entry_id = entry_id
         self.title = title
         self.username = username
+        self.password = password
         self.url = url
         self.category = category
         self.tags = tags
+        self.parent_window = parent_window
+        self.password_age = password_age
+        self.is_duplicate = is_duplicate
         
         # Container principal avec style card
         frame = Gtk.Frame()
         frame.set_css_classes(['card'])
         
-        card_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        card_box.set_margin_start(16)
-        card_box.set_margin_end(16)
-        card_box.set_margin_top(16)
-        card_box.set_margin_bottom(16)
-        card_box.set_size_request(200, -1)  # Largeur fixe pour consistance
+        content_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
+        content_box.set_margin_start(16)
+        content_box.set_margin_end(16)
+        content_box.set_margin_top(16)
+        content_box.set_margin_bottom(16)
+        content_box.set_size_request(260, -1)
         
-        # Header avec icône
+        info_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        info_box.set_hexpand(True)
+        
+        # En-tête titre + catégorie
         header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header_box.set_hexpand(True)
         
-        # Icône basée sur la catégorie ou l'URL
         icon_name = self._get_icon_for_entry(category, url)
         icon = Gtk.Image.new_from_icon_name(icon_name)
         icon.set_pixel_size(32)
         header_box.append(icon)
         
-        # Titre
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         title_box.set_hexpand(True)
         
+        # Analyse de la force du mot de passe pour coloriser le titre
+        strength_score, strength_label, strength_color = analyze_password_strength(password)
+        
         title_label = Gtk.Label(label=title, xalign=0)
-        title_label.set_css_classes(['title-4'])
-        title_label.set_ellipsize(3)  # ELLIPSIZE_END
-        title_label.set_max_width_chars(20)
+        title_label.set_css_classes(['title-4', strength_color])
+        title_label.set_ellipsize(3)
+        title_label.set_max_width_chars(24)
+        title_label.set_tooltip_text(f"Mot de passe {strength_label.lower()}")
         title_box.append(title_label)
         
-        # Catégorie
         if category:
-            cat_label = Gtk.Label(label=f"📁 {category}", xalign=0)
+            cat_label = Gtk.Label(label=category, xalign=0)
             cat_label.set_css_classes(['caption', 'dim-label'])
             cat_label.set_ellipsize(3)
-            cat_label.set_max_width_chars(20)
+            cat_label.set_max_width_chars(24)
             title_box.append(cat_label)
         
         header_box.append(title_box)
-        card_box.append(header_box)
         
-        # Séparateur
-        separator = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
-        card_box.append(separator)
+        # Badges de sécurité (duplication et renouvellement)
+        badges_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
         
-        # Username
+        if is_duplicate:
+            dup_badge = Gtk.Label(label="⚠")
+            dup_badge.set_css_classes(['warning'])
+            dup_badge.set_tooltip_text("Mot de passe dupliqué - utilisé dans plusieurs comptes")
+            badges_box.append(dup_badge)
+        
+        if password_age is not None and password_age > 90:
+            renew_badge = Gtk.Label(label="🔄")
+            renew_badge.set_tooltip_text(f"Mot de passe ancien ({password_age} jours) - renouvellement recommandé")
+            if password_age > 180:
+                renew_badge.set_css_classes(['error'])
+            else:
+                renew_badge.set_css_classes(['warning'])
+            badges_box.append(renew_badge)
+        
+        if is_duplicate or (password_age is not None and password_age > 90):
+            header_box.append(badges_box)
+        
+        info_box.append(header_box)
+        
+        # Ligne username / URL résumé
+        meta_grid = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        
         if username:
-            user_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            user_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             user_icon = Gtk.Image.new_from_icon_name("avatar-default-symbolic")
             user_icon.set_pixel_size(16)
-            user_box.append(user_icon)
-            
+            user_row.append(user_icon)
             user_label = Gtk.Label(label=username, xalign=0)
             user_label.set_css_classes(['body'])
             user_label.set_ellipsize(3)
-            user_label.set_max_width_chars(20)
+            user_label.set_max_width_chars(28)
             user_label.set_hexpand(True)
-            user_box.append(user_label)
-            
-            card_box.append(user_box)
+            user_row.append(user_label)
+            meta_grid.append(user_row)
         
-        # Tags
-        if tags and len(tags) > 0:
-            tags_flow = Gtk.FlowBox()
-            tags_flow.set_selection_mode(Gtk.SelectionMode.NONE)
-            tags_flow.set_max_children_per_line(2)
-            tags_flow.set_margin_top(4)
-            
-            for tag in tags[:2]:  # Limiter à 2 tags
+        if url:
+            url_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            globe_icon = Gtk.Image.new_from_icon_name("network-workgroup-symbolic")
+            globe_icon.set_pixel_size(16)
+            url_row.append(globe_icon)
+            url_label = Gtk.Label(label=url, xalign=0)
+            url_label.set_css_classes(['caption'])
+            url_label.set_ellipsize(3)
+            url_label.set_max_width_chars(28)
+            url_row.append(url_label)
+            meta_grid.append(url_row)
+        
+        info_box.append(meta_grid)
+        
+        # Tags compactés
+        if tags:
+            tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+            for tag in tags[:2]:
                 tag_label = Gtk.Label(label=f"#{tag}")
                 tag_label.set_css_classes(['caption', 'accent'])
-                tag_child = Gtk.FlowBoxChild()
-                tag_child.set_child(tag_label)
-                tags_flow.append(tag_child)
-            
+                tags_box.append(tag_label)
             if len(tags) > 2:
-                more_label = Gtk.Label(label=f"+{len(tags)-2}")
-                more_label.set_css_classes(['caption', 'dim-label'])
-                more_child = Gtk.FlowBoxChild()
-                more_child.set_child(more_label)
-                tags_flow.append(more_child)
-            
-            card_box.append(tags_flow)
+                extra_label = Gtk.Label(label=f"+{len(tags)-2}")
+                extra_label.set_css_classes(['caption', 'dim-label'])
+                tags_box.append(extra_label)
+            info_box.append(tags_box)
         
-        frame.set_child(card_box)
+        content_box.append(info_box)
+        
+        # Colonne d'actions à droite
+        actions_column = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        actions_column.set_valign(Gtk.Align.START)
+        
+        if username:
+            actions_column.append(self._build_action_button(
+                "avatar-default-symbolic",
+                "Copier le nom d'utilisateur",
+                lambda x: self._copy_to_clipboard(username, "Nom d'utilisateur copié")
+            ))
+        
+        actions_column.append(self._build_action_button(
+            "dialog-password-symbolic",
+            "Copier le mot de passe",
+            lambda x: self._copy_to_clipboard(password, "Mot de passe copié")
+        ))
+        
+        if url:
+            actions_column.append(self._build_action_button(
+                "edit-copy-symbolic",
+                "Copier l'URL",
+                lambda x: self._copy_to_clipboard(url, "URL copiée")
+            ))
+            actions_column.append(self._build_action_button(
+                "web-browser-symbolic",
+                "Ouvrir dans le navigateur",
+                lambda x: self._open_url(url),
+                extra_classes=['suggested-action']
+            ))
+        
+        content_box.append(actions_column)
+        
+        frame.set_child(content_box)
         self.set_child(frame)
+
+    def _build_action_button(self, icon_name, tooltip, callback, extra_classes=None):
+        button = Gtk.Button()
+        button.set_icon_name(icon_name)
+        button.set_tooltip_text(tooltip)
+        button.set_css_classes(['flat'])
+        if extra_classes:
+            for cls in extra_classes:
+                button.add_css_class(cls)
+        button.connect("clicked", callback)
+        return button
+    
+    def _copy_to_clipboard(self, text, message="Copié dans le presse-papiers"):
+        """Copie le texte dans le presse-papiers via la fenêtre parente"""
+        if self.parent_window and hasattr(self.parent_window, "copy_to_clipboard"):
+            self.parent_window.copy_to_clipboard(text, message)
+        else:
+            clipboard = self.get_clipboard()
+            if clipboard:
+                try:
+                    bytes_value = GLib.Bytes.new(text.encode('utf-8'))
+                    provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
+                    clipboard.set_content(provider)
+                except Exception as exc:
+                    logger.exception("Impossible d'ecrire dans le presse-papiers (fallback): %s", exc)
+    
+    def _open_url(self, url):
+        """Ouvre l'URL dans le navigateur par défaut"""
+        import subprocess
+        try:
+            subprocess.Popen(['xdg-open', url])
+        except Exception as e:
+            print(f"Erreur lors de l'ouverture de l'URL: {e}")
     
     def _get_icon_for_entry(self, category, url):
         """Retourne une icône appropriée selon la catégorie ou l'URL"""
@@ -809,12 +1043,37 @@ class PasswordManagerApp(Adw.ApplicationWindow):
     
     def __init__(self, app, db: PasswordDatabase, user_info: dict, user_manager: UserManager):
         super().__init__(application=app, title="Gestionnaire de mots de passe")
-        self.set_default_size(1000, 650)
+        # Obtenir la taille de l'écran et définir à 70%
+        try:
+            display = self.get_display()
+            if display:
+                monitors = display.get_monitors()
+                if monitors and len(monitors) > 0:
+                    monitor = monitors[0]
+                    geometry = monitor.get_geometry()
+                    width = int(geometry.width * 0.7)
+                    height = int(geometry.height * 0.7)
+                else:
+                    # Valeurs par défaut si pas de moniteur
+                    width = 1400
+                    height = 900
+            else:
+                width = 1400
+                height = 900
+        except:
+            # Fallback en cas d'erreur
+            width = 1400
+            height = 900
+        
+        self.set_default_size(width, height)
         self.db = db
         self.user_info = user_info
         self.user_manager = user_manager
         self.current_category_filter = "Toutes"
         self.current_tag_filter = None
+        self._clipboard_clear_source_id = None
+        self._clipboard_token = 0
+        self.window_width = width  # Sauvegarder pour utilisation ultérieure
         
         # Layout principal
         main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -1003,7 +1262,10 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         tag_scroll.set_child(self.tag_flowbox)
         sidebar.append(tag_scroll)
         
+        # Définir la position du séparateur à 30% pour la sidebar
         paned.set_start_child(sidebar)
+        paned.set_resize_start_child(False)
+        paned.set_position(int(self.window_width * 0.3))  # 30% pour la recherche/filtres
         
         # Zone principale avec FlowBox des cards
         main_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -1054,7 +1316,11 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         paned.set_end_child(main_content)
         
         main_box.append(paned)
-        self.set_content(main_box)
+        
+        # Overlay pour afficher des toasts de confirmation
+        self.toast_overlay = Adw.ToastOverlay()
+        self.toast_overlay.set_child(main_box)
+        self.set_content(self.toast_overlay)
         
         self.load_categories()
         self.load_tags()
@@ -1147,6 +1413,9 @@ class PasswordManagerApp(Adw.ApplicationWindow):
             self.current_tag_filter or "Aucun"
         )
         
+        # Détecter les mots de passe dupliqués
+        duplicates = self.db.get_duplicate_passwords()
+        
         # Afficher/masquer l'état vide
         if len(entries) == 0:
             self.empty_state.set_visible(True)
@@ -1157,8 +1426,27 @@ class PasswordManagerApp(Adw.ApplicationWindow):
             
             # Ajout optimisé des cards
             for entry in entries:
+                # entry = [id, title, username, password (encrypted), url, tags, category, last_changed]
+                entry_id = entry[0]
                 tags = json.loads(entry[5]) if entry[5] else []
-                card = PasswordCard(entry[0], entry[1], entry[2], entry[3], entry[4], tags)
+                
+                # Déchiffrer le password
+                try:
+                    encrypted_pass = json.loads(entry[3])
+                    password = self.db.crypto.decrypt(encrypted_pass)
+                except:
+                    password = ""
+                
+                # Vérifier si c'est un doublon
+                is_duplicate = entry_id in duplicates
+                
+                # Calculer l'âge du mot de passe
+                password_age = self.db.get_password_age_days(entry_id)
+                
+                card = PasswordCard(
+                    entry_id, entry[1], entry[2], password, entry[4], entry[6], tags, self,
+                    password_age=password_age, is_duplicate=is_duplicate
+                )
                 self.flowbox.append(card)
     
     def on_category_selected(self, listbox, row):
@@ -1202,13 +1490,11 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         self.flowbox.set_filter_func(filter_func if text else None)
     
     def on_card_activated(self, flowbox, child):
-        """Ouvre le dialogue de détails quand une card est cliquée"""
+        """Ouvre le dialogue d'édition quand une card est double-cliquée"""
         if child and hasattr(child, 'entry_id'):
-            logger.info("Card selectionnee pour l'entree %s", child.entry_id)
-            entry = self.db.get_entry(child.entry_id)
-            if entry:
-                dialog = EntryDetailsDialog(self, self.db, entry, self.on_edit_clicked, self.on_delete_clicked)
-                dialog.present()
+            logger.info("Card double-cliquee pour edition de l'entree %s", child.entry_id)
+            # Double-clic ouvre directement le dialogue d'édition
+            self.on_edit_clicked(child.entry_id)
     
     def on_row_selected(self, listbox, row):
         """Affiche les détails d'une entrée sélectionnée (legacy - pour compatibilité)"""
@@ -1318,7 +1604,10 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         if copyable:
             copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
             copy_btn.set_tooltip_text("Copier dans le presse-papiers")
-            copy_btn.connect("clicked", lambda x: self.copy_to_clipboard(value))
+            copy_btn.connect(
+                "clicked",
+                lambda x, label=label_text: self.copy_to_clipboard(value, f"{label} copié")
+            )
             value_box.append(copy_btn)
         
         if is_url and value:
@@ -1336,11 +1625,91 @@ class PasswordManagerApp(Adw.ApplicationWindow):
         box.append(value_box)
         return box
     
-    def copy_to_clipboard(self, text):
-        """Copie du texte dans le presse-papiers"""
+    def copy_to_clipboard(self, text, message="Copié dans le presse-papiers"):
+        """Copie du texte dans le presse-papiers avec vidage auto"""
         clipboard = self.get_clipboard()
-        clipboard.set(text)
+        if not clipboard:
+            logger.warning("Clipboard non disponible pour la copie")
+            return
+        self._set_clipboard_text(clipboard, text)
         logger.debug("Texte copie dans le presse-papiers (%d caracteres)", len(text))
+        self.show_toast(message)
+        self._schedule_clipboard_clear()
+
+    def _set_clipboard_text(self, clipboard: Gdk.Clipboard, text: str):
+        """Écrit du texte dans le presse-papiers via un ContentProvider"""
+        try:
+            bytes_value = GLib.Bytes.new(text.encode('utf-8'))
+            provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
+            clipboard.set_content(provider)
+            self._persist_clipboard(clipboard)
+        except Exception as exc:
+            logger.exception("Impossible d'ecrire dans le presse-papiers: %s", exc)
+
+    def _persist_clipboard(self, clipboard: Gdk.Clipboard):
+        """Demande la persistance du contenu clipboard (Wayland/X11)."""
+        try:
+            clipboard.store_async(
+                GLib.PRIORITY_DEFAULT,
+                None,
+                self._on_clipboard_store_finished,
+                None,
+            )
+        except AttributeError:
+            # store_async n'est pas disponible sur toutes les plateformes
+            pass
+        except Exception as exc:
+            logger.debug("Impossible de persister le presse-papiers: %s", exc)
+
+    def _on_clipboard_store_finished(self, clipboard, result, _data):
+        try:
+            clipboard.store_finish(result)
+        except Exception as exc:
+            logger.debug("store_finish a echoue: %s", exc)
+
+    def _schedule_clipboard_clear(self):
+        """Programme l'effacement du presse-papiers après 30 secondes"""
+        self._clipboard_token += 1
+        token = self._clipboard_token
+        if self._clipboard_clear_source_id:
+            GLib.source_remove(self._clipboard_clear_source_id)
+            self._clipboard_clear_source_id = None
+        logger.debug("Planification du vidage du presse-papiers dans 30s (token=%s)", token)
+        self._clipboard_clear_source_id = GLib.timeout_add_seconds(
+            30,
+            lambda token=token: self._clear_clipboard_if_token(token)
+        )
+
+    def _clear_clipboard_if_token(self, token):
+        """Efface le presse-papiers si le token correspond au dernier copier"""
+        logger.debug(
+            "Execution du timer de purge (token=%s, courant=%s)",
+            token,
+            self._clipboard_token
+        )
+        if token != self._clipboard_token:
+            return False
+        clipboard = self.get_clipboard()
+        if clipboard:
+            try:
+                # Remplacer par une chaîne vide et persister pour effacer aussi la copie du compositor
+                bytes_value = GLib.Bytes.new(b'')
+                provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
+                clipboard.set_content(provider)
+                logger.info("Presse-papiers nettoye apres 30 secondes")
+                self.show_toast("Presse-papiers vidé pour sécurité")
+            except Exception as exc:
+                logger.warning("Impossible de vider le presse-papiers: %s", exc)
+        else:
+            logger.warning("Impossible de vider le presse-papiers : clipboard indisponible")
+        self._clipboard_clear_source_id = None
+        return False
+
+    def show_toast(self, message):
+        """Affiche un toast informatif"""
+        if hasattr(self, 'toast_overlay') and self.toast_overlay:
+            toast = Adw.Toast.new(message)
+            self.toast_overlay.add_toast(toast)
     
     def open_url(self, url):
         """Ouvre une URL dans le navigateur par défaut

@@ -56,3 +56,4 @@ htmlcov/
 # Backup files
 *.bak
 *.backup
+browser_integration/.webext-credentials

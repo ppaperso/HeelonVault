@@ -5,6 +5,8 @@ import sqlite3
 import json
 from pathlib import Path
 import hashlib
+import secrets
+import string
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 from cryptography.hazmat.primitives import hashes
@@ -28,6 +30,12 @@ def encrypt_password(password: str, key: bytes) -> str:
     encrypted = nonce + ciphertext
     return base64.b64encode(encrypted).decode()
 
+
+def generate_test_password(length: int = 16) -> str:
+    """Génère un mot de passe pseudo-aléatoire pour les données de test."""
+    alphabet = string.ascii_letters + string.digits + "!@#$%^&*()-_=+"
+    return ''.join(secrets.choice(alphabet) for _ in range(length))
+
 # Configuration
 data_dir = Path.home() / '.local/share/passwordmanager'
 db_path = data_dir / 'passwords_admin.db'
@@ -42,7 +50,7 @@ test_entries = [
     {
         'title': 'Gmail',
         'username': 'john.doe@gmail.com',
-        'password': 'SuperSecure123!',
+        'password_length': 16,
         'url': 'https://mail.google.com',
         'category': 'Email',
         'tags': ['work', 'important'],
@@ -51,7 +59,7 @@ test_entries = [
     {
         'title': 'GitHub',
         'username': 'johndoe',
-        'password': 'GitH@bPass2024',
+        'password_length': 18,
         'url': 'https://github.com',
         'category': 'Développement',
         'tags': ['work', 'code'],
@@ -60,7 +68,7 @@ test_entries = [
     {
         'title': 'Facebook',
         'username': 'john.doe',
-        'password': 'Face$ecure99',
+        'password_length': 16,
         'url': 'https://facebook.com',
         'category': 'Réseaux sociaux',
         'tags': ['social', 'personal'],
@@ -69,7 +77,7 @@ test_entries = [
     {
         'title': 'Amazon',
         'username': 'john@example.com',
-        'password': 'Amaz0n#Shop',
+        'password_length': 17,
         'url': 'https://amazon.fr',
         'category': 'Shopping',
         'tags': ['shopping', 'personal'],
@@ -78,7 +86,7 @@ test_entries = [
     {
         'title': 'Netflix',
         'username': 'john.doe@gmail.com',
-        'password': 'Netfl!x2024',
+        'password_length': 15,
         'url': 'https://netflix.com',
         'category': 'Divertissement',
         'tags': ['entertainment', 'subscription'],
@@ -87,7 +95,7 @@ test_entries = [
     {
         'title': 'LinkedIn',
         'username': 'john-doe',
-        'password': 'Link3dIn@Pro',
+        'password_length': 18,
         'url': 'https://linkedin.com',
         'category': 'Professionnel',
         'tags': ['work', 'social'],
@@ -96,7 +104,7 @@ test_entries = [
     {
         'title': 'Banque Credit Agricole',
         'username': '12345678',
-        'password': 'B@nk2024Secure',
+        'password_length': 20,
         'url': 'https://credit-agricole.fr',
         'category': 'Finance',
         'tags': ['bank', 'important'],
@@ -105,7 +113,7 @@ test_entries = [
     {
         'title': 'Spotify',
         'username': 'johndoe@gmail.com',
-        'password': 'Spoti#fy123',
+        'password_length': 16,
         'url': 'https://spotify.com',
         'category': 'Divertissement',
         'tags': ['music', 'subscription'],
@@ -114,7 +122,7 @@ test_entries = [
     {
         'title': 'Discord',
         'username': 'JohnDoe#1234',
-        'password': 'Disc0rd!Chat',
+        'password_length': 18,
         'url': 'https://discord.com',
         'category': 'Communication',
         'tags': ['chat', 'gaming'],
@@ -123,7 +131,7 @@ test_entries = [
     {
         'title': 'Dropbox',
         'username': 'john.doe@gmail.com',
-        'password': 'Dr0pb0x@Safe',
+        'password_length': 19,
         'url': 'https://dropbox.com',
         'category': 'Cloud',
         'tags': ['storage', 'work'],
@@ -132,7 +140,7 @@ test_entries = [
     {
         'title': 'Twitter/X',
         'username': '@johndoe',
-        'password': 'Tw!tter2024',
+        'password_length': 16,
         'url': 'https://twitter.com',
         'category': 'Réseaux sociaux',
         'tags': ['social', 'news'],
@@ -141,7 +149,7 @@ test_entries = [
     {
         'title': 'WordPress Admin',
         'username': 'admin',
-        'password': 'WP@dmin!2024',
+        'password_length': 18,
         'url': 'https://monblog.com/wp-admin',
         'category': 'Développement',
         'tags': ['work', 'website'],
@@ -183,8 +191,10 @@ try:
     # Ajouter les entrées
     print("\n🔑 Ajout des entrées de mots de passe...")
     for entry in test_entries:
+        # Générer un mot de passe aléatoire si aucun n'est fourni
+        password_value = entry.get('password') or generate_test_password(entry.get('password_length', 16))
         # Chiffrer le mot de passe (simplifié pour test)
-        encrypted_pwd = entry['password']  # En prod, utiliser encrypt_password(entry['password'], key)
+        encrypted_pwd = password_value  # En prod, utiliser encrypt_password(password_value, key)
         
         cursor.execute('''
             INSERT INTO passwords (title, username, password, url, category, tags, notes)

@@ -1,0 +1,47 @@
+{
+  "manifest_version": 2,
+  "name": "Password Manager DEV",
+  "version": "0.4.0",
+  "description": "[DEV] Extension pour intégrer votre gestionnaire de mots de passe avec Firefox - Mode Développement",
+  
+  "icons": {
+    "48": "icons/icon-48.png",
+    "96": "icons/icon-96.png"
+  },
+  
+  "permissions": [
+    "nativeMessaging",
+    "activeTab",
+    "storage",
+    "<all_urls>"
+  ],
+  
+  "background": {
+    "scripts": ["background.js"]
+  },
+  
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_end",
+      "all_frames": true
+    }
+  ],
+  
+  "browser_action": {
+    "default_icon": {
+      "48": "icons/icon-48.png",
+      "96": "icons/icon-96.png"
+    },
+    "default_title": "Password Manager [DEV]",
+    "default_popup": "popup.html"
+  },
+  
+  "applications": {
+    "gecko": {
+      "id": "password-manager-dev@example.com",
+      "strict_min_version": "57.0"
+    }
+  }
+}

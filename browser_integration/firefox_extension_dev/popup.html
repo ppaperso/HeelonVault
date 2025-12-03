@@ -1,0 +1,50 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="utf-8">
+  <title>Password Manager</title>
+  <link rel="stylesheet" href="popup.css">
+</head>
+<body>
+  <div class="container">
+    <header>
+      <h1>🔐 Password Manager <span style="color: #ff9800; font-size: 0.7em;">[DEV]</span></h1>
+      <div id="status" class="status">
+        <span class="status-indicator"></span>
+        <span class="status-text">Connexion...</span>
+      </div>
+    </header>
+    
+    <div class="search-section">
+      <input type="text" id="searchInput" placeholder="🔍 Rechercher un site..." />
+      <button id="generateBtn" title="Générer un mot de passe">
+        🎲 Générer
+      </button>
+    </div>
+    
+    <div id="generatedPassword" class="generated-password" style="display: none;">
+      <div class="password-display">
+        <input type="text" id="generatedPasswordText" readonly />
+        <button id="copyPasswordBtn" title="Copier">📋</button>
+      </div>
+      <small>Mot de passe généré - cliquez pour copier</small>
+    </div>
+    
+    <div id="credentialsList" class="credentials-list">
+      <div class="loading">Chargement des identifiants...</div>
+    </div>
+    
+    <div class="empty-state" style="display: none;">
+      <p>🔍 Aucun identifiant trouvé</p>
+      <small>Essayez de rechercher ou ajoutez-en depuis le site web</small>
+    </div>
+    
+    <footer>
+      <button id="refreshBtn" class="footer-btn">🔄 Actualiser</button>
+      <button id="settingsBtn" class="footer-btn">⚙️ Paramètres</button>
+    </footer>
+  </div>
+  
+  <script src="popup.js"></script>
+</body>
+</html>

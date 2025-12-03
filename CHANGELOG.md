@@ -5,6 +5,136 @@ Toutes les modifications notables de ce projet seront documentées dans ce fichi
 Le format est basé sur [Keep a Changelog](https://keepachangelog.com/fr/1.0.0/),
 et ce projet adhère au [Semantic Versioning](https://semver.org/lang/fr/).
 
+## [0.4.0-beta] - 2025-12-03
+
+### ✨ Ajouté
+
+#### 🦊 Extension Firefox - Intégration Navigateur Complète
+- **Architecture Dual Environment** : Environnements DEV et PROD complètement isolés
+  - Extension DEV avec badge orange "DEV" (défini dynamiquement)
+  - Extension PROD pour utilisation en production
+  - Bases de données séparées : `src/data/` (DEV) vs `data/` (PROD)
+  - Logs séparés pour faciliter le debugging
+
+- **Popup Interactif** : Interface utilisateur complète dans le navigateur
+  - Indicateur de connexion (🟢 Connecté / 🔴 Déconnecté)
+  - Liste des identifiants avec titre et username
+  - Barre de recherche en temps réel
+  - Boutons d'action : "🔑 Remplir" et "📋 Copier"
+  - Bouton de rafraîchissement et accès aux paramètres
+
+- **Générateur de Mots de Passe** : Intégré dans le popup
+  - Génération de mots de passe sécurisés de 20 caractères
+  - Copie automatique dans le presse-papiers
+  - Affichage temporaire pour vérification
+
+#### 🔌 Native Messaging Host
+- **Communication bidirectionnelle** : Protocol binary length-prefixed JSON
+  - Messages supportés : `ping`, `search_credentials`, `get_credentials`, `generate_password`
+  - Communication via stdin/stdout sécurisée
+  - Validation stricte du format JSON
+
+- **Paramètre showAll** : Récupération intelligente des credentials
+  - `showAll=true` : Retourne toutes les entrées sans filtrage
+  - `showAll=false` : Filtre par domaine (legacy)
+  - Requête SQL optimisée selon le paramètre
+
+#### 🎯 Filtrage Intelligent par URL
+- **Logique côté client** : Récupération globale + filtrage intelligent
+  - **URL match** : Affiche uniquement les entrées correspondantes
+  - **URL ne match pas** : Affiche TOUTES les entrées (choix manuel possible)
+  - **URL système** (about:, moz-extension:) : Affiche TOUTES les entrées
+  - **Barre de recherche** : Cherche toujours dans TOUTES les entrées disponibles
+
+- **Avantages** :
+  - Performance : 1 seule requête backend
+  - Contextuel : Affiche les bons identifiants sur les sites connus
+  - Flexible : Jamais bloqué sur une seule entrée
+  - Pas de latence : Filtrage JavaScript instantané
+
+#### 🛠️ Scripts d'Installation et de Test
+- **Installation** :
+  - `install_dev.sh` : Installation complète environnement DEV
+  - `install_prod.sh` : Installation complète environnement PROD
+  - `install_native_host.sh` : Installation du native host uniquement
+  - `install_firefox_extension.sh` : Installation extension Firefox
+
+- **Tests** :
+  - `test_dev_communication.py` : Tests complets (ping, showAll, URL filter, generate)
+  - `test_url_matching.py` : Tests de la logique de filtrage (5 scénarios)
+  - `test_native_host.sh` : Test rapide de connexion
+  - `test_connection_firefox.sh` : Test depuis Firefox
+
+#### 📚 Documentation Complète
+- **Guides utilisateur** :
+  - `QUICK_START.md` : Installation en 3 étapes
+  - `README.md` : Documentation complète de l'intégration
+  - `URL_FILTERING_BEHAVIOR.md` : Comportement détaillé du filtrage
+
+- **Guides développeur** :
+  - `DEV_PROD_SOLUTION.md` : Architecture dual environment
+  - `DEBUGGING_GUIDE.md` : Guide de débogage complet
+  - `SIGNING_GUIDE.md` : Signature d'extension pour Firefox
+  - `PERMANENT_EXTENSION.md` : Installation permanente
+
+- **Résolution de problèmes** :
+  - `PHASE_2_COMPLETE.md` : Résolution problème d'affichage
+  - `PHASE_2_FIX.md` : Fix du filtrage par URL
+  - `QUICK_COMMANDS.sh` : Commandes rapides de développement
+
+### 🐛 Corrigé
+
+#### Extension Firefox
+- **Avertissements manifest.json** :
+  - Suppression de `default_badge_text` et `default_badge_background_color` du manifest
+  - Badge "DEV" défini dynamiquement via `browser.browserAction.setBadgeText()`
+  - Conformité totale avec Firefox Manifest V2
+
+#### Logique de Filtrage
+- **Filtrage par URL revu** :
+  - Anciennement : Filtrage backend avec requêtes multiples et affichage partiel
+  - Maintenant : Récupération globale + filtrage client intelligent
+  - Fix : La recherche fonctionne toujours dans toutes les entrées (pas de blocage)
+  - Fix : Sur URL inconnue, affiche tout (pas de liste vide)
+
+### 🔧 Améliorations
+
+#### Architecture
+- **Séparation DEV/PROD** : Environnements complètement isolés
+- **Variable DEV_MODE** : Contrôle automatique de l'environnement (0 ou 1)
+- **Logs séparés** : `native_host_dev.log` vs `native_host_prod.log`
+
+#### Performance
+- **1 seule requête SQL** : Récupération globale au lieu de multiples requêtes
+- **Filtrage côté client** : JavaScript rapide vs requêtes réseau
+- **Cache des credentials** : Variable `allCredentials` dans le popup
+
+#### Sécurité
+- **Communication chiffrée** : Via Native Messaging sécurisé de Firefox
+- **Validation des messages** : Format JSON strict avec gestion d'erreurs
+- **Isolation des environnements** : Bases de données et logs séparés
+- **Logs détaillés** : Traçabilité complète des opérations
+
+### 📊 Statistiques
+- **Fichiers ajoutés** : 25+ (extensions, scripts, documentation)
+- **Lignes de code** : ~2000 (JavaScript + Python)
+- **Tests** : 9 tests validés (communication + filtrage URL)
+- **Documentation** : 10+ fichiers markdown
+
+### 🚧 Limitations Connues
+- ⏳ **Récupération des mots de passe** : Affiche username uniquement (décryption à venir)
+- ⏳ **Auto-fill automatique** : Bouton "Remplir" non fonctionnel
+- ⏳ **Sauvegarde de nouveaux identifiants** : À implémenter
+- ⚠️ **Extension temporaire** : Disparaît au redémarrage de Firefox (signature nécessaire)
+
+### 🔜 Prochaines Étapes (v0.5.0)
+- [ ] Phase 3 : Récupération et décryption des mots de passe
+- [ ] Phase 4 : Auto-fill automatique des formulaires
+- [ ] Phase 5 : Sauvegarde de nouveaux identifiants
+- [ ] Phase 6 : Content script pour détection formulaires
+
+---
+
 ## [0.3.0-beta] - 2025-11-21
 
 ### ✨ Ajouté

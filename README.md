@@ -2,7 +2,7 @@
 
 Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé avec GTK4 et Python.
 
-![Version](https://img.shields.io/badge/version-0.3.0--beta-blue)
+![Version](https://img.shields.io/badge/version-0.4.0--beta-blue)
 ![Python Version](https://img.shields.io/badge/python-3.8%2B-blue)
 ![GTK Version](https://img.shields.io/badge/GTK-4.0-green)
 ![License](https://img.shields.io/badge/license-MIT-orange)
@@ -20,6 +20,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Permissions strictes** : Fichiers protégés avec permissions 600 (propriétaire uniquement) 🆕
 - **Protection multi-niveaux** : Système de fichiers + chiffrement + authentification 🆕
 - **Interface de gestion des sauvegardes** : Menu admin pour gérer et restaurer les backups 🆕
+- **Auto-vidage du presse-papiers** : Effacement automatique 30 secondes après la copie pour éviter les fuites 🆕
 
 ### 👥 Gestion multi-utilisateurs
 - **Comptes utilisateurs séparés** : Chaque utilisateur a son propre espace
@@ -28,6 +29,16 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Interface personnalisée** : "Bonjour [nom_utilisateur]" avec badge de rôle
 - **Gestion admin** : Réinitialisation des mots de passe oubliés
 - **Écran de sélection** : Choix du compte au démarrage
+
+### 🦊 Intégration Navigateur (Firefox) 🆕
+- **Extension Firefox** : Accès aux identifiants depuis le navigateur
+- **Popup interactif** : Liste, recherche et copie des identifiants
+- **Filtrage intelligent par URL** : Affichage contextuel selon le site visité
+- **Générateur de mots de passe** : Directement dans l'extension
+- **Environnements DEV/PROD** : Test et production isolés
+- **Native Messaging** : Communication sécurisée avec l'application
+- **Installation en 3 étapes** : Guide rapide `browser_integration/QUICK_START.md`
+- **Documentation complète** : 10+ guides d'installation et debugging
 
 ### 📝 Gestion des mots de passe
 - Ajout, modification et suppression d'entrées
@@ -607,11 +618,11 @@ python3 -c "from password_manager import PasswordCrypto; c = PasswordCrypto('tes
 - [x] Rôles admin/user
 - [x] Réinitialisation de mot de passe par admin
 - [x] Interface personnalisée par utilisateur
-- [ ] Auto-vidage du presse-papiers après 30 secondes
+- [X] Auto-vidage du presse-papiers après 30 secondes
 - [ ] Export/Import des données (chiffré) par utilisateur
-- [ ] Analyse de la force des mots de passe
-- [ ] Détection des mots de passe dupliqués
-- [ ] Notifications de renouvellement des mots de passe
+- [X] Analyse de la force des mots de passe
+- [X] Détection des mots de passe dupliqués
+- [X] Notifications de renouvellement des mots de passe
 - [ ] Support du dark mode forcé
 - [ ] Intégration avec les navigateurs
 - [ ] Version en ligne de commande (CLI)

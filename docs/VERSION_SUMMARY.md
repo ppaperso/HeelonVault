@@ -1,6 +1,43 @@
-# 🎉 Version 0.2.0-beta - Récapitulatif
+# 📋 Résumé des Versions
 
-## 🚀 Release du 20 novembre 2025
+## 🎉 Version 0.4.0-beta - Intégration Firefox
+
+### 🚀 Release du 3 décembre 2025
+
+**Intégration complète avec Firefox** via extension navigateur et Native Messaging Host.
+
+#### Nouveautés principales :
+- 🦊 **Extension Firefox** (DEV & PROD) avec popup interactif
+- 🔌 **Native Messaging Host** : Communication bidirectionnelle sécurisée
+- 🎯 **Filtrage intelligent par URL** : Affichage contextuel des identifiants
+- 🛠️ **15+ scripts** d'installation et de test
+- 📚 **10+ documents** de configuration et debugging
+- 🧪 **9 tests validés** : Communication + filtrage URL
+
+#### Fichiers clés :
+- `browser_integration/firefox_extension_dev/` - Extension DEV avec badge "DEV"
+- `browser_integration/firefox_extension/` - Extension PROD
+- `browser_integration/native_host.py` - Host de communication
+- `docs/VERSION_0.4.0-beta.md` - Documentation complète
+
+#### Limitations :
+- ⏳ Récupération des mots de passe (décryption à implémenter)
+- ⏳ Auto-fill automatique des formulaires
+- ⏳ Sauvegarde de nouveaux identifiants
+
+---
+
+## 🎉 Version 0.3.0-beta - Sauvegardes Automatiques
+
+### 🚀 Release du 21 novembre 2025
+
+**Gestion complète des sauvegardes** avec rotation automatique et interface dédiée.
+
+---
+
+## 🎉 Version 0.2.0-beta - Système de Logs
+
+### 🚀 Release du 20 novembre 2025
 
 Cette version consolide toute l'infrastructure de logs et facilite le support en production :
 

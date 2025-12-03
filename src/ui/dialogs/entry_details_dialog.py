@@ -6,7 +6,7 @@ from typing import Any
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk, Adw, Gdk, GLib
 
 
 class EntryDetailsDialog(Adw.Window):
@@ -21,6 +21,7 @@ class EntryDetailsDialog(Adw.Window):
         self.entry = entry
         self.edit_callback = edit_callback
         self.delete_callback = delete_callback
+        self.parent_window = parent
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         header = Adw.HeaderBar()
@@ -139,7 +140,10 @@ class EntryDetailsDialog(Adw.Window):
         if copyable:
             copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
             copy_btn.set_tooltip_text("Copier")
-            copy_btn.connect("clicked", lambda x: self._copy_to_clipboard(value))
+            copy_btn.connect(
+                "clicked",
+                lambda x, label=label_text: self._copy_to_clipboard(value, f"{label} copié")
+            )
             value_box.append(copy_btn)
 
         if is_url and value:
@@ -151,9 +155,25 @@ class EntryDetailsDialog(Adw.Window):
         box.append(value_box)
         return box
 
-    def _copy_to_clipboard(self, text):
+    def _copy_to_clipboard(self, text, message="Copié dans le presse-papiers"):
+        if self.parent_window and hasattr(self.parent_window, "copy_to_clipboard"):
+            self.parent_window.copy_to_clipboard(text, message)
+            return
         clipboard = self.get_clipboard()
-        clipboard.set(text)
+        if clipboard:
+            try:
+                bytes_value = GLib.Bytes.new(text.encode('utf-8'))
+                provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
+                clipboard.set_content(provider)
+                clipboard.store_async(None, self._on_clipboard_store_finished, None)
+            except Exception as exc:
+                print(f"Impossible de copier dans le presse-papiers: {exc}")
+
+    def _on_clipboard_store_finished(self, clipboard, result, _data):
+        try:
+            clipboard.store_finish(result)
+        except Exception:
+            pass
 
     def _open_url(self, url):
         import subprocess
