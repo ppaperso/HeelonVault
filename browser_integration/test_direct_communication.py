@@ -2,7 +2,6 @@
 """
 Test direct de la communication Native Messaging
 """
-import sys
 import json
 import struct
 import subprocess

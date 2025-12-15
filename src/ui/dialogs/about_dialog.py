@@ -2,11 +2,15 @@
 Dialogue 'À propos' de l'application
 """
 
-import gi
+import os
+
+from src.version import get_version_info
+
+import gi  # type: ignore[import]
+
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw
-from src.version import get_version_info
+from gi.repository import Gtk, Adw  # noqa: E402
 
 
 def show_about_dialog(parent):
@@ -15,8 +19,6 @@ def show_about_dialog(parent):
     Args:
         parent: Fenêtre parente
     """
-    import os
-    
     version_info = get_version_info()
     
     # Créer le dialogue

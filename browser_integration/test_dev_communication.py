@@ -2,7 +2,6 @@
 """
 Test direct du native host en mode DEV
 """
-import sys
 import json
 import struct
 import subprocess

@@ -1,15 +1,18 @@
-"""
-Dialogue d'importation de CSV
-"""
+"""Dialogue d'importation de CSV"""
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib, Gio
 from pathlib import Path
 import logging
 
+from src.models.password_entry import PasswordEntry
+from src.services.password_service import PasswordService
+
 from .helpers import present_alert
+
+import gi  # type: ignore[import]
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, Gio  # type: ignore[attr-defined]  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -17,7 +20,7 @@ logger = logging.getLogger(__name__)
 class ImportCSVDialog(Adw.Window):
     """Dialogue pour importer des mots de passe depuis un fichier CSV"""
     
-    def __init__(self, parent, db, csv_importer):
+    def __init__(self, parent, password_service: PasswordService, csv_importer):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -25,7 +28,7 @@ class ImportCSVDialog(Adw.Window):
         self.set_default_size(600, 500)
         
         self.parent_window = parent
-        self.db = db
+        self.password_service = password_service
         self.csv_importer = csv_importer
         self.selected_file = None
         self.import_result = None
@@ -264,15 +267,16 @@ class ImportCSVDialog(Adw.Window):
             
             for entry in result['entries']:
                 try:
-                    self.db.add_entry(
+                    password_entry = PasswordEntry(
                         title=entry['name'],
                         username=entry['username'],
                         password=entry['password'],
                         url=entry['url'],
                         notes=entry['notes'],
                         category=entry['category'],
-                        tags=entry['tags']
+                        tags=entry['tags'],
                     )
+                    self.password_service.create_entry(password_entry)
                     saved_count += 1
                 except Exception as e:
                     logger.error(f"Erreur lors de la sauvegarde de l'entrée {entry['name']}: {e}")
@@ -296,7 +300,7 @@ class ImportCSVDialog(Adw.Window):
     
     def show_import_summary(self, saved_count, failed_count, result):
         """Affiche un résumé de l'importation"""
-        summary = f"✅ Importation terminée\n\n"
+        summary = "✅ Importation terminée\n\n"
         summary += f"Entrées importées avec succès: {saved_count}\n"
         
         if failed_count > 0:

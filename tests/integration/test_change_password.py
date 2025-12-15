@@ -8,7 +8,7 @@ from pathlib import Path
 project_root = Path(__file__).parent.parent.parent
 sys.path.insert(0, str(project_root))
 
-from password_manager import UserManager
+from password_manager import UserManager  # noqa: E402
 
 def test_change_password():
     """Test de la fonctionnalité de changement de mot de passe"""

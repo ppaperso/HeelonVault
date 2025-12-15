@@ -66,10 +66,10 @@ class TestBackupService(unittest.TestCase):
         """Test le listage des sauvegardes."""
         # Créer plusieurs sauvegardes (avec délai > 60s pour éviter le skip)
         # Pour le test, on crée directement les fichiers
-        backup1 = self.backup_service.backup_dir / f"passwords_testuser_20251121_100000.db"
+        backup1 = self.backup_service.backup_dir / "passwords_testuser_20251121_100000.db"
         backup1.write_text("Backup 1")
         time.sleep(0.1)
-        backup2 = self.backup_service.backup_dir / f"passwords_testuser_20251121_110000.db"
+        backup2 = self.backup_service.backup_dir / "passwords_testuser_20251121_110000.db"
         backup2.write_text("Backup 2")
         
         backups = self.backup_service.list_backups("testuser")

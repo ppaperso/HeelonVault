@@ -9,7 +9,6 @@ import os
 import json
 import struct
 import logging
-import hashlib
 import secrets
 import sqlite3
 from pathlib import Path
@@ -250,7 +249,12 @@ class NativeMessagingHost:
         username = message.get('username')
         show_all = message.get('showAll', False)
         
-        logger.info(f"Recherche identifiants - URL: {url}, showAll: {show_all}")
+        logger.info(
+            "Recherche identifiants - URL: %s, username: %s, showAll: %s",
+            url,
+            username or "<non fourni>",
+            show_all,
+        )
         
         # Rechercher dans la base de données réelle
         credentials = self._search_in_database(url, show_all=show_all)
@@ -319,7 +323,11 @@ class NativeMessagingHost:
         # TODO: Demander confirmation utilisateur
         # TODO: Sauvegarder dans la base de données
         
-        logger.info(f"Demande sauvegarde pour: {url}")
+        logger.info(
+            "Demande sauvegarde pour URL: %s (username=%s)",
+            url,
+            username or "<non fourni>",
+        )
         
         # TODO: Implémenter la sauvegarde réelle dans la base
         return {

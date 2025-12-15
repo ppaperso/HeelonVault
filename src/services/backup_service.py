@@ -40,7 +40,6 @@ class BackupService:
         try:
             # Obtenir la modification time du fichier
             mtime = db_path.stat().st_mtime
-            last_modified = datetime.fromtimestamp(mtime)
             
             # Vérifier si une sauvegarde récente existe déjà (moins de 1 minute)
             existing_backups = list(self.backup_dir.glob(f"passwords_{username}_*.db"))
@@ -137,10 +136,10 @@ class BackupService:
             # Créer un fichier manifest avec les détails
             manifest_path = backup_folder / "MANIFEST.txt"
             with open(manifest_path, 'w') as f:
-                f.write(f"Sauvegarde système complète\n")
+                f.write("Sauvegarde système complète\n")
                 f.write(f"Date: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
                 f.write(f"Nombre de fichiers: {len(files_backed_up)}\n")
-                f.write(f"\nFichiers sauvegardés:\n")
+                f.write("\nFichiers sauvegardés:\n")
                 for filename in sorted(files_backed_up):
                     f.write(f"  - {filename}\n")
             manifest_path.chmod(0o600)

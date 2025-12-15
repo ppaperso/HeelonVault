@@ -3,7 +3,7 @@ Modèle de données pour une entrée de mot de passe.
 """
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List
+from typing import Optional, List, Dict
 
 
 @dataclass
@@ -74,3 +74,20 @@ class EncryptedPasswordEntry:
     """
     password_data: dict
     notes_data: Optional[dict] = None
+
+
+@dataclass
+class PasswordRecord:
+    """Représente une entrée persistée dans SQLite (données chiffrées)."""
+
+    title: str
+    username: str
+    password_data: Dict[str, str]
+    id: Optional[int] = None
+    url: str = ""
+    notes_data: Optional[Dict[str, str]] = None
+    category: str = ""
+    tags: List[str] = field(default_factory=list)
+    created_at: Optional[datetime] = None
+    modified_at: Optional[datetime] = None
+    last_changed: Optional[datetime] = None

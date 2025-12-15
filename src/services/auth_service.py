@@ -212,7 +212,7 @@ class AuthService:
             success = cursor.rowcount > 0
             logger.info("AuthService: mot de passe change pour %s", username)
             return success
-        except Exception as e:
+        except Exception:
             logger.exception("AuthService: erreur lors du changement de mot de passe pour %s", username)
             return False
     
@@ -238,7 +238,7 @@ class AuthService:
             success = cursor.rowcount > 0
             logger.info("AuthService: mot de passe reinitialise pour %s", username)
             return success
-        except Exception as e:
+        except Exception:
             logger.exception("AuthService: erreur lors de la reinitialisation pour %s", username)
             return False
     
@@ -258,7 +258,7 @@ class AuthService:
             success = cursor.rowcount > 0
             logger.info("AuthService: utilisateur supprime %s", username)
             return success
-        except Exception as e:
+        except Exception:
             logger.exception("AuthService: erreur lors de la suppression de %s", username)
             return False
     

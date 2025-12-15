@@ -1,7 +1,6 @@
 #!/usr/bin/env python3
 """Vérification de l'organisation des tests."""
 
-import os
 from pathlib import Path
 
 print("📁 Organisation des tests")

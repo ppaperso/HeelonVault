@@ -2,11 +2,11 @@ from __future__ import annotations
 
 from typing import Callable, Iterable, Optional, Tuple
 
-import gi
+import gi  # type: ignore[import]
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk
+from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 ResponseList = Iterable[Tuple[str, str]]
 
