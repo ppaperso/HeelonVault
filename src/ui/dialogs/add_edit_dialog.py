@@ -1,13 +1,18 @@
 """Dialogue d'ajout ou de modification d'une entrée."""
 
-import gi
-from typing import Any, List
+from typing import List, Optional
+
+from src.models.password_entry import PasswordEntry
+from src.services.password_service import PasswordService
+
+from .helpers import present_alert
+from .password_generator_dialog import PasswordGeneratorDialog
+
+import gi  # type: ignore[import]
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw
-from .helpers import present_alert
-from .password_generator_dialog import PasswordGeneratorDialog
+from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
 
 
 def split_tags(text: str) -> List[str]:
@@ -17,12 +22,12 @@ def split_tags(text: str) -> List[str]:
 class AddEditDialog(Adw.Window):
     """Dialogue d'ajout/édition d'entrée"""
 
-    def __init__(self, parent, db: Any, entry=None):
+    def __init__(self, parent, password_service: PasswordService, entry: Optional[PasswordEntry] = None):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(620, 780)
-        self.db = db
+        self.password_service = password_service
         self.entry = entry
         self.parent_window = parent
         self.set_title("Modifier l'entrée" if entry else "Nouvelle entrée")
@@ -41,7 +46,8 @@ class AddEditDialog(Adw.Window):
         content.set_margin_top(20)
         content.set_margin_bottom(20)
 
-        title_row, self.title_entry = self.create_entry_row("Titre *", entry['title'] if entry else "")
+        title_value = entry.title if entry else ""
+        title_row, self.title_entry = self.create_entry_row("Titre *", title_value)
         content.append(title_row)
 
         cat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
@@ -49,16 +55,16 @@ class AddEditDialog(Adw.Window):
         cat_box.append(cat_label)
 
         self.category_dropdown = Gtk.DropDown()
-        categories = self.db.get_all_categories()
-        cat_names = [cat[0] for cat in categories]
+        categories = self.password_service.list_categories()
+        cat_names = [cat.name for cat in categories]
         string_list = Gtk.StringList()
         for cat in cat_names:
             string_list.append(cat)
         self.category_dropdown.set_model(string_list)
 
-        if entry and entry['category']:
+        if entry and entry.category:
             try:
-                idx = cat_names.index(entry['category'])
+                idx = cat_names.index(entry.category)
                 self.category_dropdown.set_selected(idx)
             except ValueError:
                 pass
@@ -71,8 +77,8 @@ class AddEditDialog(Adw.Window):
         tags_box.append(tags_label)
 
         self.tags_entry = Gtk.Entry()
-        if entry and entry['tags']:
-            self.tags_entry.set_text(", ".join(entry['tags']))
+        if entry and entry.tags:
+            self.tags_entry.set_text(", ".join(entry.tags))
         tags_box.append(self.tags_entry)
         content.append(tags_box)
 
@@ -81,7 +87,8 @@ class AddEditDialog(Adw.Window):
         username_box.append(username_label)
 
         self.username_entry = Gtk.Entry()
-        self.username_entry.set_text(entry['username'] if entry and entry['username'] else "")
+        username_value = entry.username if entry and entry.username else ""
+        self.username_entry.set_text(username_value)
         self.username_entry.set_placeholder_text("Ex: user@exemple.com ou mon_login")
         username_box.append(self.username_entry)
 
@@ -97,7 +104,7 @@ class AddEditDialog(Adw.Window):
         pass_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         self.password_entry = Gtk.PasswordEntry()
         if entry:
-            self.password_entry.set_text(entry['password'])
+            self.password_entry.set_text(entry.password)
         self.password_entry.set_show_peek_icon(True)
         self.password_entry.set_hexpand(True)
         pass_input_box.append(self.password_entry)
@@ -114,8 +121,8 @@ class AddEditDialog(Adw.Window):
         url_box.append(url_label)
 
         self.url_entry = Gtk.Entry()
-        if entry and entry['url']:
-            self.url_entry.set_text(entry['url'])
+        if entry and entry.url:
+            self.url_entry.set_text(entry.url)
         self.url_entry.set_placeholder_text("https://exemple.com")
         url_box.append(self.url_entry)
         content.append(url_box)
@@ -137,9 +144,9 @@ class AddEditDialog(Adw.Window):
         self.notes_text.set_top_margin(10)
         self.notes_text.set_bottom_margin(10)
         
-        if entry and entry['notes']:
+        if entry and entry.notes:
             buffer = self.notes_text.get_buffer()
-            buffer.set_text(entry['notes'])
+            buffer.set_text(entry.notes)
         
         notes_scrolled.set_child(self.notes_text)
         notes_box.append(notes_scrolled)
@@ -207,9 +214,28 @@ class AddEditDialog(Adw.Window):
             return
 
         if self.entry:
-            self.db.update_entry(self.entry['id'], title, username, password, url, notes, category, tags)
+            updated_entry = PasswordEntry(
+                id=self.entry.id,
+                title=title,
+                username=username,
+                password=password,
+                url=url,
+                notes=notes,
+                category=category,
+                tags=tags,
+            )
+            self.password_service.update_entry(updated_entry)
         else:
-            self.db.add_entry(title, username, password, url, notes, category, tags)
+            new_entry = PasswordEntry(
+                title=title,
+                username=username,
+                password=password,
+                url=url,
+                notes=notes,
+                category=category,
+                tags=tags,
+            )
+            self.password_service.create_entry(new_entry)
 
         if hasattr(self.parent_window, 'load_entries'):
             self.parent_window.load_entries()

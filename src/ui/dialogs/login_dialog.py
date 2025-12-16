@@ -1,12 +1,13 @@
 """Dialogue de connexion pour un utilisateur."""
 
-import gi
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib
-
 from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.config.environment import is_dev_mode
+
+import gi  # type: ignore[import]
+
+gi.require_version('Gtk', '4.0')
+gi.require_version('Adw', '1')
+from gi.repository import Gtk, Adw, GLib  # type: ignore[attr-defined]  # noqa: E402
 
 
 class LoginDialog(Adw.Window):

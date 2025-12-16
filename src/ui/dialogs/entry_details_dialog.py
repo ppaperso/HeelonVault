@@ -1,23 +1,30 @@
 """Dialogue d'informations détaillées sur une entrée de mot de passe."""
 
-import gi
+from typing import Callable
 
-from typing import Any
+from src.models.password_entry import PasswordEntry
+
+import gi  # type: ignore[import]
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gdk, GLib
+from gi.repository import Gtk, Adw, Gdk, GLib  # type: ignore[attr-defined]  # noqa: E402
 
 
 class EntryDetailsDialog(Adw.Window):
     """Dialogue moderne pour afficher les détails d'une entrée."""
 
-    def __init__(self, parent, db: Any, entry: dict, edit_callback, delete_callback):
+    def __init__(
+        self,
+        parent,
+        entry: PasswordEntry,
+        edit_callback: Callable[[int], None],
+        delete_callback: Callable[[int], None],
+    ):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(600, 700)
-        self.db = db
         self.entry = entry
         self.edit_callback = edit_callback
         self.delete_callback = delete_callback
@@ -39,7 +46,7 @@ class EntryDetailsDialog(Adw.Window):
         content.set_margin_top(30)
         content.set_margin_bottom(30)
 
-        title_label = Gtk.Label(label=entry['title'], xalign=0)
+        title_label = Gtk.Label(label=entry.title, xalign=0)
         title_label.set_css_classes(['title-1'])
         title_label.set_wrap(True)
         content.append(title_label)
@@ -47,12 +54,12 @@ class EntryDetailsDialog(Adw.Window):
         meta_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         meta_box.set_margin_bottom(10)
 
-        if entry['category']:
-            cat_label = Gtk.Label(label=f"📁 {entry['category']}")
+        if entry.category:
+            cat_label = Gtk.Label(label=f"📁 {entry.category}")
             cat_label.set_css_classes(['caption'])
             meta_box.append(cat_label)
 
-        for tag in entry['tags']:
+        for tag in entry.tags:
             tag_label = Gtk.Label(label=f"#{tag}")
             tag_label.set_css_classes(['caption', 'accent'])
             meta_box.append(tag_label)
@@ -62,18 +69,18 @@ class EntryDetailsDialog(Adw.Window):
         sep1 = Gtk.Separator()
         content.append(sep1)
 
-        if entry['username']:
-            username_box = self._create_field_box("👤 Nom d'utilisateur", entry['username'], copyable=True)
+        if entry.username:
+            username_box = self._create_field_box("👤 Nom d'utilisateur", entry.username, copyable=True)
             content.append(username_box)
 
-        password_box = self._create_field_box("🔑 Mot de passe", entry['password'], copyable=True, is_password=True)
+        password_box = self._create_field_box("🔑 Mot de passe", entry.password, copyable=True, is_password=True)
         content.append(password_box)
 
-        if entry['url']:
-            url_box = self._create_field_box("🌐 URL", entry['url'], copyable=True, is_url=True)
+        if entry.url:
+            url_box = self._create_field_box("🌐 URL", entry.url, copyable=True, is_url=True)
             content.append(url_box)
 
-        if entry['notes']:
+        if entry.notes:
             notes_label = Gtk.Label(label="📝 Notes", xalign=0)
             notes_label.set_css_classes(['title-4'])
             notes_label.set_margin_top(10)
@@ -82,7 +89,7 @@ class EntryDetailsDialog(Adw.Window):
             notes_frame = Gtk.Frame()
             notes_frame.set_css_classes(['card'])
 
-            notes_text = Gtk.Label(label=entry['notes'], xalign=0, wrap=True)
+            notes_text = Gtk.Label(label=entry.notes, xalign=0, wrap=True)
             notes_text.set_margin_start(15)
             notes_text.set_margin_end(15)
             notes_text.set_margin_top(15)
@@ -185,8 +192,27 @@ class EntryDetailsDialog(Adw.Window):
 
     def _on_edit(self):
         self.close()
-        self.edit_callback(self.entry['id'])
+        if self.entry.id is not None:
+            self.edit_callback(self.entry.id)
 
     def _on_delete(self):
-        self.close()
-        self.delete_callback(self.entry['id'])
+        """Demander confirmation avant de supprimer"""
+        dialog = Adw.MessageDialog.new(self)
+        dialog.set_heading("Confirmer la suppression")
+        dialog.set_body(
+            f"Êtes-vous sûr de vouloir supprimer l'entrée '{self.entry.title}' ?\n\nCette action est irréversible."
+        )
+        dialog.add_response("cancel", "Annuler")
+        dialog.add_response("delete", "Supprimer")
+        dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.connect("response", lambda d, r: self._on_delete_confirmed(r))
+        dialog.present()
+    
+    def _on_delete_confirmed(self, response):
+        """Callback de confirmation de suppression"""
+        if response == "delete":
+            self.close()
+            if self.entry.id is not None:
+                self.delete_callback(self.entry.id)

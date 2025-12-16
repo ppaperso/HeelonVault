@@ -21,7 +21,7 @@ def test_csv_import():
         return
     
     print(f"📂 Fichier à tester: {csv_file}")
-    print(f"📊 Contenu du fichier:")
+    print("📊 Contenu du fichier:")
     print("-" * 80)
     with open(csv_file, 'r', encoding='utf-8') as f:
         for i, line in enumerate(f, 1):

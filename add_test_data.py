@@ -4,7 +4,6 @@
 import sqlite3
 import json
 from pathlib import Path
-import hashlib
 import secrets
 import string
 from cryptography.hazmat.primitives.ciphers.aead import AESGCM

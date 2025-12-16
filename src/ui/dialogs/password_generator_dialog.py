@@ -1,11 +1,12 @@
 """Dialogue de génération de mot de passe."""
 
-import gi
+from src.services.password_generator import PasswordGenerator
+
+import gi  # type: ignore[import]
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw
-from src.services.password_generator import PasswordGenerator
+from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
 
 
 class PasswordGeneratorDialog(Adw.Window):

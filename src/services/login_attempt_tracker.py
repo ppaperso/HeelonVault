@@ -9,7 +9,6 @@ Ce service gère :
 
 import time
 import logging
-from datetime import datetime, timedelta
 from typing import Dict, Optional
 from dataclasses import dataclass
 

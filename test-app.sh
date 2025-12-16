@@ -163,36 +163,39 @@ python << 'EOF'
 import sys
 sys.path.insert(0, '.')
 
-# Import des classes principales
-exec(open('password_manager.py').read())
-
-# Test UserManager
 from pathlib import Path
 import tempfile
 import os
+
+from src.services.auth_service import AuthService
+from src.services.password_generator import PasswordGenerator
+from src.services.crypto_service import CryptoService
+from src.repositories.password_repository import PasswordRepository
+from src.services.password_service import PasswordService
+from src.models.password_entry import PasswordEntry
 
 with tempfile.TemporaryDirectory() as tmpdir:
     try:
         test_db = Path(tmpdir) / "test_users.db"
         
-        print("  🔐 Test UserManager...")
-        um = UserManager(test_db)
+        print("  🔐 Test AuthService...")
+        auth = AuthService(test_db)
         
         # Test création utilisateur
-        assert um.create_user("test_user", "test_password"), "Création utilisateur échoué"
+        assert auth.create_user("test_user", "test_password"), "Création utilisateur échoué"
         print("    ✅ Création utilisateur OK")
         
         # Test authentification
-        user_info = um.authenticate("test_user", "test_password")
+        user_info = auth.authenticate("test_user", "test_password")
         assert user_info is not None, "Authentification échoué"
         assert user_info['username'] == "test_user", "Username incorrect"
         print("    ✅ Authentification OK")
         
         # Test auth avec mauvais mot de passe
-        assert um.authenticate("test_user", "wrong_password") is None, "Auth devrait échouer"
+        assert auth.authenticate("test_user", "wrong_password") is None, "Auth devrait échouer"
         print("    ✅ Rejet mauvais mot de passe OK")
         
-        um.close()
+        auth.close()
         
         print("  🔑 Test PasswordGenerator...")
         # Test générateur
@@ -205,50 +208,43 @@ with tempfile.TemporaryDirectory() as tmpdir:
         assert len(phrase.split('-')) >= 4, "Phrase de passe incorrecte"
         print(f"    ✅ Phrase de passe générée: {phrase}")
         
-        print("  🔐 Test PasswordCrypto...")
-        # Test chiffrement
-        crypto = PasswordCrypto("master_password")
+        print("  🔐 Test CryptoService...")
+        crypto = CryptoService("master_password")
         encrypted = crypto.encrypt("secret_data")
-        assert 'nonce' in encrypted, "Nonce manquant"
-        assert 'ciphertext' in encrypted, "Ciphertext manquant"
-        print("    ✅ Chiffrement OK")
-        
-        # Test déchiffrement
+        assert 'nonce' in encrypted and 'ciphertext' in encrypted, "Chiffrement invalide"
         decrypted = crypto.decrypt(encrypted)
         assert decrypted == "secret_data", "Déchiffrement incorrect"
-        print("    ✅ Déchiffrement OK")
-        
-        print("  💾 Test PasswordDatabase...")
-        # Test database
+        print("    ✅ Chiffrement/Déchiffrement OK")
+
+        print("  💾 Test PasswordRepository/Service...")
         test_pwd_db = Path(tmpdir) / "test_passwords.db"
-        db = PasswordDatabase(test_pwd_db, crypto)
-        
-        # Test ajout entrée
-        entry_id = db.add_entry(
-            "Test Entry",
-            "user@example.com",
-            "my_password",
-            "https://example.com",
-            "Test notes",
-            "Personnel",
-            ["tag1", "tag2"]
+        repository = PasswordRepository(test_pwd_db)
+        service = PasswordService(repository, crypto)
+
+        entry = PasswordEntry(
+            title="Test Entry",
+            username="user@example.com",
+            password="my_password",
+            url="https://example.com",
+            notes="Test notes",
+            category="Personnel",
+            tags=["tag1", "tag2"],
         )
+        entry_id = service.create_entry(entry)
         assert entry_id > 0, "Ajout entrée échoué"
         print("    ✅ Ajout entrée OK")
-        
-        # Test récupération
-        entry = db.get_entry(entry_id)
-        assert entry is not None, "Récupération échoué"
-        assert entry['password'] == "my_password", "Password incorrect"
-        assert entry['title'] == "Test Entry", "Title incorrect"
+
+        fetched = service.get_entry(entry_id)
+        assert fetched is not None, "Récupération échouée"
+        assert fetched.password == "my_password", "Password incorrect"
+        assert fetched.title == "Test Entry", "Title incorrect"
         print("    ✅ Récupération entrée OK")
-        
-        # Test liste
-        entries = db.get_all_entries()
+
+        entries = service.list_entries()
         assert len(entries) > 0, "Liste vide"
         print("    ✅ Liste entrées OK")
-        
-        db.close()
+
+        service.close()
         
         print("\n✅ Tous les tests unitaires passent!")
         print("")

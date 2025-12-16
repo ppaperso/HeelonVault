@@ -2,13 +2,13 @@
 Dialogue de gestion des sauvegardes (admin uniquement)
 """
 
-import gi
+import logging
+
+import gi  # type: ignore[import]
+
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw, GLib
-import logging
-from pathlib import Path
-from datetime import datetime
+from gi.repository import Gtk, Adw, GLib  # type: ignore[attr-defined]  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -293,7 +293,7 @@ class BackupManagerDialog(Adw.Window):
         message += f"💾 Taille totale : {size_str}\n"
         
         if info.get('files'):
-            message += f"\n📄 Fichiers sauvegardés :\n"
+            message += "\n📄 Fichiers sauvegardés :\n"
             for filename in info['files']:
                 message += f"  • {filename}\n"
         

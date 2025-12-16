@@ -4,7 +4,6 @@ Service de génération de mots de passe sécurisés.
 import secrets
 import string
 import logging
-from typing import List
 
 logger = logging.getLogger(__name__)
 

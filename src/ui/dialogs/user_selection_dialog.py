@@ -1,9 +1,9 @@
 """Dialogue de sélection d'utilisateur au démarrage de l'application."""
 
-import gi
+import gi  # type: ignore[import]
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw
+from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
 
 
 class UserSelectionDialog(Adw.ApplicationWindow):

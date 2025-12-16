@@ -16,7 +16,7 @@ def extract_domain(url):
         parsed = urlparse(url)
         hostname = parsed.hostname or ''
         return hostname.replace('www.', '')
-    except:
+    except Exception:
         return url
 
 def filter_by_url(all_credentials, current_url):
@@ -136,21 +136,21 @@ def main():
     
     # Résumé
     print(f"\n\n{'='*70}")
-    print(f"📊 RÉSUMÉ")
+    print("📊 RÉSUMÉ")
     print(f"{'='*70}")
     print(f"Total: {len(results)} tests")
     print(f"✅ Succès: {sum(results)}")
     print(f"❌ Échecs: {len(results) - sum(results)}")
     
     if all(results):
-        print(f"\n🎉 TOUS LES TESTS PASSENT !")
-        print(f"\n💡 Comportement validé:")
-        print(f"   • URL match → affiche seulement les entrées qui matchent")
-        print(f"   • URL ne match pas → affiche TOUTES les entrées")
-        print(f"   • La recherche peut toujours accéder à toutes les entrées")
+        print("\n🎉 TOUS LES TESTS PASSENT !")
+        print("\n💡 Comportement validé:")
+        print("   • URL match → affiche seulement les entrées qui matchent")
+        print("   • URL ne match pas → affiche TOUTES les entrées")
+        print("   • La recherche peut toujours accéder à toutes les entrées")
         return 0
     else:
-        print(f"\n⚠️  Certains tests ont échoué")
+        print("\n⚠️  Certains tests ont échoué")
         return 1
 
 
