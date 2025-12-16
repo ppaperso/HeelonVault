@@ -4,6 +4,7 @@ Dialogue 'À propos' de l'application
 
 import os
 
+from src.i18n import _
 from src.version import get_version_info
 
 import gi  # type: ignore[import]
@@ -27,17 +28,17 @@ def show_about_dialog(parent):
     # Informations de base avec mode dev si applicable
     version_text = version_info['version']
     if os.environ.get('DEV_MODE', '').lower() in ('1', 'true', 'yes'):
-        version_text += " (Mode Développement)"
+        version_text += _( " (Mode Développement)")
     
     about.set_application_name(version_info['app_name'])
     about.set_version(version_text)
     
     # Description enrichie avec les fonctionnalités
-    description_enrichie = """Gestionnaire de mots de passe sécurisé pour Linux
+    description_enrichie = _("""Gestionnaire de mots de passe sécurisé pour Linux
 
 🔒 Chiffrement AES-256-GCM • Gestion multi-utilisateurs
 📥 Import/Export CSV • 🎲 Générateur sécurisé
-🏷️ Organisation par catégories et tags"""
+🏷️ Organisation par catégories et tags""")
     
     about.set_comments(description_enrichie)
     about.set_copyright(version_info['copyright'])

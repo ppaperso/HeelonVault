@@ -2,6 +2,7 @@
 
 from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.config.environment import is_dev_mode
+from src.i18n import _
 
 import gi  # type: ignore[import]
 
@@ -33,7 +34,7 @@ class LoginDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(400, 300)
-        self.set_title(f"Connexion - {username}")
+        self.set_title(_("Connexion - %s") % username)
         self.user_manager = user_manager
         self.username = username
         self.callback = callback
@@ -61,7 +62,7 @@ class LoginDialog(Adw.Window):
         box.append(username_label)
 
         if is_dev_mode():
-            dev_badge = Gtk.Label(label="🔧 MODE DÉVELOPPEMENT")
+            dev_badge = Gtk.Label(label=_("🔧 MODE DÉVELOPPEMENT"))
             dev_badge.set_css_classes(['caption', 'warning'])
             dev_badge.set_margin_top(6)
             dev_badge.set_margin_bottom(6)
@@ -69,7 +70,7 @@ class LoginDialog(Adw.Window):
             box.append(dev_badge)
         
         # Champ mot de passe
-        password_label = Gtk.Label(label="Mot de passe maître", xalign=0)
+        password_label = Gtk.Label(label=_("Mot de passe maître"), xalign=0)
         box.append(password_label)
         
         self.password_entry = Gtk.PasswordEntry()
@@ -87,11 +88,11 @@ class LoginDialog(Adw.Window):
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
         
-        cancel_btn = Gtk.Button(label="Retour")
+        cancel_btn = Gtk.Button(label=_("Retour"))
         cancel_btn.connect("clicked", lambda x: self.close())
         button_box.append(cancel_btn)
         
-        self.login_btn = Gtk.Button(label="Se connecter")
+        self.login_btn = Gtk.Button(label=_("Se connecter"))
         self.login_btn.set_css_classes(['suggested-action'])
         self.login_btn.connect("clicked", self.on_login_clicked)
         button_box.append(self.login_btn)
@@ -125,9 +126,9 @@ class LoginDialog(Adw.Window):
         
         if remaining_seconds >= 60:
             minutes = remaining_seconds // 60
-            self.show_error(f"🔒 Trop de tentatives échouées. Veuillez patienter {minutes} min")
+            self.show_error(_("🔒 Trop de tentatives échouées. Veuillez patienter %s min") % minutes)
         else:
-            self.show_error(f"⏳ Veuillez patienter {remaining_seconds}s avant de réessayer")
+            self.show_error(_("⏳ Veuillez patienter %ss avant de réessayer") % remaining_seconds)
         
         # Démarrer un timer pour réactiver
         GLib.timeout_add_seconds(1, self._update_lockout_timer)
@@ -146,9 +147,9 @@ class LoginDialog(Adw.Window):
             # Mettre à jour le message
             if remaining >= 60:
                 minutes = remaining // 60
-                self.show_error(f"🔒 Trop de tentatives échouées. Veuillez patienter {minutes} min")
+                self.show_error(_("🔒 Trop de tentatives échouées. Veuillez patienter %s min") % minutes)
             else:
-                self.show_error(f"⏳ Veuillez patienter {remaining}s avant de réessayer")
+                self.show_error(_("⏳ Veuillez patienter %ss avant de réessayer") % remaining)
             return True  # Continuer le timer
     
     def on_login_clicked(self, button):
@@ -170,7 +171,7 @@ class LoginDialog(Adw.Window):
         password = self.password_entry.get_text()
         
         if not password:
-            self.show_error("Le mot de passe est requis")
+            self.show_error(_("Le mot de passe est requis"))
             return
         
         user_info = self.user_manager.authenticate(self.username, password)
@@ -199,9 +200,9 @@ class LoginDialog(Adw.Window):
                 info = self._tracker.get_attempt_info(self.username)
                 if info and info.failed_attempts > 0:
                     delay = self._tracker._calculate_delay(info.failed_attempts)
-                    self.show_error(f"❌ Mot de passe incorrect (prochaine tentative dans {int(delay)}s)")
+                    self.show_error(_("❌ Mot de passe incorrect (prochaine tentative dans %ss)") % int(delay))
                 else:
-                    self.show_error("❌ Mot de passe incorrect")
+                    self.show_error(_("❌ Mot de passe incorrect"))
             
             self.password_entry.set_text("")
             # Reporter le focus après l'affichage de l'erreur

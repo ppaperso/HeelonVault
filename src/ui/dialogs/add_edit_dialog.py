@@ -2,6 +2,7 @@
 
 from typing import List, Optional
 
+from src.i18n import _
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
 
@@ -30,7 +31,7 @@ class AddEditDialog(Adw.Window):
         self.password_service = password_service
         self.entry = entry
         self.parent_window = parent
-        self.set_title("Modifier l'entrée" if entry else "Nouvelle entrée")
+        self.set_title(_("Modifier l'entrée") if entry else _("Nouvelle entrée"))
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         header = Adw.HeaderBar()
@@ -47,11 +48,11 @@ class AddEditDialog(Adw.Window):
         content.set_margin_bottom(20)
 
         title_value = entry.title if entry else ""
-        title_row, self.title_entry = self.create_entry_row("Titre *", title_value)
+        title_row, self.title_entry = self.create_entry_row(_("Titre *"), title_value)
         content.append(title_row)
 
         cat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        cat_label = Gtk.Label(label="Catégorie", xalign=0)
+        cat_label = Gtk.Label(label=_("Catégorie"), xalign=0)
         cat_box.append(cat_label)
 
         self.category_dropdown = Gtk.DropDown()
@@ -73,7 +74,7 @@ class AddEditDialog(Adw.Window):
         content.append(cat_box)
 
         tags_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        tags_label = Gtk.Label(label="Tags (séparés par des virgules)", xalign=0)
+        tags_label = Gtk.Label(label=_("Tags (séparés par des virgules)"), xalign=0)
         tags_box.append(tags_label)
 
         self.tags_entry = Gtk.Entry()
@@ -83,22 +84,22 @@ class AddEditDialog(Adw.Window):
         content.append(tags_box)
 
         username_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        username_label = Gtk.Label(label="👤 Nom d'utilisateur / Login (optionnel)", xalign=0)
+        username_label = Gtk.Label(label=_("👤 Nom d'utilisateur / Login (optionnel)"), xalign=0)
         username_box.append(username_label)
 
         self.username_entry = Gtk.Entry()
         username_value = entry.username if entry and entry.username else ""
         self.username_entry.set_text(username_value)
-        self.username_entry.set_placeholder_text("Ex: user@exemple.com ou mon_login")
+        self.username_entry.set_placeholder_text(_("Ex: user@exemple.com ou mon_login"))
         username_box.append(self.username_entry)
 
-        username_hint = Gtk.Label(label="Pour les sites web, entrez votre identifiant de connexion", xalign=0)
+        username_hint = Gtk.Label(label=_("Pour les sites web, entrez votre identifiant de connexion"), xalign=0)
         username_hint.set_css_classes(['caption', 'dim-label'])
         username_box.append(username_hint)
         content.append(username_box)
 
         pass_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        pass_label = Gtk.Label(label="Mot de passe *", xalign=0)
+        pass_label = Gtk.Label(label=_("Mot de passe *"), xalign=0)
         pass_box.append(pass_label)
 
         pass_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -109,7 +110,7 @@ class AddEditDialog(Adw.Window):
         self.password_entry.set_hexpand(True)
         pass_input_box.append(self.password_entry)
 
-        gen_btn = Gtk.Button(label="Générer")
+        gen_btn = Gtk.Button(label=_("Générer"))
         gen_btn.connect("clicked", self.on_generate_clicked)
         pass_input_box.append(gen_btn)
 
@@ -117,18 +118,18 @@ class AddEditDialog(Adw.Window):
         content.append(pass_box)
 
         url_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        url_label = Gtk.Label(label="🌐 URL (optionnel)", xalign=0)
+        url_label = Gtk.Label(label=_("🌐 URL (optionnel)"), xalign=0)
         url_box.append(url_label)
 
         self.url_entry = Gtk.Entry()
         if entry and entry.url:
             self.url_entry.set_text(entry.url)
-        self.url_entry.set_placeholder_text("https://exemple.com")
+        self.url_entry.set_placeholder_text(_("https://exemple.com"))
         url_box.append(self.url_entry)
         content.append(url_box)
 
         notes_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        notes_label = Gtk.Label(label="📝 Notes", xalign=0)
+        notes_label = Gtk.Label(label=_("📝 Notes"), xalign=0)
         notes_box.append(notes_label)
 
         # Créer un ScrolledWindow pour le TextView
@@ -155,11 +156,11 @@ class AddEditDialog(Adw.Window):
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         action_box.set_halign(Gtk.Align.END)
 
-        cancel_btn = Gtk.Button(label="Annuler")
+        cancel_btn = Gtk.Button(label=_("Annuler"))
         cancel_btn.connect("clicked", lambda b: self.close())
         action_box.append(cancel_btn)
 
-        save_btn = Gtk.Button(label="Valider")
+        save_btn = Gtk.Button(label=_("Valider"))
         save_btn.set_css_classes(['suggested-action'])
         save_btn.connect("clicked", self.on_save_clicked)
         action_box.append(save_btn)
@@ -206,9 +207,9 @@ class AddEditDialog(Adw.Window):
         if not title or not password:
             present_alert(
                 self,
-                "Champs requis",
-                "Le titre et le mot de passe sont obligatoires.",
-                [("ok", "OK")],
+                _("Champs requis"),
+                _("Le titre et le mot de passe sont obligatoires."),
+                [("ok", _("OK"))],
                 default="ok",
             )
             return

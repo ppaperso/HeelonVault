@@ -8,6 +8,7 @@ from typing import Callable, Optional
 
 from src.config.environment import get_data_directory
 from src.config.logging_config import configure_logging
+from src.i18n import _, init_i18n
 from src.repositories.password_repository import PasswordRepository
 from src.services.auth_service import AuthService
 from src.services.backup_service import BackupService
@@ -27,6 +28,7 @@ gi.require_version('Adw', '1')
 from gi.repository import Gtk, Adw, Gio  # type: ignore[attr-defined]  # noqa: E402
 
 configure_logging()
+init_i18n()
 logger = logging.getLogger(__name__)
 DATA_DIR = get_data_directory()
 
@@ -127,9 +129,9 @@ class PasswordManagerApplication(Adw.Application):
         except Exception as exc:
             logger.exception("Erreur lors de l'initialisation pour %s", user_info.get('username'))
             dialog = Adw.MessageDialog.new(None)
-            dialog.set_heading("Erreur")
-            dialog.set_body(f"Impossible d'initialiser l'application: {exc}")
-            dialog.add_response("ok", "OK")
+            dialog.set_heading(_("Erreur"))
+            dialog.set_body(_("Impossible d'initialiser l'application: %s") % exc)
+            dialog.add_response("ok", _("OK"))
             dialog.present()
 
     def on_logout(self, _action=None, _param=None):
@@ -141,7 +143,7 @@ class PasswordManagerApplication(Adw.Application):
                 if backup_path:
                     self.password_service.mark_as_saved()
                     if self.window and hasattr(self.window, 'toast_overlay'):
-                        toast = Adw.Toast.new(f"💾 Sauvegarde créée: {backup_path.name}")
+                        toast = Adw.Toast.new(_("💾 Sauvegarde créée: %s") % backup_path.name)
                         toast.set_timeout(3)
                         self.window.toast_overlay.add_toast(toast)
         if self.window:
@@ -189,11 +191,11 @@ class PasswordManagerApplication(Adw.Application):
 
 def _validate_password_rules(password: str, confirm: str) -> Optional[str]:
     if not password:
-        return "Le mot de passe est requis"
+        return _("Le mot de passe est requis")
     if len(password) < 8:
-        return "Le mot de passe doit contenir au moins 8 caractères"
+        return _("Le mot de passe doit contenir au moins 8 caractères")
     if password != confirm:
-        return "Les mots de passe ne correspondent pas"
+        return _("Les mots de passe ne correspondent pas")
     return None
 
 
@@ -203,7 +205,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
     def __init__(self, app, auth_service: AuthService, callback: Callable[[dict, str], None]):
         super().__init__(application=app)
         self.set_default_size(450, 500)
-        self.set_title("Sélection d'utilisateur")
+        self.set_title(_("Sélection d'utilisateur"))
         self.auth_service = auth_service
         self.callback = callback
 
@@ -217,15 +219,15 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         content.set_margin_top(20)
         content.set_margin_bottom(40)
 
-        title = Gtk.Label(label="🔐 Gestionnaire de mots de passe")
+        title = Gtk.Label(label=_("🔐 Gestionnaire de mots de passe"))
         title.set_css_classes(['title-1'])
         content.append(title)
 
-        version_label = Gtk.Label(label=f"Version {get_version()}")
+        version_label = Gtk.Label(label=_("Version %s") % get_version())
         version_label.set_css_classes(['caption', 'dim-label'])
         content.append(version_label)
 
-        subtitle = Gtk.Label(label="Sélectionnez votre compte")
+        subtitle = Gtk.Label(label=_("Sélectionnez votre compte"))
         subtitle.set_css_classes(['title-4'])
         content.append(subtitle)
 
@@ -263,12 +265,12 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             name_label.set_css_classes(['title-4'])
             name_box.append(name_label)
             if role == 'admin':
-                admin_label = Gtk.Label(label="Admin")
+                admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(['caption', 'accent'])
                 name_box.append(admin_label)
             info_box.append(name_box)
             if last_login:
-                last_login_label = Gtk.Label(label=f"Dernière connexion: {last_login[:16]}", xalign=0)
+                last_login_label = Gtk.Label(label=_("Dernière connexion: %s") % last_login[:16], xalign=0)
                 last_login_label.set_css_classes(['caption', 'dim-label'])
                 info_box.append(last_login_label)
             user_box.append(info_box)
@@ -290,7 +292,7 @@ class LoginDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(400, 250)
-        self.set_title("Connexion")
+        self.set_title(_("Connexion"))
         self.auth_service = auth_service
         self.username = username
         self.callback = callback
@@ -306,14 +308,14 @@ class LoginDialog(Adw.Window):
         icon.set_pixel_size(64)
         box.append(icon)
 
-        title = Gtk.Label(label=f"Bonjour, {username}")
+        title = Gtk.Label(label=_("Bonjour, %s") % username)
         title.set_css_classes(['title-2'])
         box.append(title)
 
-        subtitle = Gtk.Label(label="Entrez votre mot de passe maître")
+        subtitle = Gtk.Label(label=_("Entrez votre mot de passe maître"))
         box.append(subtitle)
 
-        version_label = Gtk.Label(label=f"v{get_version()}")
+        version_label = Gtk.Label(label=_("v%s") % get_version())
         version_label.set_css_classes(['caption', 'dim-label'])
         version_label.set_margin_top(10)
 
@@ -329,11 +331,11 @@ class LoginDialog(Adw.Window):
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.CENTER)
 
-        cancel_btn = Gtk.Button(label="Retour")
+        cancel_btn = Gtk.Button(label=_("Retour"))
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
 
-        login_btn = Gtk.Button(label="Se connecter")
+        login_btn = Gtk.Button(label=_("Se connecter"))
         login_btn.set_css_classes(['suggested-action'])
         login_btn.connect("clicked", lambda _x: self.on_login())
         button_box.append(login_btn)
@@ -346,14 +348,14 @@ class LoginDialog(Adw.Window):
     def on_login(self):
         password = self.password_entry.get_text()
         if not password:
-            self.show_error("Veuillez entrer votre mot de passe")
+            self.show_error(_("Veuillez entrer votre mot de passe"))
             return
         user_info = self.auth_service.authenticate(self.username, password)
         if user_info:
             self.callback(user_info, password)
             self.close()
         else:
-            self.show_error("Mot de passe incorrect")
+            self.show_error(_("Mot de passe incorrect"))
             self.password_entry.set_text("")
             self.password_entry.grab_focus()
 
@@ -370,7 +372,7 @@ class CreateUserDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(450, 420)
-        self.set_title("Créer un compte")
+        self.set_title(_("Créer un compte"))
         self.auth_service = auth_service
         self.on_success_callback = on_success
 
@@ -384,35 +386,35 @@ class CreateUserDialog(Adw.Window):
         content.set_margin_top(20)
         content.set_margin_bottom(40)
 
-        title = Gtk.Label(label="Créer un nouveau compte")
+        title = Gtk.Label(label=_("Créer un nouveau compte"))
         title.set_css_classes(['title-2'])
         content.append(title)
 
-        username_label = Gtk.Label(label="Nom d'utilisateur", xalign=0)
+        username_label = Gtk.Label(label=_("Nom d'utilisateur"), xalign=0)
         content.append(username_label)
         self.username_entry = Gtk.Entry()
         content.append(self.username_entry)
 
-        password_label = Gtk.Label(label="Mot de passe maître", xalign=0)
+        password_label = Gtk.Label(label=_("Mot de passe maître"), xalign=0)
         content.append(password_label)
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
         content.append(self.password_entry)
 
-        confirm_label = Gtk.Label(label="Confirmer le mot de passe", xalign=0)
+        confirm_label = Gtk.Label(label=_("Confirmer le mot de passe"), xalign=0)
         content.append(confirm_label)
         self.confirm_entry = Gtk.PasswordEntry()
         self.confirm_entry.set_show_peek_icon(True)
         content.append(self.confirm_entry)
 
-        role_label = Gtk.Label(label="Rôle", xalign=0)
+        role_label = Gtk.Label(label=_("Rôle"), xalign=0)
         content.append(role_label)
         role_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         role_box.set_margin_bottom(10)
-        self.role_user = Gtk.CheckButton(label="Utilisateur")
+        self.role_user = Gtk.CheckButton(label=_("Utilisateur"))
         self.role_user.set_active(True)
         role_box.append(self.role_user)
-        self.role_admin = Gtk.CheckButton(label="Administrateur")
+        self.role_admin = Gtk.CheckButton(label=_("Administrateur"))
         self.role_admin.set_group(self.role_user)
         role_box.append(self.role_admin)
         content.append(role_box)
@@ -425,10 +427,10 @@ class CreateUserDialog(Adw.Window):
 
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
-        cancel_btn = Gtk.Button(label="Annuler")
+        cancel_btn = Gtk.Button(label=_("Annuler"))
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
-        create_btn = Gtk.Button(label="Créer le compte")
+        create_btn = Gtk.Button(label=_("Créer le compte"))
         create_btn.set_css_classes(['suggested-action'])
         create_btn.connect("clicked", self.on_create_clicked)
         button_box.append(create_btn)
@@ -443,7 +445,7 @@ class CreateUserDialog(Adw.Window):
         confirm = self.confirm_entry.get_text()
 
         if len(username) < 3:
-            self.show_error("Le nom d'utilisateur doit contenir au moins 3 caractères")
+            self.show_error(_("Le nom d'utilisateur doit contenir au moins 3 caractères"))
             return
         error = _validate_password_rules(password, confirm)
         if error:
@@ -454,7 +456,7 @@ class CreateUserDialog(Adw.Window):
             self.on_success_callback()
             self.close()
         else:
-            self.show_error("Ce nom d'utilisateur existe déjà")
+            self.show_error(_("Ce nom d'utilisateur existe déjà"))
 
     def show_error(self, message: str):
         self.error_label.set_text(message)
@@ -469,7 +471,7 @@ class ManageUsersDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(600, 500)
-        self.set_title("Gestion des utilisateurs")
+        self.set_title(_("Gestion des utilisateurs"))
         self.auth_service = auth_service
         self.current_username = current_username
 
@@ -483,7 +485,7 @@ class ManageUsersDialog(Adw.Window):
         content.set_margin_top(20)
         content.set_margin_bottom(20)
 
-        title = Gtk.Label(label="Gestion des utilisateurs")
+        title = Gtk.Label(label=_("Gestion des utilisateurs"))
         title.set_css_classes(['title-2'])
         content.append(title)
 
@@ -496,7 +498,7 @@ class ManageUsersDialog(Adw.Window):
 
         self.load_users()
 
-        create_user_btn = Gtk.Button(label="➕ Créer un nouvel utilisateur")
+        create_user_btn = Gtk.Button(label=_("➕ Créer un nouvel utilisateur"))
         create_user_btn.set_css_classes(['suggested-action', 'pill'])
         create_user_btn.connect("clicked", self.on_create_user)
         content.append(create_user_btn)
@@ -522,20 +524,20 @@ class ManageUsersDialog(Adw.Window):
             name_label.set_css_classes(['title-4'])
             name_box.append(name_label)
             if role == 'admin':
-                admin_label = Gtk.Label(label="Admin")
+                admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(['caption', 'accent'])
                 name_box.append(admin_label)
             info_box.append(name_box)
-            created_label = Gtk.Label(label=f"Créé: {created_at[:10]}", xalign=0)
+            created_label = Gtk.Label(label=_("Créé: %s") % created_at[:10], xalign=0)
             created_label.set_css_classes(['caption', 'dim-label'])
             info_box.append(created_label)
             user_box.append(info_box)
             if username != self.current_username:
                 action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-                reset_btn = Gtk.Button(label="Réinitialiser MdP")
+                reset_btn = Gtk.Button(label=_("Réinitialiser MdP"))
                 reset_btn.connect("clicked", lambda _b, u=username: self.on_reset_password(u))
                 action_box.append(reset_btn)
-                delete_btn = Gtk.Button(label="Supprimer")
+                delete_btn = Gtk.Button(label=_("Supprimer"))
                 delete_btn.set_css_classes(['destructive-action'])
                 delete_btn.connect("clicked", lambda _b, u=username: self.on_delete_user(u))
                 action_box.append(delete_btn)
@@ -551,12 +553,12 @@ class ManageUsersDialog(Adw.Window):
 
     def on_delete_user(self, username: str):
         dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Confirmer la suppression")
+        dialog.set_heading(_("Confirmer la suppression"))
         dialog.set_body(
-            f"Voulez-vous vraiment supprimer l'utilisateur '{username}' ?\n\nToutes ses données seront perdues."
+            _("Voulez-vous vraiment supprimer l'utilisateur '%s' ?\n\nToutes ses données seront perdues.") % username
         )
-        dialog.add_response("cancel", "Annuler")
-        dialog.add_response("delete", "Supprimer")
+        dialog.add_response("cancel", _("Annuler"))
+        dialog.add_response("delete", _("Supprimer"))
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.connect("response", lambda _d, r: self.delete_confirmed(r, username))
         dialog.present()
@@ -581,7 +583,7 @@ class ChangeOwnPasswordDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(450, 400)
-        self.set_title("Changer mon mot de passe")
+        self.set_title(_("Changer mon mot de passe"))
         self.auth_service = auth_service
         self.username = username
 
@@ -591,17 +593,17 @@ class ChangeOwnPasswordDialog(Adw.Window):
         box.set_margin_top(40)
         box.set_margin_bottom(40)
 
-        title = Gtk.Label(label="Changer votre mot de passe maître")
+        title = Gtk.Label(label=_("Changer votre mot de passe maître"))
         title.set_css_classes(['title-3'])
         title.set_wrap(True)
         box.append(title)
 
-        info = Gtk.Label(label="Pour des raisons de sécurité, vous devez d'abord saisir votre mot de passe actuel.")
+        info = Gtk.Label(label=_("Pour des raisons de sécurité, vous devez d'abord saisir votre mot de passe actuel."))
         info.set_css_classes(['caption', 'dim-label'])
         info.set_wrap(True)
         box.append(info)
 
-        current_label = Gtk.Label(label="Mot de passe actuel", xalign=0)
+        current_label = Gtk.Label(label=_("Mot de passe actuel"), xalign=0)
         current_label.set_css_classes(['title-4'])
         box.append(current_label)
         self.current_entry = Gtk.PasswordEntry()
@@ -613,14 +615,14 @@ class ChangeOwnPasswordDialog(Adw.Window):
         separator.set_margin_bottom(10)
         box.append(separator)
 
-        new_label = Gtk.Label(label="Nouveau mot de passe", xalign=0)
+        new_label = Gtk.Label(label=_("Nouveau mot de passe"), xalign=0)
         new_label.set_css_classes(['title-4'])
         box.append(new_label)
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
         box.append(self.password_entry)
 
-        confirm_label = Gtk.Label(label="Confirmer le nouveau mot de passe", xalign=0)
+        confirm_label = Gtk.Label(label=_("Confirmer le nouveau mot de passe"), xalign=0)
         box.append(confirm_label)
         self.confirm_entry = Gtk.PasswordEntry()
         self.confirm_entry.set_show_peek_icon(True)
@@ -634,10 +636,10 @@ class ChangeOwnPasswordDialog(Adw.Window):
 
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
-        cancel_btn = Gtk.Button(label="Annuler")
+        cancel_btn = Gtk.Button(label=_("Annuler"))
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
-        change_btn = Gtk.Button(label="Changer le mot de passe")
+        change_btn = Gtk.Button(label=_("Changer le mot de passe"))
         change_btn.set_css_classes(['suggested-action'])
         change_btn.connect("clicked", self.on_change_clicked)
         button_box.append(change_btn)
@@ -651,10 +653,10 @@ class ChangeOwnPasswordDialog(Adw.Window):
         confirm = self.confirm_entry.get_text()
 
         if not current:
-            self.show_error("Veuillez saisir votre mot de passe actuel")
+            self.show_error(_("Veuillez saisir votre mot de passe actuel"))
             return
         if not self.auth_service.verify_user(self.username, current):
-            self.show_error("❌ Mot de passe actuel incorrect")
+            self.show_error(_("❌ Mot de passe actuel incorrect"))
             self.current_entry.set_text("")
             self.current_entry.grab_focus()
             return
@@ -663,17 +665,17 @@ class ChangeOwnPasswordDialog(Adw.Window):
             self.show_error(error)
             return
         if new_password == current:
-            self.show_error("Le nouveau mot de passe doit être différent de l'ancien")
+            self.show_error(_("Le nouveau mot de passe doit être différent de l'ancien"))
             return
         if self.auth_service.change_user_password(self.username, current, new_password):
             dialog = Adw.MessageDialog.new(self)
-            dialog.set_heading("✅ Succès")
-            dialog.set_body("Votre mot de passe maître a été changé avec succès.")
-            dialog.add_response("ok", "OK")
+            dialog.set_heading(_("✅ Succès"))
+            dialog.set_body(_("Votre mot de passe maître a été changé avec succès."))
+            dialog.add_response("ok", _("OK"))
             dialog.connect("response", lambda _d, _r: self.close())
             dialog.present()
         else:
-            self.show_error("❌ Erreur lors du changement de mot de passe")
+            self.show_error(_("❌ Erreur lors du changement de mot de passe"))
 
     def show_error(self, message: str):
         self.error_label.set_text(message)
@@ -688,7 +690,7 @@ class ResetPasswordDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(400, 300)
-        self.set_title("Réinitialiser le mot de passe")
+        self.set_title(_("Réinitialiser le mot de passe"))
         self.auth_service = auth_service
         self.username = username
 
@@ -698,23 +700,23 @@ class ResetPasswordDialog(Adw.Window):
         box.set_margin_top(40)
         box.set_margin_bottom(40)
 
-        title = Gtk.Label(label=f"Réinitialiser le mot de passe de '{username}'")
+        title = Gtk.Label(label=_("Réinitialiser le mot de passe de '%s'") % username)
         title.set_css_classes(['title-3'])
         title.set_wrap(True)
         box.append(title)
 
-        warning = Gtk.Label(label="⚠️ L'utilisateur devra utiliser ce nouveau mot de passe")
+        warning = Gtk.Label(label=_("⚠️ L'utilisateur devra utiliser ce nouveau mot de passe"))
         warning.set_css_classes(['caption'])
         warning.set_wrap(True)
         box.append(warning)
 
-        password_label = Gtk.Label(label="Nouveau mot de passe", xalign=0)
+        password_label = Gtk.Label(label=_("Nouveau mot de passe"), xalign=0)
         box.append(password_label)
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
         box.append(self.password_entry)
 
-        confirm_label = Gtk.Label(label="Confirmer le mot de passe", xalign=0)
+        confirm_label = Gtk.Label(label=_("Confirmer le mot de passe"), xalign=0)
         box.append(confirm_label)
         self.confirm_entry = Gtk.PasswordEntry()
         self.confirm_entry.set_show_peek_icon(True)
@@ -727,10 +729,10 @@ class ResetPasswordDialog(Adw.Window):
 
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
-        cancel_btn = Gtk.Button(label="Annuler")
+        cancel_btn = Gtk.Button(label=_("Annuler"))
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
-        reset_btn = Gtk.Button(label="Réinitialiser")
+        reset_btn = Gtk.Button(label=_("Réinitialiser"))
         reset_btn.set_css_classes(['destructive-action'])
         reset_btn.connect("clicked", self.on_reset_clicked)
         button_box.append(reset_btn)
@@ -747,13 +749,13 @@ class ResetPasswordDialog(Adw.Window):
             return
         if self.auth_service.reset_user_password(self.username, password):
             dialog = Adw.MessageDialog.new(self)
-            dialog.set_heading("Succès")
-            dialog.set_body(f"Le mot de passe de '{self.username}' a été réinitialisé.")
-            dialog.add_response("ok", "OK")
+            dialog.set_heading(_("Succès"))
+            dialog.set_body(_("Le mot de passe de '%s' a été réinitialisé.") % self.username)
+            dialog.add_response("ok", _("OK"))
             dialog.connect("response", lambda _d, _r: self.close())
             dialog.present()
         else:
-            self.show_error("Erreur lors de la réinitialisation")
+            self.show_error(_("Erreur lors de la réinitialisation"))
 
     def show_error(self, message: str):
         self.error_label.set_text(message)

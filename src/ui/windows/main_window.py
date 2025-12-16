@@ -6,6 +6,7 @@ import logging
 from typing import Optional
 
 from src.config.environment import is_dev_mode
+from src.i18n import _
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
 from src.ui.dialogs.add_edit_dialog import AddEditDialog
@@ -24,7 +25,7 @@ logger = logging.getLogger(__name__)
 def analyze_password_strength(password: str) -> tuple[int, str, str]:
     """Retourne (score, libellé, classe CSS) pour la force d'un mot de passe."""
     if not password:
-        return (0, "Aucun", "error")
+        return (0, _("Aucun"), "error")
 
     score = 0
     length = len(password)
@@ -46,12 +47,12 @@ def analyze_password_strength(password: str) -> tuple[int, str, str]:
         score += 1
 
     if score >= 4:
-        return (4, "Très fort", "success")
+        return (4, _("Très fort"), "success")
     if score >= 3:
-        return (3, "Fort", "success")
+        return (3, _("Fort"), "success")
     if score >= 2:
-        return (2, "Moyen", "warning")
-    return (1, "Faible", "error")
+        return (2, _("Moyen"), "warning")
+    return (1, _("Faible"), "error")
 
 
 class PasswordCard(Gtk.FlowBoxChild):
@@ -101,7 +102,7 @@ class PasswordCard(Gtk.FlowBoxChild):
         title_label.set_css_classes(['title-4', strength_color])
         title_label.set_ellipsize(3)
         title_label.set_max_width_chars(24)
-        title_label.set_tooltip_text(f"Mot de passe {strength_label.lower()}")
+        title_label.set_tooltip_text(_("Mot de passe %s") % strength_label.lower())
         title_box.append(title_label)
 
         if entry.category:
@@ -118,12 +119,12 @@ class PasswordCard(Gtk.FlowBoxChild):
         if is_duplicate:
             dup_badge = Gtk.Label(label="⚠")
             dup_badge.set_css_classes(['warning'])
-            dup_badge.set_tooltip_text("Mot de passe dupliqué")
+            dup_badge.set_tooltip_text(_("Mot de passe dupliqué"))
             badges_box.append(dup_badge)
 
         if password_age is not None and password_age > 90:
             renew_badge = Gtk.Label(label="🔄")
-            renew_badge.set_tooltip_text(f"Mot de passe ancien ({password_age} jours)")
+            renew_badge.set_tooltip_text(_("Mot de passe ancien (%s jours)") % password_age)
             renew_badge.set_css_classes(['error' if password_age > 180 else 'warning'])
             badges_box.append(renew_badge)
 
@@ -180,25 +181,25 @@ class PasswordCard(Gtk.FlowBoxChild):
         if entry.username:
             actions_column.append(self._build_action_button(
                 "avatar-default-symbolic",
-                "Copier le nom d'utilisateur",
-                lambda _btn: self._copy_to_clipboard(entry.username, "Nom d'utilisateur copié")
+                _("Copier le nom d'utilisateur"),
+                lambda _btn: self._copy_to_clipboard(entry.username, _("Nom d'utilisateur copié"))
             ))
 
         actions_column.append(self._build_action_button(
             "dialog-password-symbolic",
-            "Copier le mot de passe",
-            lambda _btn: self._copy_to_clipboard(entry.password, "Mot de passe copié")
+            _("Copier le mot de passe"),
+            lambda _btn: self._copy_to_clipboard(entry.password, _("Mot de passe copié"))
         ))
 
         if entry.url:
             actions_column.append(self._build_action_button(
                 "edit-copy-symbolic",
-                "Copier l'URL",
-                lambda _btn: self._copy_to_clipboard(entry.url, "URL copiée")
+                _("Copier l'URL"),
+                lambda _btn: self._copy_to_clipboard(entry.url, _("URL copiée"))
             ))
             actions_column.append(self._build_action_button(
                 "web-browser-symbolic",
-                "Ouvrir dans le navigateur",
+                _("Ouvrir dans le navigateur"),
                 lambda _btn: self._open_url(entry.url),
                 extra_classes=['suggested-action']
             ))
@@ -260,7 +261,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     """Fenêtre principale affichant les entrées de mots de passe."""
 
     def __init__(self, app, password_service: PasswordService, user_info: dict):
-        super().__init__(application=app, title="Gestionnaire de mots de passe")
+        super().__init__(application=app, title=_("Gestionnaire de mots de passe"))
         self.password_service = password_service
         self.user_info = user_info
         self.current_category_filter = "Toutes"
@@ -305,17 +306,17 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         welcome_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
         user_icon = Gtk.Image.new_from_icon_name("avatar-default-symbolic")
         welcome_box.append(user_icon)
-        welcome_label = Gtk.Label(label=f"Bonjour, {self.user_info['username']}")
+        welcome_label = Gtk.Label(label=_("Bonjour, %s") % self.user_info['username'])
         welcome_label.set_css_classes(['title-4'])
         welcome_box.append(welcome_label)
 
         if self.user_info['role'] == 'admin':
-            admin_badge = Gtk.Label(label="Admin")
+            admin_badge = Gtk.Label(label=_("Admin"))
             admin_badge.set_css_classes(['caption', 'accent'])
             welcome_box.append(admin_badge)
 
         if is_dev_mode():
-            dev_badge = Gtk.Label(label="🔧 MODE DÉVELOPPEMENT")
+            dev_badge = Gtk.Label(label=_("🔧 MODE DÉVELOPPEMENT"))
             dev_badge.set_css_classes(['caption', 'warning'])
             welcome_box.append(dev_badge)
 
@@ -323,15 +324,15 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic")
         menu = Gio.Menu()
-        menu.append("Importer depuis CSV", "app.import_csv")
-        menu.append("Changer mon mot de passe", "app.change_own_password")
+        menu.append(_("Importer depuis CSV"), "app.import_csv")
+        menu.append(_("Changer mon mot de passe"), "app.change_own_password")
         if self.user_info['role'] == 'admin':
-            menu.append("Gérer les utilisateurs", "app.manage_users")
-            menu.append("Gérer les sauvegardes", "app.manage_backups")
-        menu.append("Changer de compte", "app.switch_user")
-        menu.append("Déconnexion", "app.logout")
+            menu.append(_("Gérer les utilisateurs"), "app.manage_users")
+            menu.append(_("Gérer les sauvegardes"), "app.manage_backups")
+        menu.append(_("Changer de compte"), "app.switch_user")
+        menu.append(_("Déconnexion"), "app.logout")
         about_section = Gio.Menu()
-        about_section.append("À propos", "app.about")
+        about_section.append(_("À propos"), "app.about")
         menu.append_section(None, about_section)
         menu_button.set_menu_model(menu)
         header.pack_end(menu_button)
@@ -358,10 +359,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         empty_icon.set_pixel_size(64)
         empty_icon.set_css_classes(['dim-label'])
         self.empty_state.append(empty_icon)
-        empty_label = Gtk.Label(label="Aucune entrée")
+        empty_label = Gtk.Label(label=_("Aucune entrée"))
         empty_label.set_css_classes(['title-2', 'dim-label'])
         self.empty_state.append(empty_label)
-        empty_hint = Gtk.Label(label="Cliquez sur + pour ajouter votre première entrée")
+        empty_hint = Gtk.Label(label=_("Cliquez sur + pour ajouter votre première entrée"))
         empty_hint.set_css_classes(['body', 'dim-label'])
         self.empty_state.append(empty_hint)
 
@@ -404,14 +405,14 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         search_box.set_margin_top(12)
         search_box.set_margin_bottom(6)
         search_entry = Gtk.SearchEntry()
-        search_entry.set_placeholder_text("Rechercher...")
+        search_entry.set_placeholder_text(_("Rechercher..."))
         search_entry.connect("search-changed", self.on_search_changed)
         search_box.append(search_entry)
         sidebar.append(search_box)
 
         sidebar.append(Gtk.Separator())
 
-        cat_label = Gtk.Label(label="Catégories")
+        cat_label = Gtk.Label(label=_("Catégories"))
         cat_label.set_css_classes(['title-4'])
         cat_label.set_margin_start(12)
         cat_label.set_margin_top(12)
@@ -431,7 +432,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         sidebar.append(Gtk.Separator())
 
-        tag_label = Gtk.Label(label="Tags")
+        tag_label = Gtk.Label(label=_("Tags"))
         tag_label.set_css_classes(['title-4'])
         tag_label.set_margin_start(12)
         tag_label.set_margin_top(8)
@@ -463,7 +464,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.category_listbox.remove_all()
 
         all_row = Gtk.ListBoxRow()
-        all_label = Gtk.Label(label="📂 Toutes")
+        all_label = Gtk.Label(label=_("📂 Toutes"))
         all_label.set_xalign(0)
         all_label.set_margin_start(12)
         all_label.set_margin_end(12)
@@ -582,9 +583,9 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def on_delete_clicked(self, entry_id: int):
         present_alert(
             self,
-            "Confirmer la suppression",
-            "Êtes-vous sûr de vouloir supprimer cette entrée ?",
-            [("cancel", "Annuler"), ("delete", "Supprimer")],
+            _("Confirmer la suppression"),
+            _("Êtes-vous sûr de vouloir supprimer cette entrée ?"),
+            [("cancel", _("Annuler")), ("delete", _("Supprimer"))],
             default="cancel",
             close="cancel",
             destructive="delete",
@@ -611,7 +612,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------------
     # Utilitaires (presse-papiers, notifications, navigation)
     # ------------------------------------------------------------------
-    def copy_to_clipboard(self, text: str, message: str = "Copié dans le presse-papiers") -> None:
+    def copy_to_clipboard(self, text: str, message: str = _("Copié dans le presse-papiers")) -> None:
         clipboard = self.get_clipboard()
         if not clipboard:
             logger.warning("Clipboard non disponible pour la copie")
@@ -668,19 +669,21 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
                 bytes_value = GLib.Bytes.new(b'')
                 provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
                 clipboard.set_content(provider)
-                self.show_toast("Presse-papiers vidé pour sécurité")
+                self.show_toast(_("Presse-papiers vidé pour sécurité"))
             except Exception as exc:
                 logger.warning("Impossible de vider le presse-papiers: %s", exc)
         self._clipboard_clear_source_id = None
         return False
 
     def show_toast(self, message: str) -> None:
-        if hasattr(self, 'toast_overlay') and self.toast_overlay:
-            toast = Adw.Toast.new(message)
-            self.toast_overlay.add_toast(toast)
+        from src.ui.notifications import toast as show_toast
+
+        show_toast(self, message)
 
     def open_url(self, url: str) -> None:
         import subprocess
+
+        from src.ui.notifications import error as show_error
 
         if not url.startswith(('http://', 'https://')):
             url = 'https://' + url
@@ -688,8 +691,4 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             subprocess.Popen(['xdg-open', url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
         except Exception as exc:
             logger.exception("Erreur lors de l'ouverture de l'URL %s", url)
-            dialog = Adw.MessageDialog.new(self)
-            dialog.set_heading("❌ Erreur")
-            dialog.set_body(f"Impossible d'ouvrir l'URL :\n{str(exc)}")
-            dialog.add_response("ok", "OK")
-            dialog.present()
+            show_error(self, _("Impossible d'ouvrir l'URL :\n%s") % str(exc), heading=_("Erreur"))
