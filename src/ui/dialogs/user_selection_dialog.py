@@ -1,5 +1,7 @@
 """Dialogue de sélection d'utilisateur au démarrage de l'application."""
 
+from src.i18n import _
+
 import gi  # type: ignore[import]
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
@@ -24,7 +26,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         """
         super().__init__(application=app)
         self.set_default_size(450, 500)
-        self.set_title("Sélection d'utilisateur")
+        self.set_title(_("Sélection d'utilisateur"))
         self.user_manager = user_manager
         self.callback = callback
         self.app_ref = app
@@ -47,11 +49,11 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         content.set_margin_bottom(40)
         
         # Titre
-        title = Gtk.Label(label="🔐 Gestionnaire de mots de passe")
+        title = Gtk.Label(label=_("🔐 Gestionnaire de mots de passe"))
         title.set_css_classes(['title-1'])
         content.append(title)
         
-        subtitle = Gtk.Label(label="Sélectionnez votre compte")
+        subtitle = Gtk.Label(label=_("Sélectionnez votre compte"))
         subtitle.set_css_classes(['title-4'])
         content.append(subtitle)
         
@@ -68,7 +70,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         
         # Note informative
         info = Gtk.Label(
-            label="ℹ️ Pour créer un nouveau compte, connectez-vous en tant qu'administrateur"
+            label=_("ℹ️ Pour créer un nouveau compte, connectez-vous en tant qu'administrateur")
         )
         info.set_css_classes(['caption', 'dim-label'])
         info.set_wrap(True)
@@ -107,7 +109,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             name_box.append(name_label)
             
             if role == 'admin':
-                admin_label = Gtk.Label(label="Admin")
+                admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(['caption', 'accent'])
                 name_box.append(admin_label)
             
@@ -115,7 +117,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             
             if last_login:
                 last_login_label = Gtk.Label(
-                    label=f"Dernière connexion: {last_login[:16]}", 
+                    label=_("Dernière connexion: %s") % last_login[:16],
                     xalign=0
                 )
                 last_login_label.set_css_classes(['caption', 'dim-label'])

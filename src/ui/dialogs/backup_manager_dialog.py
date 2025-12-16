@@ -4,6 +4,10 @@ Dialogue de gestion des sauvegardes (admin uniquement)
 
 import logging
 
+from src.i18n import _
+from src.ui.notifications import error as show_error
+from src.ui.notifications import toast as show_toast
+
 import gi  # type: ignore[import]
 
 gi.require_version('Gtk', '4.0')
@@ -35,7 +39,7 @@ class BackupManagerDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(700, 600)
-        self.set_title("Gestion des sauvegardes")
+        self.set_title(_("Gestion des sauvegardes"))
         
         self.backup_service = backup_service
         self.current_username = current_username
@@ -66,13 +70,13 @@ class BackupManagerDialog(Adw.Window):
         # Titre et description
         title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
         
-        title = Gtk.Label(label="💾 Gestion des sauvegardes")
+        title = Gtk.Label(label=_("💾 Gestion des sauvegardes"))
         title.set_css_classes(['title-2'])
         title.set_halign(Gtk.Align.START)
         title_box.append(title)
         
         subtitle = Gtk.Label(
-            label="Sauvegardez et restaurez toutes les données du système (tous les utilisateurs)"
+            label=_("Sauvegardez et restaurez toutes les données du système (tous les utilisateurs)")
         )
         subtitle.set_css_classes(['dim-label'])
         subtitle.set_halign(Gtk.Align.START)
@@ -83,14 +87,14 @@ class BackupManagerDialog(Adw.Window):
         
         # Section : Créer une sauvegarde manuelle
         manual_backup_group = Adw.PreferencesGroup()
-        manual_backup_group.set_title("Sauvegarde complète du système")
-        manual_backup_group.set_description("Créez une sauvegarde de TOUTES les données (tous les utilisateurs)")
+        manual_backup_group.set_title(_("Sauvegarde complète du système"))
+        manual_backup_group.set_description(_("Créez une sauvegarde de TOUTES les données (tous les utilisateurs)"))
         
         manual_backup_row = Adw.ActionRow()
-        manual_backup_row.set_title("Créer une sauvegarde système maintenant")
-        manual_backup_row.set_subtitle("Sauvegarde: users.db + tous les passwords_*.db + tous les salt_*.bin")
+        manual_backup_row.set_title(_("Créer une sauvegarde système maintenant"))
+        manual_backup_row.set_subtitle(_("Sauvegarde: users.db + tous les passwords_*.db + tous les salt_*.bin"))
         
-        backup_button = Gtk.Button(label="💾 Créer")
+        backup_button = Gtk.Button(label=_("💾 Créer"))
         backup_button.set_css_classes(['suggested-action'])
         backup_button.set_valign(Gtk.Align.CENTER)
         backup_button.connect("clicked", self.on_create_backup_clicked)
@@ -101,8 +105,8 @@ class BackupManagerDialog(Adw.Window):
         
         # Section : Liste des sauvegardes
         backups_group = Adw.PreferencesGroup()
-        backups_group.set_title("Sauvegardes système existantes")
-        backups_group.set_description("Liste de toutes les sauvegardes complètes du système")
+        backups_group.set_title(_("Sauvegardes système existantes"))
+        backups_group.set_description(_("Liste de toutes les sauvegardes complètes du système"))
         
         self.backups_list = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
         self.backups_list.set_css_classes(['boxed-list'])
@@ -112,8 +116,8 @@ class BackupManagerDialog(Adw.Window):
         
         # Section : Instructions de restauration
         restore_group = Adw.PreferencesGroup()
-        restore_group.set_title("📋 Instructions de restauration")
-        restore_group.set_description("Comment restaurer une sauvegarde")
+        restore_group.set_title(_("📋 Instructions de restauration"))
+        restore_group.set_description(_("Comment restaurer une sauvegarde"))
         
         instructions_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
         instructions_box.set_margin_start(12)
@@ -122,12 +126,12 @@ class BackupManagerDialog(Adw.Window):
         instructions_box.set_margin_bottom(12)
         
         steps = [
-            ("1️⃣", "Fermez complètement l'application"),
-            ("2️⃣", "Ouvrez le dossier des sauvegardes (bouton ci-dessous)"),
-            ("3️⃣", "Entrez dans le dossier system_backup_YYYYMMDD_HHMMSS"),
-            ("4️⃣", "Copiez TOUS les fichiers du dossier de sauvegarde"),
-            ("5️⃣", "Collez et remplacez dans le dossier de données principal"),
-            ("6️⃣", "Relancez l'application"),
+            ("1️⃣", _("Fermez complètement l'application")),
+            ("2️⃣", _("Ouvrez le dossier des sauvegardes (bouton ci-dessous)")),
+            ("3️⃣", _("Entrez dans le dossier system_backup_YYYYMMDD_HHMMSS")),
+            ("4️⃣", _("Copiez TOUS les fichiers du dossier de sauvegarde")),
+            ("5️⃣", _("Collez et remplacez dans le dossier de données principal")),
+            ("6️⃣", _("Relancez l'application")),
         ]
         
         for emoji, step in steps:
@@ -147,10 +151,10 @@ class BackupManagerDialog(Adw.Window):
         
         # Bouton pour ouvrir le dossier des sauvegardes
         open_folder_row = Adw.ActionRow()
-        open_folder_row.set_title("Ouvrir le dossier des sauvegardes")
+        open_folder_row.set_title(_("Ouvrir le dossier des sauvegardes"))
         open_folder_row.set_subtitle(str(self.backup_service.backup_dir))
         
-        open_button = Gtk.Button(label="📁 Ouvrir")
+        open_button = Gtk.Button(label=_("📁 Ouvrir"))
         open_button.set_valign(Gtk.Align.CENTER)
         open_button.connect("clicked", self.on_open_folder_clicked)
         open_folder_row.add_suffix(open_button)
@@ -158,7 +162,7 @@ class BackupManagerDialog(Adw.Window):
         instructions_box.append(open_folder_row)
         
         restore_expander = Gtk.Expander()
-        restore_expander.set_label("Afficher les instructions")
+        restore_expander.set_label(_("Afficher les instructions"))
         restore_expander.set_child(instructions_box)
         
         restore_group.add(restore_expander)
@@ -184,8 +188,8 @@ class BackupManagerDialog(Adw.Window):
         if not backups:
             # Aucune sauvegarde
             empty_row = Adw.ActionRow()
-            empty_row.set_title("Aucune sauvegarde système disponible")
-            empty_row.set_subtitle("Créez votre première sauvegarde complète avec le bouton ci-dessus")
+            empty_row.set_title(_("Aucune sauvegarde système disponible"))
+            empty_row.set_subtitle(_("Créez votre première sauvegarde complète avec le bouton ci-dessus"))
             
             empty_icon = Gtk.Image.new_from_icon_name("folder-open-symbolic")
             empty_icon.set_css_classes(['dim-label'])
@@ -209,7 +213,7 @@ class BackupManagerDialog(Adw.Window):
                 
                 # Afficher le nombre de fichiers et la taille
                 backup_row.set_subtitle(
-                    f"📅 {info['created_str']} • 📦 {info['file_count']} fichiers • 💾 {size_str}"
+                    _("📅 %s • 📦 %s fichiers • 💾 %s") % (info['created_str'], info['file_count'], size_str)
                 )
                 
                 # Icône de statut (OK si le dossier existe)
@@ -218,7 +222,7 @@ class BackupManagerDialog(Adw.Window):
                 backup_row.add_prefix(status_icon)
                 
                 # Ajouter un bouton pour voir les détails
-                details_button = Gtk.Button(label="Détails")
+                details_button = Gtk.Button(label=_("Détails"))
                 details_button.set_valign(Gtk.Align.CENTER)
                 details_button.connect("clicked", self.on_show_backup_details, info)
                 backup_row.add_suffix(details_button)
@@ -236,7 +240,7 @@ class BackupManagerDialog(Adw.Window):
         
         # Désactiver le bouton pendant la création
         button.set_sensitive(False)
-        button.set_label("⏳ Création...")
+        button.set_label(_("⏳ Création..."))
         
         def do_backup():
             """Effectue la sauvegarde (dans le thread principal)."""
@@ -245,30 +249,28 @@ class BackupManagerDialog(Adw.Window):
                 
                 if backup_folder:
                     logger.info("Sauvegarde système créée: %s", backup_folder.name)
-                    
-                    # Afficher un toast de succès
-                    toast = Adw.Toast.new(f"✅ Sauvegarde système créée : {backup_folder.name}")
-                    toast.set_timeout(4)
+
+                    show_toast(
+                        self.parent_window or self,
+                        _("✅ Sauvegarde système créée : %s") % backup_folder.name,
+                        timeout=4,
+                    )
                     
                     # Rafraîchir la liste
                     self.load_backups()
                     
-                    # Afficher le toast (si la fenêtre parente a un toast_overlay)
-                    if hasattr(self.parent_window, 'toast_overlay'):
-                        self.parent_window.toast_overlay.add_toast(toast)
-                    
-                    button.set_label("💾 Créer")
+                    button.set_label(_("💾 Créer"))
                     button.set_sensitive(True)
                 else:
                     logger.error("Échec de la création de la sauvegarde système")
-                    self.show_error_dialog("Échec de la création de la sauvegarde système")
-                    button.set_label("💾 Créer")
+                    self.show_error_dialog(_("Échec de la création de la sauvegarde système"))
+                    button.set_label(_("💾 Créer"))
                     button.set_sensitive(True)
                     
             except Exception as e:
                 logger.exception("Erreur lors de la création de la sauvegarde système: %s", e)
-                self.show_error_dialog(f"Erreur : {str(e)}")
-                button.set_label("💾 Créer")
+                self.show_error_dialog(_("Erreur : %s") % str(e))
+                button.set_label(_("💾 Créer"))
                 button.set_sensitive(True)
         
         # Utiliser GLib.idle_add pour exécuter dans le thread principal
@@ -282,23 +284,23 @@ class BackupManagerDialog(Adw.Window):
             info: Informations sur la sauvegarde
         """
         dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading(f"Détails : {info['name']}")
+        dialog.set_heading(_("Détails : %s") % info['name'])
         
         # Construire le message avec la liste des fichiers
-        message = f"📅 Date : {info['created_str']}\n"
-        message += f"📦 Nombre de fichiers : {info['file_count']}\n"
+        message = _("📅 Date : %s\n") % info['created_str']
+        message += _("📦 Nombre de fichiers : %s\n") % info['file_count']
         
         size_kb = info['size'] / 1024
         size_str = f"{size_kb:.1f} Ko" if size_kb < 1024 else f"{size_kb/1024:.1f} Mo"
-        message += f"💾 Taille totale : {size_str}\n"
+        message += _("💾 Taille totale : %s\n") % size_str
         
         if info.get('files'):
-            message += "\n📄 Fichiers sauvegardés :\n"
+            message += _("\n📄 Fichiers sauvegardés :\n")
             for filename in info['files']:
-                message += f"  • {filename}\n"
+                message += _("  • %s\n") % filename
         
         dialog.set_body(message)
-        dialog.add_response("ok", "OK")
+        dialog.add_response("ok", _("OK"))
         dialog.present()
     
     def on_open_folder_clicked(self, button):
@@ -311,7 +313,7 @@ class BackupManagerDialog(Adw.Window):
             logger.info("Ouverture du dossier des sauvegardes: %s", self.backup_service.backup_dir)
         except Exception as e:
             logger.exception("Erreur lors de l'ouverture du dossier: %s", e)
-            self.show_error_dialog(f"Impossible d'ouvrir le dossier : {str(e)}")
+            self.show_error_dialog(_("Impossible d'ouvrir le dossier : %s") % str(e))
     
     def show_error_dialog(self, message: str):
         """Affiche un dialogue d'erreur.
@@ -319,8 +321,4 @@ class BackupManagerDialog(Adw.Window):
         Args:
             message: Message d'erreur à afficher
         """
-        dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Erreur")
-        dialog.set_body(message)
-        dialog.add_response("ok", "OK")
-        dialog.present()
+        show_error(self, message, heading=_("Erreur"))

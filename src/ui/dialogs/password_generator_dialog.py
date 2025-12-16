@@ -1,5 +1,6 @@
 """Dialogue de génération de mot de passe."""
 
+from src.i18n import _
 from src.services.password_generator import PasswordGenerator
 
 import gi  # type: ignore[import]
@@ -17,7 +18,7 @@ class PasswordGeneratorDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(500, 550)
-        self.set_title("Générateur de mots de passe")
+        self.set_title(_("Générateur de mots de passe"))
         self.callback = callback
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
@@ -39,11 +40,11 @@ class PasswordGeneratorDialog(Adw.Window):
         button_box.set_halign(Gtk.Align.CENTER)
         button_box.set_margin_bottom(10)
 
-        copy_btn = Gtk.Button(label="Copier")
+        copy_btn = Gtk.Button(label=_("Copier"))
         copy_btn.connect("clicked", self.on_copy_clicked)
         button_box.append(copy_btn)
 
-        use_btn = Gtk.Button(label="Utiliser ce mot de passe")
+        use_btn = Gtk.Button(label=_("Utiliser ce mot de passe"))
         use_btn.set_css_classes(['suggested-action'])
         use_btn.connect("clicked", self.on_use_clicked)
         button_box.append(use_btn)
@@ -58,12 +59,12 @@ class PasswordGeneratorDialog(Adw.Window):
         type_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         type_box.set_homogeneous(True)
 
-        self.random_btn = Gtk.ToggleButton(label="Aléatoire")
+        self.random_btn = Gtk.ToggleButton(label=_("Aléatoire"))
         self.random_btn.set_active(True)
         self.random_btn.connect("toggled", self.on_type_changed)
         type_box.append(self.random_btn)
 
-        self.passphrase_btn = Gtk.ToggleButton(label="Phrase de passe")
+        self.passphrase_btn = Gtk.ToggleButton(label=_("Phrase de passe"))
         self.passphrase_btn.connect("toggled", self.on_type_changed)
         type_box.append(self.passphrase_btn)
 
@@ -72,7 +73,7 @@ class PasswordGeneratorDialog(Adw.Window):
         self.random_options = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
 
         length_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        length_label = Gtk.Label(label="Longueur:")
+        length_label = Gtk.Label(label=_("Longueur:"))
         length_label.set_xalign(0)
         length_label.set_hexpand(True)
         length_box.append(length_label)
@@ -85,27 +86,27 @@ class PasswordGeneratorDialog(Adw.Window):
         length_box.append(self.length_spin)
         self.random_options.append(length_box)
 
-        self.uppercase_check = Gtk.CheckButton(label="Majuscules (A-Z)")
+        self.uppercase_check = Gtk.CheckButton(label=_("Majuscules (A-Z)"))
         self.uppercase_check.set_active(True)
         self.uppercase_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.uppercase_check)
 
-        self.lowercase_check = Gtk.CheckButton(label="Minuscules (a-z)")
+        self.lowercase_check = Gtk.CheckButton(label=_("Minuscules (a-z)"))
         self.lowercase_check.set_active(True)
         self.lowercase_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.lowercase_check)
 
-        self.digits_check = Gtk.CheckButton(label="Chiffres (0-9)")
+        self.digits_check = Gtk.CheckButton(label=_("Chiffres (0-9)"))
         self.digits_check.set_active(True)
         self.digits_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.digits_check)
 
-        self.symbols_check = Gtk.CheckButton(label="Symboles (!@#$...)")
+        self.symbols_check = Gtk.CheckButton(label=_("Symboles (!@#$...)"))
         self.symbols_check.set_active(True)
         self.symbols_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.symbols_check)
 
-        self.ambiguous_check = Gtk.CheckButton(label="Exclure caractères ambigus (0, O, l, 1, I)")
+        self.ambiguous_check = Gtk.CheckButton(label=_("Exclure caractères ambigus (0, O, l, 1, I)"))
         self.ambiguous_check.set_active(True)
         self.ambiguous_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.ambiguous_check)
@@ -116,7 +117,7 @@ class PasswordGeneratorDialog(Adw.Window):
         self.passphrase_options.set_visible(False)
 
         words_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        words_label = Gtk.Label(label="Nombre de mots:")
+        words_label = Gtk.Label(label=_("Nombre de mots:"))
         words_label.set_xalign(0)
         words_label.set_hexpand(True)
         words_box.append(words_label)
@@ -131,7 +132,7 @@ class PasswordGeneratorDialog(Adw.Window):
 
         content.append(self.passphrase_options)
 
-        regenerate_btn = Gtk.Button(label="Régénérer")
+        regenerate_btn = Gtk.Button(label=_("Régénérer"))
         regenerate_btn.set_margin_top(10)
         regenerate_btn.connect("clicked", lambda x: self.generate_password())
         content.append(regenerate_btn)

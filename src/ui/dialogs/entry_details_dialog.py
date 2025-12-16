@@ -1,14 +1,21 @@
 """Dialogue d'informations détaillées sur une entrée de mot de passe."""
 
+import logging
 from typing import Callable
 
+from src.i18n import _
 from src.models.password_entry import PasswordEntry
+from src.ui.notifications import error as show_error
+from src.ui.notifications import toast as show_toast
 
 import gi  # type: ignore[import]
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gdk, GLib  # type: ignore[attr-defined]  # noqa: E402
+
+
+logger = logging.getLogger(__name__)
 
 
 class EntryDetailsDialog(Adw.Window):
@@ -70,18 +77,18 @@ class EntryDetailsDialog(Adw.Window):
         content.append(sep1)
 
         if entry.username:
-            username_box = self._create_field_box("👤 Nom d'utilisateur", entry.username, copyable=True)
+            username_box = self._create_field_box(_("👤 Nom d'utilisateur"), entry.username, copyable=True)
             content.append(username_box)
 
-        password_box = self._create_field_box("🔑 Mot de passe", entry.password, copyable=True, is_password=True)
+        password_box = self._create_field_box(_("🔑 Mot de passe"), entry.password, copyable=True, is_password=True)
         content.append(password_box)
 
         if entry.url:
-            url_box = self._create_field_box("🌐 URL", entry.url, copyable=True, is_url=True)
+            url_box = self._create_field_box(_("🌐 URL"), entry.url, copyable=True, is_url=True)
             content.append(url_box)
 
         if entry.notes:
-            notes_label = Gtk.Label(label="📝 Notes", xalign=0)
+            notes_label = Gtk.Label(label=_("📝 Notes"), xalign=0)
             notes_label.set_css_classes(['title-4'])
             notes_label.set_margin_top(10)
             content.append(notes_label)
@@ -105,12 +112,12 @@ class EntryDetailsDialog(Adw.Window):
         action_box.set_halign(Gtk.Align.CENTER)
         action_box.set_margin_top(10)
 
-        edit_btn = Gtk.Button(label="✏️  Modifier")
+        edit_btn = Gtk.Button(label=_("✏️  Modifier"))
         edit_btn.set_css_classes(['suggested-action'])
         edit_btn.connect("clicked", lambda x: self._on_edit())
         action_box.append(edit_btn)
 
-        delete_btn = Gtk.Button(label="🗑️  Supprimer")
+        delete_btn = Gtk.Button(label=_("🗑️  Supprimer"))
         delete_btn.set_css_classes(['destructive-action'])
         delete_btn.connect("clicked", lambda x: self._on_delete())
         action_box.append(delete_btn)
@@ -140,31 +147,31 @@ class EntryDetailsDialog(Adw.Window):
 
         if is_password:
             show_btn = Gtk.Button(icon_name="view-reveal-symbolic")
-            show_btn.set_tooltip_text("Afficher/masquer")
+            show_btn.set_tooltip_text(_("Afficher/masquer"))
             show_btn.connect("clicked", lambda x: value_entry.set_visibility(not value_entry.get_visibility()))
             value_box.append(show_btn)
 
         if copyable:
             copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-            copy_btn.set_tooltip_text("Copier")
+            copy_btn.set_tooltip_text(_("Copier"))
             copy_btn.connect(
                 "clicked",
-                lambda x, label=label_text: self._copy_to_clipboard(value, f"{label} copié")
+                lambda x, label=label_text: self._copy_to_clipboard(value, _("%s copié") % label)
             )
             value_box.append(copy_btn)
 
         if is_url and value:
             open_btn = Gtk.Button(icon_name="web-browser-symbolic")
-            open_btn.set_tooltip_text("Ouvrir dans le navigateur")
+            open_btn.set_tooltip_text(_("Ouvrir dans le navigateur"))
             open_btn.connect("clicked", lambda x: self._open_url(value))
             value_box.append(open_btn)
 
         box.append(value_box)
         return box
 
-    def _copy_to_clipboard(self, text, message="Copié dans le presse-papiers"):
+    def _copy_to_clipboard(self, text, message: str = "Copié dans le presse-papiers"):
         if self.parent_window and hasattr(self.parent_window, "copy_to_clipboard"):
-            self.parent_window.copy_to_clipboard(text, message)
+            self.parent_window.copy_to_clipboard(text, _(message))
             return
         clipboard = self.get_clipboard()
         if clipboard:
@@ -174,7 +181,9 @@ class EntryDetailsDialog(Adw.Window):
                 clipboard.set_content(provider)
                 clipboard.store_async(None, self._on_clipboard_store_finished, None)
             except Exception as exc:
-                print(f"Impossible de copier dans le presse-papiers: {exc}")
+                logger.exception("Impossible de copier dans le presse-papiers")
+                if not show_toast(self.parent_window or self, _(message)):
+                    show_error(self.parent_window or self, _(message))
 
     def _on_clipboard_store_finished(self, clipboard, result, _data):
         try:
@@ -186,9 +195,21 @@ class EntryDetailsDialog(Adw.Window):
         import subprocess
 
         try:
-            subprocess.Popen(['xdg-open', url])
+            if self.parent_window and hasattr(self.parent_window, "open_url"):
+                self.parent_window.open_url(url)
+                return
+
+            target = url
+            if target and not target.startswith(("http://", "https://")):
+                target = "https://" + target
+            subprocess.Popen(['xdg-open', target])
         except Exception as e:
-            print(f"Erreur lors de l'ouverture de l'URL: {e}")
+            logger.exception("Erreur lors de l'ouverture de l'URL")
+            show_error(
+                self.parent_window or self,
+                _("Impossible d'ouvrir l'URL :\n%s") % str(e),
+                heading=_("Erreur"),
+            )
 
     def _on_edit(self):
         self.close()
@@ -198,12 +219,12 @@ class EntryDetailsDialog(Adw.Window):
     def _on_delete(self):
         """Demander confirmation avant de supprimer"""
         dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading("Confirmer la suppression")
+        dialog.set_heading(_("Confirmer la suppression"))
         dialog.set_body(
-            f"Êtes-vous sûr de vouloir supprimer l'entrée '{self.entry.title}' ?\n\nCette action est irréversible."
+            _("Êtes-vous sûr de vouloir supprimer l'entrée '%s' ?\n\nCette action est irréversible.") % self.entry.title
         )
-        dialog.add_response("cancel", "Annuler")
-        dialog.add_response("delete", "Supprimer")
+        dialog.add_response("cancel", _("Annuler"))
+        dialog.add_response("delete", _("Supprimer"))
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")
