@@ -180,7 +180,7 @@ class EntryDetailsDialog(Adw.Window):
                 provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
                 clipboard.set_content(provider)
                 clipboard.store_async(None, self._on_clipboard_store_finished, None)
-            except Exception as exc:
+            except Exception:
                 logger.exception("Impossible de copier dans le presse-papiers")
                 if not show_toast(self.parent_window or self, _(message)):
                     show_error(self.parent_window or self, _(message))

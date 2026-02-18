@@ -24,7 +24,7 @@ class PasswordGenerator:
     
     @staticmethod
     def generate(
-        length: int = 16,
+        length: int = 20,
         use_uppercase: bool = True,
         use_lowercase: bool = True,
         use_digits: bool = True,
@@ -74,7 +74,7 @@ class PasswordGenerator:
     @classmethod
     def generate_passphrase(
         cls,
-        word_count: int = 4,
+        word_count: int = 5,
         separator: str = "-"
     ) -> str:
         """Génère une phrase de passe mémorisable.

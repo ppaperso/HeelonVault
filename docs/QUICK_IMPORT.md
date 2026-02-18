@@ -24,6 +24,7 @@
 - Vérifiez que vos mots de passe sont bien importés
 - Les entrées importées sont dans la catégorie "Importé" avec le tag "import"
 - **Supprimez le fichier CSV** après l'import :
+
   ```bash
   shred -u -z -v -n 3 lastpass_export.csv
   ```
@@ -31,11 +32,13 @@
 ## 🔐 Format du fichier CSV
 
 Le format LastPass attendu est :
-```
+
+```text
 url;username;password;name
 ```
 
 **Exemple** :
+
 ```csv
 https://github.com;john@email.com;MyPass123;GitHub
 https://gmail.com;jane@email.com;GmailPass;Gmail

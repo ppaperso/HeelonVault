@@ -1,17 +1,18 @@
 # 🏗️ Architecture du projet - Gestionnaire de Mots de Passe
 
 ## 📋 Table des matières
-- [Vue d'ensemble](#vue-densemble)
-- [Structure du projet](#structure-du-projet)
-- [Architecture en couches](#architecture-en-couches)
-- [Guide de refactoring](#guide-de-refactoring)
-- [Patterns utilisés](#patterns-utilisés)
+
+- [Vue d'ensemble](#-vue-densemble)
+- [Structure du projet](#-structure-du-projet-refactorisé)
+- [Architecture en couches](#️-architecture-en-couches)
+- [Guide de refactoring](#-guide-de-refactoring-étape-par-étape)
+- [Patterns utilisés](#-patterns-utilisés)
 
 ## 🎯 Vue d'ensemble
 
 Ce projet suit une **architecture en couches** (Layered Architecture) pour séparer les responsabilités :
 
-```
+```text
 ┌─────────────────────────────────────┐
 │     UI Layer (GTK4/Adwaita)        │  Fenêtres, dialogues, widgets
 ├─────────────────────────────────────┤
@@ -25,7 +26,7 @@ Ce projet suit une **architecture en couches** (Layered Architecture) pour sépa
 
 ## 📁 Structure du projet refactorisé
 
-```
+```text
 Gestionnaire_mot_passe/
 ├── src/                              # Code source principal
 │   ├── __init__.py
@@ -135,16 +136,19 @@ Gestionnaire_mot_passe/
 **Responsabilité** : Définir les structures de données
 
 **Fichiers** :
+
 - `src/models/user.py` : User, UserCredentials
 - `src/models/password_entry.py` : PasswordEntry, EncryptedPasswordEntry
 - `src/models/category.py` : Category, DEFAULT_CATEGORIES
 
 **Principes** :
+
 - Utiliser des `@dataclass` pour les modèles simples
 - Pas de logique métier, seulement des données
 - Méthodes utilitaires simples (is_admin(), matches_search())
 
 **Exemple** :
+
 ```python
 from dataclasses import dataclass
 
@@ -163,18 +167,21 @@ class User:
 **Responsabilité** : Gérer la persistance des données (SQLite)
 
 **Fichiers** :
+
 - `src/repositories/base_repository.py` : BaseRepository (abstrait)
 - `src/repositories/user_repository.py` : UserRepository
 - `src/repositories/password_repository.py` : PasswordRepository
 - `src/repositories/category_repository.py` : CategoryRepository
 
 **Principes** :
+
 - Pattern Repository pour abstraire l'accès aux données
 - Toutes les requêtes SQL sont ici
 - Retourne des objets du Models Layer
 - Gère les transactions
 
 **Exemple** :
+
 ```python
 class UserRepository(BaseRepository):
     def find_by_username(self, username: str) -> Optional[User]:
@@ -189,18 +196,21 @@ class UserRepository(BaseRepository):
 **Responsabilité** : Implémenter la logique métier
 
 **Fichiers** :
+
 - `src/services/password_generator.py` : Génération de mots de passe
 - `src/services/crypto_service.py` : Chiffrement/déchiffrement
 - `src/services/auth_service.py` : Authentification
 - `src/services/password_service.py` : Gestion des mots de passe
 
 **Principes** :
+
 - Orchestre les repositories
 - Contient la logique métier complexe
 - Validation des données
 - Gestion des erreurs métier
 
 **Exemple** :
+
 ```python
 class AuthService:
     def __init__(self, user_repo: UserRepository):
@@ -218,17 +228,20 @@ class AuthService:
 **Responsabilité** : Affichage et interactions utilisateur
 
 **Fichiers** :
+
 - `src/ui/windows/` : Fenêtres principales
 - `src/ui/dialogs/` : Dialogues modaux
 - `src/ui/widgets/` : Composants réutilisables
 
 **Principes** :
+
 - Pas de logique métier dans l'UI
 - Appelle les services pour les actions
 - Gère uniquement l'affichage et les événements GTK
 - Utilise le pattern MVC/MVP
 
 **Exemple** :
+
 ```python
 class MainWindow(Adw.ApplicationWindow):
     def __init__(self, app, password_service, user):
@@ -247,6 +260,7 @@ class MainWindow(Adw.ApplicationWindow):
 ### Étape 1 : Extraire les modèles ✅
 
 **Fait** :
+
 - ✅ `src/models/user.py`
 - ✅ `src/models/password_entry.py`
 - ✅ `src/models/category.py`
@@ -254,6 +268,7 @@ class MainWindow(Adw.ApplicationWindow):
 ### Étape 2 : Extraire les services
 
 **À faire** :
+
 1. Copier `PasswordGenerator` → `src/services/password_generator.py`
 2. Copier `PasswordCrypto` → `src/services/crypto_service.py`
 3. Extraire logique auth de `UserManager` → `src/services/auth_service.py`
@@ -262,6 +277,7 @@ class MainWindow(Adw.ApplicationWindow):
 ### Étape 3 : Extraire les repositories
 
 **À faire** :
+
 1. Créer `BaseRepository` avec connexion SQLite
 2. Extraire SQL de `UserManager` → `UserRepository`
 3. Extraire SQL de `PasswordDatabase` → `PasswordRepository`
@@ -270,6 +286,7 @@ class MainWindow(Adw.ApplicationWindow):
 ### Étape 4 : Refactorer l'UI
 
 **À faire** :
+
 1. Séparer chaque classe de dialogue dans son propre fichier
 2. Créer des widgets réutilisables
 3. Utiliser l'injection de dépendances pour les services
@@ -277,12 +294,14 @@ class MainWindow(Adw.ApplicationWindow):
 ### Étape 5 : Créer le point d'entrée
 
 **À faire** :
+
 1. `src/main.py` : Point d'entrée simple
 2. `src/app.py` : Classe PasswordManagerApplication refactorisée
 
 ### Étape 6 : Tests
 
 **À faire** :
+
 1. Tests unitaires pour chaque service
 2. Tests d'intégration pour les workflows
 3. Utiliser pytest et fixtures
@@ -290,18 +309,23 @@ class MainWindow(Adw.ApplicationWindow):
 ## 🎨 Patterns utilisés
 
 ### Repository Pattern
+
 Abstrait l'accès aux données, permet de changer facilement de backend (SQLite → PostgreSQL).
 
 ### Service Layer Pattern
+
 Sépare la logique métier de l'infrastructure (UI, DB).
 
 ### Dependency Injection
+
 Les services reçoivent leurs dépendances en constructeur.
 
 ### Factory Pattern
+
 Pour créer les objets complexes (UserFactory, PasswordEntryFactory).
 
 ### Observer Pattern (GTK Signals)
+
 GTK utilise des signals/callbacks pour la communication UI.
 
 ## 🔐 Principes SOLID appliqués
@@ -314,7 +338,7 @@ GTK utilise des signals/callbacks pour la communication UI.
 
 ## 📊 Diagramme de dépendances
 
-```
+```text
 main.py
   └── app.py
       ├── UI Layer
@@ -375,16 +399,19 @@ pytest --cov=src --cov-report=html
 ## 🚀 Migration progressive
 
 ### Phase 1 : Coexistence (ACTUEL)
+
 - Garder `password_manager.py` fonctionnel
 - Créer la nouvelle structure en parallèle
 - Tests pour valider la parité
 
 ### Phase 2 : Migration
+
 - Migrer module par module
 - Adapter les imports progressivement
 - Tests à chaque étape
 
 ### Phase 3 : Finalisation
+
 - Supprimer `password_manager.py`
 - Mettre à jour tous les scripts
 - Documentation finale

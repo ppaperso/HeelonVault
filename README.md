@@ -10,6 +10,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 ## ✨ Fonctionnalités
 
 ### 🔒 Sécurité
+
 - **Chiffrement AES-256-GCM** : Protection maximale de vos données
 - **PBKDF2** avec 600 000 itérations pour la dérivation de clé
 - **Mot de passe maître individuel** : Chaque utilisateur a son propre mot de passe
@@ -23,6 +24,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Auto-vidage du presse-papiers** : Effacement automatique 30 secondes après la copie pour éviter les fuites 🆕
 
 ### 👥 Gestion multi-utilisateurs
+
 - **Comptes utilisateurs séparés** : Chaque utilisateur a son propre espace
 - **Workspaces isolés** : Les données d'un utilisateur sont invisibles aux autres
 - **Rôles utilisateur** : Admin et Utilisateur standard
@@ -31,6 +33,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Écran de sélection** : Choix du compte au démarrage
 
 ### 🦊 Intégration Navigateur (Firefox) 🆕
+
 - **Extension Firefox** : Accès aux identifiants depuis le navigateur
 - **Popup interactif** : Liste, recherche et copie des identifiants
 - **Filtrage intelligent par URL** : Affichage contextuel selon le site visité
@@ -41,6 +44,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Documentation complète** : 10+ guides d'installation et debugging
 
 ### 📝 Gestion des mots de passe
+
 - Ajout, modification et suppression d'entrées
 - Organisation par **catégories** (Personnel, Travail, Finance, Social, etc.)
 - Système de **tags** flexible pour une classification avancée
@@ -49,6 +53,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - **Import CSV** : Migration depuis LastPass, 1Password, Bitwarden et autres
 
 ### 🎲 Générateur de mots de passe
+
 - **Mots de passe aléatoires** avec options personnalisables :
   - Longueur ajustable (8-64 caractères)
   - Majuscules, minuscules, chiffres, symboles
@@ -57,6 +62,7 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 - Copie rapide dans le presse-papiers
 
 ### 🎨 Interface moderne
+
 - Interface **GTK4 + libadwaita** native pour Linux
 - Design épuré et intuitif
 - Thème sombre/clair automatique
@@ -66,9 +72,11 @@ Un gestionnaire de mots de passe sécurisé et moderne pour Linux, développé a
 ## 📋 Prérequis
 
 ### Système d'exploitation
+
 - Linux (Ubuntu, Fedora, Arch, Debian, etc.)
 
 ### Dépendances
+
 ```bash
 # Python 3.8 ou supérieur
 python3 --version
@@ -80,6 +88,7 @@ sudo pacman -S python-gobject gtk4 libadwaita                             # Arch
 ```
 
 ### Bibliothèques Python
+
 ```bash
 pip install cryptography
 ```
@@ -100,6 +109,7 @@ cd Gestionnaire_mot_passe
 ```
 
 Le script :
+
 - ✅ Vérifie les prérequis système (Python, GTK4, libadwaita)
 - ✅ Crée l'environnement virtuel Python
 - ✅ Installe les dépendances Python
@@ -124,6 +134,7 @@ L'application utilise une **base de données partagée** pour tous les utilisate
 Si vous préférez installer manuellement :
 
 #### 1. Installer les dépendances système
+
 ```bash
 # Fedora/RHEL
 sudo dnf install python3-gobject gtk4 libadwaita
@@ -136,6 +147,7 @@ sudo pacman -S python-gobject gtk4 libadwaita
 ```
 
 #### 2. Créer l'environnement virtuel
+
 ```bash
 python3 -m venv venvpwdmanager
 source venvpwdmanager/bin/activate
@@ -145,6 +157,7 @@ pip install -r requirements.txt
 > PyGObject (bindings GTK4/libadwaita) est fourni via les paquets système listés ci-dessus ; `requirements.txt` ne contient que les dépendances Python gérées par pip.
 
 #### 3. Créer le répertoire de données partagé
+
 ```bash
 sudo mkdir -p /var/lib/password-manager-shared
 sudo chown root:users /var/lib/password-manager-shared
@@ -154,11 +167,13 @@ sudo usermod -a -G users $USER
 ```
 
 #### 4. Tester l'installation
+
 ```bash
 ./test-app.sh
 ```
 
 Ce script vérifie automatiquement :
+
 - ✅ Présence du venv
 - ✅ Version Python
 - ✅ Dépendances système (GTK4, libadwaita)
@@ -169,10 +184,13 @@ Ce script vérifie automatiquement :
 ## 📖 Utilisation
 
 ### Lancement de l'application
+
 #### Depuis le menu Applications
+
 Après installation, l'application apparaît dans : **Menu → Utilitaires → Gestionnaire de mots de passe**
 
 #### En ligne de commande
+
 ```bash
 # Mode développement (avec venv)
 ./run-dev.sh
@@ -185,13 +203,16 @@ python3 password_manager.py
 ### Première utilisation
 
 #### Compte administrateur par défaut
+
 Au premier lancement, un compte **admin** est créé avec :
+
 - **Nom d'utilisateur** : `admin`
 - **Mot de passe** : `admin`
 
 **⚠️ IMPORTANT** : Changez immédiatement ce mot de passe après la première connexion !
 
 #### Créer votre compte
+
 1. **Sélectionnez un utilisateur** ou cliquez sur "Créer un nouveau compte"
 2. Entrez vos informations :
    - Nom d'utilisateur (min. 3 caractères)
@@ -200,11 +221,13 @@ Au premier lancement, un compte **admin** est créé avec :
 3. Votre workspace personnel est créé automatiquement
 
 #### Connexion
+
 1. Sélectionnez votre compte dans la liste
 2. Entrez votre mot de passe maître
 3. Accédez à votre espace personnel avec "Bonjour [votre_nom]"
 
-**⚠️ SÉCURITÉ** : 
+**⚠️ SÉCURITÉ** :
+
 - Chaque utilisateur a son propre mot de passe maître
 - Les mots de passe ne sont **jamais** stockés en clair
 - Un administrateur peut réinitialiser un mot de passe oublié
@@ -212,13 +235,16 @@ Au premier lancement, un compte **admin** est créé avec :
 ### Gestion des utilisateurs
 
 #### Pour les utilisateurs standards
+
 - **Voir ses propres mots de passe** uniquement
 - **Créer/Modifier/Supprimer** ses entrées
 - **Changer de compte** via le menu utilisateur
 - **Se déconnecter** pour revenir à l'écran de sélection
 
 #### Pour les administrateurs
+
 En plus des fonctionnalités utilisateur standard :
+
 - **Gérer les utilisateurs** : Menu "Gérer les utilisateurs"
 - **Voir tous les comptes** avec dates de création et dernière connexion
 - **Réinitialiser un mot de passe** : Pour un utilisateur qui l'a oublié
@@ -231,6 +257,7 @@ En plus des fonctionnalités utilisateur standard :
 - **Badge "Admin"** visible dans l'interface
 
 #### Réinitialiser un mot de passe oublié (Admin)
+
 1. Connectez-vous avec un compte administrateur
 2. Menu → "Gérer les utilisateurs"
 3. Cliquez sur "Réinitialiser MdP" pour l'utilisateur concerné
@@ -240,6 +267,7 @@ En plus des fonctionnalités utilisateur standard :
 ### Gestion des entrées
 
 #### Ajouter une entrée
+
 1. Cliquez sur le bouton **+** dans la barre d'outils
 2. Remplissez les informations :
    - **Titre** (obligatoire)
@@ -252,22 +280,26 @@ En plus des fonctionnalités utilisateur standard :
 3. Cliquez sur **Enregistrer**
 
 #### Modifier une entrée
+
 1. Sélectionnez l'entrée dans la liste
 2. Cliquez sur **Modifier** dans le panneau de détails
 3. Modifiez les champs souhaités
 4. Enregistrez les modifications
 
 #### Supprimer une entrée
+
 1. Sélectionnez l'entrée
 2. Cliquez sur **Supprimer**
 3. Confirmez la suppression
 
 ### Filtrage et recherche
+
 - **Par catégorie** : Cliquez sur une catégorie dans le panneau gauche
 - **Par tag** : Cliquez sur un tag dans la section Tags
 - **Recherche** : Utilisez la barre de recherche pour filtrer par titre, utilisateur ou URL
 
 ### Générateur de mots de passe
+
 1. Lors de l'ajout/modification, cliquez sur **Générer**
 2. Choisissez le type :
    - **Aléatoire** : Personnalisez longueur et caractères
@@ -277,7 +309,8 @@ En plus des fonctionnalités utilisateur standard :
 ## 🏗️ Architecture
 
 ### Structure du projet
-```
+
+```text
 gestionnaire-mot-passe/
 ├── password_manager.py      # Application principale (72 KB)
 ├── README.md               # Documentation principale (17 KB)
@@ -307,7 +340,9 @@ gestionnaire-mot-passe/
 ### Composants principaux
 
 #### `UserManager`
+
 Gestion des utilisateurs et authentification :
+
 - **Création de comptes** avec validation
 - **Authentification** avec hash PBKDF2
 - **Gestion des rôles** (admin/user)
@@ -315,23 +350,29 @@ Gestion des utilisateurs et authentification :
 - **Base dédiée** : `users.db`
 
 #### `PasswordGenerator`
+
 Génère des mots de passe aléatoires ou des phrases de passe sécurisées.
 
 #### `PasswordCrypto`
+
 Gère le chiffrement/déchiffrement avec :
+
 - **AES-256-GCM** : Chiffrement authentifié
 - **PBKDF2** : Dérivation de clé à partir du mot de passe maître
 - **Nonce unique** pour chaque opération de chiffrement
 - **Salt individuel** par utilisateur
 
 #### `PasswordDatabase`
+
 Interface avec la base de données SQLite :
+
 - **Workspace séparé** par utilisateur : `passwords_[username].db`
 - Stockage des mots de passe chiffrés
 - Gestion des catégories et tags
 - Recherche et filtrage
 
 #### Interface GTK4
+
 - `UserSelectionDialog` : Sélection du compte utilisateur
 - `LoginDialog` : Authentification avec mot de passe maître
 - `CreateUserDialog` : Création de nouveau compte
@@ -343,8 +384,9 @@ Interface avec la base de données SQLite :
 
 ### Sécurité
 
-#### Architecture multi-utilisateurs
-```
+#### Architecture multi-utilisateurs-
+
+```text
 Utilisateur → Authentification → Workspace dédié
    ↓              ↓                     ↓
 Username    Password hash          passwords_[user].db
@@ -352,7 +394,8 @@ Username    Password hash          passwords_[user].db
 ```
 
 #### Chiffrement
-```
+
+```text
 Mot de passe maître → PBKDF2 (600k itérations) → Clé AES-256
                       ↓
             Salt individuel (32 bytes)
@@ -361,6 +404,7 @@ Mot de passe maître → PBKDF2 (600k itérations) → Clé AES-256
 Chaque mot de passe est chiffré avec un **nonce unique** de 12 bytes, garantissant qu'un même mot de passe chiffré deux fois produit des résultats différents.
 
 #### Isolation des données
+
 - **Base utilisateurs** : `users.db` (hash des mots de passe, pas de données sensibles)
 - **Base par utilisateur** : `passwords_[username].db` (données chiffrées)
 - **Salt par utilisateur** : `salt_[username].bin` (permissions 600)
@@ -368,8 +412,9 @@ Chaque mot de passe est chiffré avec un **nonce unique** de 12 bytes, garantiss
 - Les mots de passe ne sont **jamais** stockés en clair
 
 #### Rôles et permissions
+
 - **User** : Accès à son workspace uniquement
-- **Admin** : 
+- **Admin** :
   - Accès à son propre workspace
   - Réinitialisation des mots de passe oubliés
   - Gestion des comptes utilisateurs
@@ -378,23 +423,27 @@ Chaque mot de passe est chiffré avec un **nonce unique** de 12 bytes, garantiss
 ## 🛠️ Optimisations réalisées
 
 ### Performance
+
 - ✅ Utilisation de `remove_all()` au lieu de boucles while pour vider les listes
 - ✅ Compréhension de liste pour le filtrage par tags
 - ✅ Tri insensible à la casse avec `COLLATE NOCASE`
 - ✅ Early return pour améliorer la lisibilité
 
 ### Robustesse
+
 - ✅ Gestion d'erreurs pour le déchiffrement
 - ✅ Sécurisation des permissions du fichier salt (chmod 600)
 - ✅ Validation des champs obligatoires
 - ✅ Messages d'erreur informatifs
 
 ### Documentation
+
 - ✅ Docstrings détaillées avec types et descriptions
 - ✅ Commentaires explicatifs
 - ✅ Structure claire et lisible
 
 Pour plus d'informations, consultez les guides dans le dossier `docs/` :
+
 - 📁 [CSV_IMPORT_GUIDE.md](docs/CSV_IMPORT_GUIDE.md) - Guide d'importation CSV depuis LastPass, 1Password, etc.
 - 📁 [ARCHITECTURE.md](docs/ARCHITECTURE.md) - Architecture du projet
 - 📁 [SECURITY.md](docs/SECURITY.md) - Détails sur la sécurité
@@ -406,6 +455,7 @@ Pour plus d'informations, consultez les guides dans le dossier `docs/` :
 ### Commandes utiles
 
 #### Build et gestion d'image
+
 ```bash
 # Construire l'image
 ./build-container.sh
@@ -421,6 +471,7 @@ podman build --no-cache -t password-manager:latest .
 ```
 
 #### Gestion du container
+
 ```bash
 # Lancer l'application
 ./run-container.sh
@@ -442,6 +493,7 @@ podman logs password-manager-app
 ```
 
 #### Données persistantes
+
 ```bash
 # Localisation des données
 ls -la ~/.local/share/passwordmanager-container/
@@ -457,6 +509,7 @@ tar xzf password-manager-backup-YYYYMMDD.tar.gz -C ~/
 ### Troubleshooting
 
 #### Problème d'affichage X11
+
 ```bash
 # Autoriser les connexions X11 locales
 xhost +local:
@@ -469,6 +522,7 @@ echo $WAYLAND_DISPLAY
 ```
 
 #### Problème de permissions SELinux
+
 ```bash
 # Désactiver temporairement SELinux (si nécessaire)
 sudo setenforce 0
@@ -478,6 +532,7 @@ sudo sed -i 's/SELINUX=enforcing/SELINUX=permissive/' /etc/selinux/config
 ```
 
 #### Le container ne démarre pas
+
 ```bash
 # Vérifier les logs
 podman logs password-manager-app
@@ -495,6 +550,7 @@ podman run -it --rm \
 ### Workflow de développement
 
 #### 1. Configuration de l'environnement
+
 ```bash
 # Cloner le projet
 git clone https://github.com/votre-utilisateur/gestionnaire-mot-passe.git
@@ -514,6 +570,7 @@ pip install -r requirements.txt
 > PyGObject (bindings GTK4/libadwaita) doit être installé via les paquets système listés ci-dessus ; `requirements.txt` ne contient que les dépendances Python gérées par pip.
 
 #### 2. Tests et validation
+
 ```bash
 # Lancer les tests complets
 ./test-app.sh
@@ -530,6 +587,7 @@ pylint password_manager.py
 ```
 
 #### 3. Développement itératif
+
 ```bash
 # 1. Modifier le code
 vim password_manager.py
@@ -545,6 +603,7 @@ vim password_manager.py
 ```
 
 #### 4. Conteneurisation
+
 ```bash
 # Une fois les modifications validées, construire l'image
 ./build-container.sh
@@ -556,19 +615,22 @@ vim password_manager.py
 ### Scripts disponibles
 
 | Script | Description | Usage |
-|--------|-------------|-------|
+| -------- | ------------- | ------- |
 | `test-app.sh` | Tests complets (syntaxe, imports, unitaires) | `./test-app.sh` |
 | `run-dev.sh` | Lancement en mode développement avec venv | `./run-dev.sh` |
 | `build-container.sh` | Construction de l'image Podman | `./build-container.sh` |
 | `run-container.sh` | Lancement de l'application conteneurisée | `./run-container.sh` |
 
 ### Directives UI (libadwaita)
+
 - Utilisez `present_alert()` (`src/ui/dialogs/helpers.py`) pour toutes les boîtes de dialogue afin de garantir un rendu cohérent et de centraliser les callbacks.
 - Lorsque vous devez donner le focus à un champ fraîchement créé, encapsulez `grab_focus()` dans `GLib.idle_add(...)` et retournez `True` tant que le widget n'est pas encore rattaché (`get_root()` renvoie `None`).
 - Créez un parent temporaire (`Adw.ApplicationWindow`) uniquement si aucune fenêtre n'est disponible, puis fermez-le dans le callback de réponse pour éviter les warnings `GDK_IS_FRAME_CLOCK`.
 
 ### Contribuer
+
 Les contributions sont les bienvenues ! Pour contribuer :
+
 1. Forkez le projet
 2. Créez une branche (`git checkout -b feature/amelioration`)
 3. Committez vos changements (`git commit -am 'Ajout fonctionnalité'`)
@@ -576,6 +638,7 @@ Les contributions sont les bienvenues ! Pour contribuer :
 5. Ouvrez une Pull Request
 
 ### Tests
+
 ```bash
 # Tester le générateur de mots de passe
 python3 -c "from password_manager import PasswordGenerator; print(PasswordGenerator.generate())"
@@ -586,24 +649,24 @@ python3 -c "from password_manager import PasswordCrypto; c = PasswordCrypto('tes
 
 ## ⚠️ Avertissements
 
-1. **Mot de passe maître** : 
+1. **Mot de passe maître** :
    - Chaque utilisateur a son propre mot de passe maître
    - Un admin peut le réinitialiser, mais **toutes les données seront inaccessibles** avec l'ancien mot de passe
    - Choisissez un mot de passe fort et mémorisable
-   
+
 2. **Compte admin par défaut** :
    - Login: `admin` / Password: `admin`
    - **Changez-le immédiatement** après le premier lancement !
-   
-3. **Sauvegardes** : 
+
+3. **Sauvegardes** :
    - Sauvegardez régulièrement `~/.local/share/passwordmanager/`
    - Incluez `users.db` et tous les fichiers `passwords_*.db` et `salt_*.bin`
-   
-4. **Sécurité du système** : 
+
+4. **Sécurité du système** :
    - Assurez-vous que votre système est sécurisé (pas de keyloggers, malware, etc.)
    - Les permissions des fichiers salt sont automatiquement sécurisées (600)
-   
-5. **Confidentialité** : 
+
+5. **Confidentialité** :
    - Ne partagez jamais votre mot de passe maître
    - Les administrateurs peuvent réinitialiser les mots de passe mais **ne peuvent pas** voir vos données
 
@@ -645,4 +708,4 @@ Pour toute question ou suggestion, n'hésitez pas à ouvrir une issue sur GitHub
 
 ---
 
-**⚡ Fait avec ❤️ pour la communauté Linux**
+⚡ Fait avec ❤️ pour la communauté Linux

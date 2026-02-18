@@ -79,9 +79,9 @@ class PasswordGeneratorDialog(Adw.Window):
         length_box.append(length_label)
 
         self.length_spin = Gtk.SpinButton()
-        self.length_spin.set_range(8, 64)
+        self.length_spin.set_range(12, 64)
         self.length_spin.set_increments(1, 4)
-        self.length_spin.set_value(16)
+        self.length_spin.set_value(20)
         self.length_spin.connect("value-changed", lambda x: self.generate_password())
         length_box.append(self.length_spin)
         self.random_options.append(length_box)
@@ -123,9 +123,9 @@ class PasswordGeneratorDialog(Adw.Window):
         words_box.append(words_label)
 
         self.words_spin = Gtk.SpinButton()
-        self.words_spin.set_range(3, 8)
+        self.words_spin.set_range(4, 8)
         self.words_spin.set_increments(1, 1)
-        self.words_spin.set_value(4)
+        self.words_spin.set_value(5)
         self.words_spin.connect("value-changed", lambda x: self.generate_password())
         words_box.append(self.words_spin)
         self.passphrase_options.append(words_box)

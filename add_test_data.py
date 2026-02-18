@@ -17,7 +17,7 @@ def derive_key(master_password: str, salt: bytes) -> bytes:
         algorithm=hashes.SHA256(),
         length=32,
         salt=salt,
-        iterations=100000
+        iterations=600000  # Conforme aux standards OWASP 2023+
     )
     return kdf.derive(master_password.encode())
 

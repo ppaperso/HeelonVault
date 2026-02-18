@@ -23,8 +23,8 @@ from src.version import get_version
 
 import gi  # type: ignore[import]
 
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
 from gi.repository import Gtk, Adw, Gio  # type: ignore[attr-defined]  # noqa: E402
 
 configure_logging()
@@ -38,7 +38,7 @@ class PasswordManagerApplication(Adw.Application):
 
     def __init__(self):
         super().__init__(
-            application_id='org.example.passwordmanager',
+            application_id="org.example.passwordmanager",
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
         self.window: Optional[PasswordManagerWindow] = None
@@ -62,6 +62,7 @@ class PasswordManagerApplication(Adw.Application):
         self._add_action("change_own_password", self.on_change_own_password)
         self._add_action("import_csv", self.on_import_csv)
         self._add_action("manage_backups", self.on_manage_backups)
+        self._add_action("open_trash", self.on_open_trash)
         self._add_action("about", self.on_about)
 
     def _add_action(self, name: str, handler) -> None:
@@ -81,7 +82,9 @@ class PasswordManagerApplication(Adw.Application):
         self._secure_sensitive_files()
         if not self.auth_service:
             raise RuntimeError("AuthService non initialisé")
-        self.selection_dialog = UserSelectionDialog(self, self.auth_service, self.on_user_authenticated)
+        self.selection_dialog = UserSelectionDialog(
+            self, self.auth_service, self.on_user_authenticated
+        )
         self.selection_dialog.set_application(self)
         self.selection_dialog.present()
 
@@ -99,7 +102,7 @@ class PasswordManagerApplication(Adw.Application):
 
     def on_user_authenticated(self, user_info: dict, master_password: str):
         try:
-            username = user_info['username']
+            username = user_info["username"]
             self.current_user = user_info
             db_path = DATA_DIR / f"passwords_{username}.db"
             salt_path = DATA_DIR / f"salt_{username}.bin"
@@ -107,14 +110,16 @@ class PasswordManagerApplication(Adw.Application):
             if salt_path.exists():
                 salt = salt_path.read_bytes()
             else:
-                salt = user_info['salt']
+                salt = user_info["salt"]
                 salt_path.write_bytes(salt)
                 salt_path.chmod(0o600)
 
             self._close_repository()
             self.crypto_service = CryptoService(master_password, salt)
-            self.repository = PasswordRepository(db_path)
-            self.password_service = PasswordService(self.repository, self.crypto_service)
+            self.repository = PasswordRepository(db_path, self.backup_service)
+            self.password_service = PasswordService(
+                self.repository, self.crypto_service
+            )
             self.current_db_path = db_path
 
             if self.selection_dialog:
@@ -127,7 +132,9 @@ class PasswordManagerApplication(Adw.Application):
             self.window.present()
             logger.debug("Fenêtre principale affichée pour %s", username)
         except Exception as exc:
-            logger.exception("Erreur lors de l'initialisation pour %s", user_info.get('username'))
+            logger.exception(
+                "Erreur lors de l'initialisation pour %s", user_info.get("username")
+            )
             dialog = Adw.MessageDialog.new(None)
             dialog.set_heading(_("Erreur"))
             dialog.set_body(_("Impossible d'initialiser l'application: %s") % exc)
@@ -137,13 +144,15 @@ class PasswordManagerApplication(Adw.Application):
     def on_logout(self, _action=None, _param=None):
         logger.info("Déconnexion demandée")
         if self.current_user and self.password_service and self.current_db_path:
-            username = self.current_user['username']
+            username = self.current_user["username"]
             if self.password_service.has_unsaved_changes():
                 backup_path = self.backup_service.create_user_db_backup(username)
                 if backup_path:
                     self.password_service.mark_as_saved()
-                    if self.window and hasattr(self.window, 'toast_overlay'):
-                        toast = Adw.Toast.new(_("💾 Sauvegarde créée: %s") % backup_path.name)
+                    if self.window and hasattr(self.window, "toast_overlay"):
+                        toast = Adw.Toast.new(
+                            _("💾 Sauvegarde créée: %s") % backup_path.name
+                        )
                         toast.set_timeout(3)
                         self.window.toast_overlay.add_toast(toast)
         if self.window:
@@ -158,12 +167,21 @@ class PasswordManagerApplication(Adw.Application):
         self.on_logout(action, param)
 
     def on_manage_users(self, _action, _param):
-        if self.current_user and self.current_user['role'] == 'admin' and self.window and self.auth_service:
-            ManageUsersDialog(self.window, self.auth_service, self.current_user['username']).present()
+        if (
+            self.current_user
+            and self.current_user["role"] == "admin"
+            and self.window
+            and self.auth_service
+        ):
+            ManageUsersDialog(
+                self.window, self.auth_service, self.current_user["username"]
+            ).present()
 
     def on_change_own_password(self, _action, _param):
         if self.current_user and self.window and self.auth_service:
-            ChangeOwnPasswordDialog(self.window, self.auth_service, self.current_user['username']).present()
+            ChangeOwnPasswordDialog(
+                self.window, self.auth_service, self.current_user["username"]
+            ).present()
 
     def on_import_csv(self, _action, _param):
         if self.window and self.password_service:
@@ -171,8 +189,23 @@ class PasswordManagerApplication(Adw.Application):
             ImportCSVDialog(self.window, self.password_service, csv_importer).present()
 
     def on_manage_backups(self, _action, _param):
-        if self.current_user and self.current_user['role'] == 'admin' and self.window:
-            BackupManagerDialog(self.window, self.backup_service, self.current_user['username']).present()
+        if self.current_user and self.current_user["role"] == "admin" and self.window:
+            BackupManagerDialog(
+                self.window, self.backup_service, self.current_user["username"]
+            ).present()
+
+    def on_open_trash(self, _action, _param):
+        """Ouvre le dialogue de la corbeille."""
+        if self.window and self.password_service:
+            from src.ui.dialogs.trash_dialog import TrashDialog
+
+            TrashDialog(
+                self.window,
+                self.password_service,
+                on_change_callback=lambda: self.window.load_entries()
+                if self.window
+                else None,
+            ).present()
 
     def on_about(self, _action, _param):
         if self.window:
@@ -202,7 +235,9 @@ def _validate_password_rules(password: str, confirm: str) -> Optional[str]:
 class UserSelectionDialog(Adw.ApplicationWindow):
     """Fenêtre de sélection d'utilisateur."""
 
-    def __init__(self, app, auth_service: AuthService, callback: Callable[[dict, str], None]):
+    def __init__(
+        self, app, auth_service: AuthService, callback: Callable[[dict, str], None]
+    ):
         super().__init__(application=app)
         self.set_default_size(450, 500)
         self.set_title(_("Sélection d'utilisateur"))
@@ -220,22 +255,22 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         content.set_margin_bottom(40)
 
         title = Gtk.Label(label=_("🔐 Gestionnaire de mots de passe"))
-        title.set_css_classes(['title-1'])
+        title.set_css_classes(["title-1"])
         content.append(title)
 
         version_label = Gtk.Label(label=_("Version %s") % get_version())
-        version_label.set_css_classes(['caption', 'dim-label'])
+        version_label.set_css_classes(["caption", "dim-label"])
         content.append(version_label)
 
         subtitle = Gtk.Label(label=_("Sélectionnez votre compte"))
-        subtitle.set_css_classes(['title-4'])
+        subtitle.set_css_classes(["title-4"])
         content.append(subtitle)
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         scrolled.set_min_content_height(200)
         self.users_listbox = Gtk.ListBox()
-        self.users_listbox.set_css_classes(['boxed-list'])
+        self.users_listbox.set_css_classes(["boxed-list"])
         self.users_listbox.connect("row-activated", self.on_user_selected)
         scrolled.set_child(self.users_listbox)
         content.append(scrolled)
@@ -262,16 +297,18 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             info_box.set_hexpand(True)
             name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             name_label = Gtk.Label(label=username, xalign=0)
-            name_label.set_css_classes(['title-4'])
+            name_label.set_css_classes(["title-4"])
             name_box.append(name_label)
-            if role == 'admin':
+            if role == "admin":
                 admin_label = Gtk.Label(label=_("Admin"))
-                admin_label.set_css_classes(['caption', 'accent'])
+                admin_label.set_css_classes(["caption", "accent"])
                 name_box.append(admin_label)
             info_box.append(name_box)
             if last_login:
-                last_login_label = Gtk.Label(label=_("Dernière connexion: %s") % last_login[:16], xalign=0)
-                last_login_label.set_css_classes(['caption', 'dim-label'])
+                last_login_label = Gtk.Label(
+                    label=_("Dernière connexion: %s") % last_login[:16], xalign=0
+                )
+                last_login_label.set_css_classes(["caption", "dim-label"])
                 info_box.append(last_login_label)
             user_box.append(info_box)
             arrow = Gtk.Image.new_from_icon_name("go-next-symbolic")
@@ -287,7 +324,13 @@ class UserSelectionDialog(Adw.ApplicationWindow):
 class LoginDialog(Adw.Window):
     """Dialogue de connexion."""
 
-    def __init__(self, parent, auth_service: AuthService, username: str, callback: Callable[[dict, str], None]):
+    def __init__(
+        self,
+        parent,
+        auth_service: AuthService,
+        username: str,
+        callback: Callable[[dict, str], None],
+    ):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -309,14 +352,14 @@ class LoginDialog(Adw.Window):
         box.append(icon)
 
         title = Gtk.Label(label=_("Bonjour, %s") % username)
-        title.set_css_classes(['title-2'])
+        title.set_css_classes(["title-2"])
         box.append(title)
 
         subtitle = Gtk.Label(label=_("Entrez votre mot de passe maître"))
         box.append(subtitle)
 
         version_label = Gtk.Label(label=_("v%s") % get_version())
-        version_label.set_css_classes(['caption', 'dim-label'])
+        version_label.set_css_classes(["caption", "dim-label"])
         version_label.set_margin_top(10)
 
         self.password_entry = Gtk.PasswordEntry()
@@ -324,7 +367,7 @@ class LoginDialog(Adw.Window):
         box.append(self.password_entry)
 
         self.error_label = Gtk.Label(label="")
-        self.error_label.set_css_classes(['error'])
+        self.error_label.set_css_classes(["error"])
         self.error_label.set_visible(False)
         box.append(self.error_label)
 
@@ -336,7 +379,7 @@ class LoginDialog(Adw.Window):
         button_box.append(cancel_btn)
 
         login_btn = Gtk.Button(label=_("Se connecter"))
-        login_btn.set_css_classes(['suggested-action'])
+        login_btn.set_css_classes(["suggested-action"])
         login_btn.connect("clicked", lambda _x: self.on_login())
         button_box.append(login_btn)
 
@@ -367,11 +410,13 @@ class LoginDialog(Adw.Window):
 class CreateUserDialog(Adw.Window):
     """Création d'utilisateur (admin)."""
 
-    def __init__(self, parent, auth_service: AuthService, on_success: Callable[[], None]):
+    def __init__(
+        self, parent, auth_service: AuthService, on_success: Callable[[], None]
+    ):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(450, 420)
+        self.set_default_size(450, 480)
         self.set_title(_("Créer un compte"))
         self.auth_service = auth_service
         self.on_success_callback = on_success
@@ -387,7 +432,7 @@ class CreateUserDialog(Adw.Window):
         content.set_margin_bottom(40)
 
         title = Gtk.Label(label=_("Créer un nouveau compte"))
-        title.set_css_classes(['title-2'])
+        title.set_css_classes(["title-2"])
         content.append(title)
 
         username_label = Gtk.Label(label=_("Nom d'utilisateur"), xalign=0)
@@ -399,7 +444,15 @@ class CreateUserDialog(Adw.Window):
         content.append(password_label)
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
+        self.password_entry.connect("changed", self.on_password_changed)
         content.append(self.password_entry)
+
+        # Indicateur de force du mot de passe
+        self.strength_label = Gtk.Label(label="")
+        self.strength_label.set_css_classes(["caption"])
+        self.strength_label.set_xalign(0)
+        self.strength_label.set_margin_bottom(5)
+        content.append(self.strength_label)
 
         confirm_label = Gtk.Label(label=_("Confirmer le mot de passe"), xalign=0)
         content.append(confirm_label)
@@ -420,7 +473,7 @@ class CreateUserDialog(Adw.Window):
         content.append(role_box)
 
         self.error_label = Gtk.Label(label="")
-        self.error_label.set_css_classes(['error'])
+        self.error_label.set_css_classes(["error"])
         self.error_label.set_visible(False)
         self.error_label.set_wrap(True)
         content.append(self.error_label)
@@ -431,7 +484,7 @@ class CreateUserDialog(Adw.Window):
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
         create_btn = Gtk.Button(label=_("Créer le compte"))
-        create_btn.set_css_classes(['suggested-action'])
+        create_btn.set_css_classes(["suggested-action"])
         create_btn.connect("clicked", self.on_create_clicked)
         button_box.append(create_btn)
         content.append(button_box)
@@ -439,19 +492,66 @@ class CreateUserDialog(Adw.Window):
         box.append(content)
         self.set_content(box)
 
+    def on_password_changed(self, entry):
+        """Affiche la force du mot de passe en temps réel."""
+        from src.services.master_password_validator import MasterPasswordValidator
+
+        password = entry.get_text()
+        if len(password) == 0:
+            self.strength_label.set_text("")
+            self.strength_label.set_css_classes(["caption"])
+            return
+
+        _, _, score = MasterPasswordValidator.validate(password)
+        strength = MasterPasswordValidator.get_strength_description(score)
+
+        # Définir la couleur selon le score
+        if score >= 80:
+            self.strength_label.set_css_classes(["caption", "success"])
+        elif score >= 60:
+            self.strength_label.set_css_classes(["caption", "warning"])
+        else:
+            self.strength_label.set_css_classes(["caption", "error"])
+
+        self.strength_label.set_text(f"Force : {strength} ({score}/100)")
+
     def on_create_clicked(self, _button):
+        from src.services.master_password_validator import MasterPasswordValidator
+
         username = self.username_entry.get_text().strip()
         password = self.password_entry.get_text()
         confirm = self.confirm_entry.get_text()
 
         if len(username) < 3:
-            self.show_error(_("Le nom d'utilisateur doit contenir au moins 3 caractères"))
+            self.show_error(
+                _("Le nom d'utilisateur doit contenir au moins 3 caractères")
+            )
             return
+
+        # Validation avec le nouveau validateur
+        is_valid, errors, score = MasterPasswordValidator.validate(password)
+
+        if not is_valid:
+            error_msg = _("Mot de passe trop faible :\n")
+            error_msg += "\n".join(
+                f"• {err}" for err in errors[:3]
+            )  # Limiter à 3 erreurs
+            self.show_error(error_msg)
+            return
+
+        if score < 60:
+            # Avertissement mais on autorise quand même
+            strength = MasterPasswordValidator.get_strength_description(score)
+            error_msg = f"⚠️ Force du mot de passe : {strength} ({score}/100)\n"
+            error_msg += _("Recommandé : au moins 60/100")
+            self.show_error(error_msg)
+            # On continue quand même si l'utilisateur insiste
+
         error = _validate_password_rules(password, confirm)
         if error:
             self.show_error(error)
             return
-        role = 'admin' if self.role_admin.get_active() else 'user'
+        role = "admin" if self.role_admin.get_active() else "user"
         if self.auth_service.create_user(username, password, role):
             self.on_success_callback()
             self.close()
@@ -486,20 +586,20 @@ class ManageUsersDialog(Adw.Window):
         content.set_margin_bottom(20)
 
         title = Gtk.Label(label=_("Gestion des utilisateurs"))
-        title.set_css_classes(['title-2'])
+        title.set_css_classes(["title-2"])
         content.append(title)
 
         scrolled = Gtk.ScrolledWindow()
         scrolled.set_vexpand(True)
         self.users_listbox = Gtk.ListBox()
-        self.users_listbox.set_css_classes(['boxed-list'])
+        self.users_listbox.set_css_classes(["boxed-list"])
         scrolled.set_child(self.users_listbox)
         content.append(scrolled)
 
         self.load_users()
 
         create_user_btn = Gtk.Button(label=_("➕ Créer un nouvel utilisateur"))
-        create_user_btn.set_css_classes(['suggested-action', 'pill'])
+        create_user_btn.set_css_classes(["suggested-action", "pill"])
         create_user_btn.connect("clicked", self.on_create_user)
         content.append(create_user_btn)
 
@@ -521,25 +621,29 @@ class ManageUsersDialog(Adw.Window):
             info_box.set_hexpand(True)
             name_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
             name_label = Gtk.Label(label=username, xalign=0)
-            name_label.set_css_classes(['title-4'])
+            name_label.set_css_classes(["title-4"])
             name_box.append(name_label)
-            if role == 'admin':
+            if role == "admin":
                 admin_label = Gtk.Label(label=_("Admin"))
-                admin_label.set_css_classes(['caption', 'accent'])
+                admin_label.set_css_classes(["caption", "accent"])
                 name_box.append(admin_label)
             info_box.append(name_box)
             created_label = Gtk.Label(label=_("Créé: %s") % created_at[:10], xalign=0)
-            created_label.set_css_classes(['caption', 'dim-label'])
+            created_label.set_css_classes(["caption", "dim-label"])
             info_box.append(created_label)
             user_box.append(info_box)
             if username != self.current_username:
                 action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
                 reset_btn = Gtk.Button(label=_("Réinitialiser MdP"))
-                reset_btn.connect("clicked", lambda _b, u=username: self.on_reset_password(u))
+                reset_btn.connect(
+                    "clicked", lambda _b, u=username: self.on_reset_password(u)
+                )
                 action_box.append(reset_btn)
                 delete_btn = Gtk.Button(label=_("Supprimer"))
-                delete_btn.set_css_classes(['destructive-action'])
-                delete_btn.connect("clicked", lambda _b, u=username: self.on_delete_user(u))
+                delete_btn.set_css_classes(["destructive-action"])
+                delete_btn.connect(
+                    "clicked", lambda _b, u=username: self.on_delete_user(u)
+                )
                 action_box.append(delete_btn)
                 user_box.append(action_box)
             row.set_child(user_box)
@@ -555,7 +659,10 @@ class ManageUsersDialog(Adw.Window):
         dialog = Adw.MessageDialog.new(self)
         dialog.set_heading(_("Confirmer la suppression"))
         dialog.set_body(
-            _("Voulez-vous vraiment supprimer l'utilisateur '%s' ?\n\nToutes ses données seront perdues.") % username
+            _(
+                "Voulez-vous vraiment supprimer l'utilisateur '%s' ?\n\nToutes ses données seront perdues."
+            )
+            % username
         )
         dialog.add_response("cancel", _("Annuler"))
         dialog.add_response("delete", _("Supprimer"))
@@ -594,17 +701,21 @@ class ChangeOwnPasswordDialog(Adw.Window):
         box.set_margin_bottom(40)
 
         title = Gtk.Label(label=_("Changer votre mot de passe maître"))
-        title.set_css_classes(['title-3'])
+        title.set_css_classes(["title-3"])
         title.set_wrap(True)
         box.append(title)
 
-        info = Gtk.Label(label=_("Pour des raisons de sécurité, vous devez d'abord saisir votre mot de passe actuel."))
-        info.set_css_classes(['caption', 'dim-label'])
+        info = Gtk.Label(
+            label=_(
+                "Pour des raisons de sécurité, vous devez d'abord saisir votre mot de passe actuel."
+            )
+        )
+        info.set_css_classes(["caption", "dim-label"])
         info.set_wrap(True)
         box.append(info)
 
         current_label = Gtk.Label(label=_("Mot de passe actuel"), xalign=0)
-        current_label.set_css_classes(['title-4'])
+        current_label.set_css_classes(["title-4"])
         box.append(current_label)
         self.current_entry = Gtk.PasswordEntry()
         self.current_entry.set_show_peek_icon(True)
@@ -616,20 +727,22 @@ class ChangeOwnPasswordDialog(Adw.Window):
         box.append(separator)
 
         new_label = Gtk.Label(label=_("Nouveau mot de passe"), xalign=0)
-        new_label.set_css_classes(['title-4'])
+        new_label.set_css_classes(["title-4"])
         box.append(new_label)
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
         box.append(self.password_entry)
 
-        confirm_label = Gtk.Label(label=_("Confirmer le nouveau mot de passe"), xalign=0)
+        confirm_label = Gtk.Label(
+            label=_("Confirmer le nouveau mot de passe"), xalign=0
+        )
         box.append(confirm_label)
         self.confirm_entry = Gtk.PasswordEntry()
         self.confirm_entry.set_show_peek_icon(True)
         box.append(self.confirm_entry)
 
         self.error_label = Gtk.Label(label="")
-        self.error_label.set_css_classes(['error'])
+        self.error_label.set_css_classes(["error"])
         self.error_label.set_visible(False)
         self.error_label.set_wrap(True)
         box.append(self.error_label)
@@ -640,7 +753,7 @@ class ChangeOwnPasswordDialog(Adw.Window):
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
         change_btn = Gtk.Button(label=_("Changer le mot de passe"))
-        change_btn.set_css_classes(['suggested-action'])
+        change_btn.set_css_classes(["suggested-action"])
         change_btn.connect("clicked", self.on_change_clicked)
         button_box.append(change_btn)
         box.append(button_box)
@@ -665,7 +778,9 @@ class ChangeOwnPasswordDialog(Adw.Window):
             self.show_error(error)
             return
         if new_password == current:
-            self.show_error(_("Le nouveau mot de passe doit être différent de l'ancien"))
+            self.show_error(
+                _("Le nouveau mot de passe doit être différent de l'ancien")
+            )
             return
         if self.auth_service.change_user_password(self.username, current, new_password):
             dialog = Adw.MessageDialog.new(self)
@@ -701,12 +816,14 @@ class ResetPasswordDialog(Adw.Window):
         box.set_margin_bottom(40)
 
         title = Gtk.Label(label=_("Réinitialiser le mot de passe de '%s'") % username)
-        title.set_css_classes(['title-3'])
+        title.set_css_classes(["title-3"])
         title.set_wrap(True)
         box.append(title)
 
-        warning = Gtk.Label(label=_("⚠️ L'utilisateur devra utiliser ce nouveau mot de passe"))
-        warning.set_css_classes(['caption'])
+        warning = Gtk.Label(
+            label=_("⚠️ L'utilisateur devra utiliser ce nouveau mot de passe")
+        )
+        warning.set_css_classes(["caption"])
         warning.set_wrap(True)
         box.append(warning)
 
@@ -723,7 +840,7 @@ class ResetPasswordDialog(Adw.Window):
         box.append(self.confirm_entry)
 
         self.error_label = Gtk.Label(label="")
-        self.error_label.set_css_classes(['error'])
+        self.error_label.set_css_classes(["error"])
         self.error_label.set_visible(False)
         box.append(self.error_label)
 
@@ -733,7 +850,7 @@ class ResetPasswordDialog(Adw.Window):
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
         reset_btn = Gtk.Button(label=_("Réinitialiser"))
-        reset_btn.set_css_classes(['destructive-action'])
+        reset_btn.set_css_classes(["destructive-action"])
         reset_btn.connect("clicked", self.on_reset_clicked)
         button_box.append(reset_btn)
         box.append(button_box)
@@ -750,7 +867,9 @@ class ResetPasswordDialog(Adw.Window):
         if self.auth_service.reset_user_password(self.username, password):
             dialog = Adw.MessageDialog.new(self)
             dialog.set_heading(_("Succès"))
-            dialog.set_body(_("Le mot de passe de '%s' a été réinitialisé.") % self.username)
+            dialog.set_body(
+                _("Le mot de passe de '%s' a été réinitialisé.") % self.username
+            )
             dialog.add_response("ok", _("OK"))
             dialog.connect("response", lambda _d, _r: self.close())
             dialog.present()

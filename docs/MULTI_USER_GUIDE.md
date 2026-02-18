@@ -5,6 +5,7 @@ Ce guide détaille le fonctionnement du système multi-utilisateurs avec workspa
 ## 🎯 Vue d'ensemble
 
 Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec :
+
 - **Workspaces totalement séparés** : Chaque utilisateur a sa propre base de données
 - **Authentification individuelle** : Mot de passe maître unique par utilisateur
 - **Gestion des rôles** : Administrateur et Utilisateur standard
@@ -14,7 +15,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 
 ### Séparation des données
 
-```
+```text
 /var/lib/password-manager-shared/
 ├── users.db                    # Base des utilisateurs (hash des mots de passe)
 ├── passwords_alice.db          # Workspace d'Alice (chiffré)
@@ -39,6 +40,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 ### Utilisateur standard (User)
 
 **Permissions :**
+
 - ✅ Créer, modifier, supprimer ses propres mots de passe
 - ✅ Organiser avec catégories et tags
 - ✅ Utiliser le générateur de mots de passe
@@ -47,7 +49,8 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 - ❌ Ne peut PAS gérer les comptes
 
 **Interface :**
-```
+
+```text
 ┌─────────────────────────────────────┐
 │  [+]  Bonjour, alice           [≡] │
 ├─────────────────────────────────────┤
@@ -62,6 +65,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 ### Administrateur (Admin)
 
 **Permissions supplémentaires :**
+
 - ✅ Voir la liste de tous les utilisateurs
 - ✅ Réinitialiser le mot de passe d'un utilisateur
 - ✅ Supprimer un compte utilisateur
@@ -69,7 +73,8 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 - ❌ Ne peut toujours PAS voir les mots de passe des autres
 
 **Interface :**
-```
+
+```text
 ┌─────────────────────────────────────┐
 │  [+]  Bonjour, admin  [Admin]  [≡] │
 │                                  ↓  │
@@ -99,11 +104,13 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 
 1. **Écran de sélection** → "Créer un nouveau compte"
 2. Remplissez le formulaire :
-   ```
+
+   ```text
    Nom d'utilisateur: alice
    Mot de passe maître: ********** (min. 8 caractères)
    Confirmer: **********
    ```
+
 3. Cliquez sur "Créer le compte"
 4. Votre workspace est créé automatiquement
 
@@ -120,7 +127,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 2. Entrez votre **mot de passe maître**
 3. Accédez à votre workspace personnel
 
-```
+```text
 ┌───────────────────────────────────┐
 │  🔐 Gestionnaire de mots de passe │
 │  Sélectionnez votre compte        │
@@ -161,7 +168,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 
 ### Interface de gestion
 
-```
+```text
 ┌─────────────────────────────────────────────────────┐
 │  Gestion des utilisateurs                           │
 ├─────────────────────────────────────────────────────┤
@@ -189,7 +196,8 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 2. Menu → "Gérer les utilisateurs"
 3. Trouve "alice" → Clic "Réinitialiser MdP"
 4. Dialogue de réinitialisation :
-   ```
+
+   ```text
    Réinitialiser le mot de passe de 'alice'
    
    ⚠️ L'utilisateur devra utiliser ce nouveau mot de passe
@@ -199,22 +207,25 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
    
    [Annuler]  [Réinitialiser]
    ```
+
 5. **Important** : Communiquez le nouveau mot de passe à Alice de manière sécurisée
 6. Alice peut maintenant se connecter avec le nouveau mot de passe
 
 **⚠️ Limitation importante** :
+
 - Les **données chiffrées avec l'ancien mot de passe sont perdues**
 - Après réinitialisation, Alice aura un workspace vide
 - C'est une limitation cryptographique : impossible de déchiffrer sans l'ancien mot de passe
 
 ### Supprimer un utilisateur
 
-**⚠️ ACTION IRRÉVERSIBLE**
+**⚠️ ACTION IRRÉVERSIBLE** :
 
 1. Menu → "Gérer les utilisateurs"
 2. Clic "Supprimer" sur l'utilisateur
 3. Confirmation :
-   ```
+
+   ```text
    Confirmer la suppression
    
    Voulez-vous vraiment supprimer l'utilisateur 'bob' ?
@@ -223,6 +234,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
    
    [Annuler]  [Supprimer]
    ```
+
 4. Les fichiers suivants sont supprimés :
    - `passwords_bob.db`
    - `salt_bob.bin`
@@ -232,7 +244,7 @@ Le gestionnaire de mots de passe supporte maintenant plusieurs utilisateurs avec
 
 ### Famille avec ordinateur partagé
 
-```
+```text
 Compte admin (Parent)
 ├── Gestion des comptes enfants
 ├── Réinitialisation si mot de passe oublié
@@ -247,7 +259,7 @@ Compte bob (Fils)
 
 ### Petite entreprise
 
-```
+```text
 Compte admin_it (DSI)
 ├── Gestion des comptes employés
 ├── Réinitialisation en cas d'oubli
@@ -262,7 +274,7 @@ Compte bob (Employé Dev)
 
 ### Utilisation personnelle avancée
 
-```
+```text
 Compte admin_perso (Vous)
 └── Compte principal
 
@@ -293,11 +305,13 @@ Compte finance (Isolation finance)
 ### Pourquoi ces limitations ?
 
 **Chiffrement de bout en bout** :
+
 - Chaque mot de passe est chiffré avec une clé dérivée du mot de passe maître
 - Sans le mot de passe maître, les données sont **mathématiquement indéchiffrables**
 - Même l'admin ne peut pas contourner le chiffrement
 
 **C'est une fonctionnalité, pas un bug** :
+
 - Garantit la confidentialité absolue
 - Aucun backdoor administrateur
 - Même sous la contrainte, impossible de révéler les données d'un utilisateur
@@ -381,12 +395,14 @@ tar xzf backup-YYYYMMDD-HHMMSS.tar.gz -C ~/.local/share/passwordmanager/
 ### Migration depuis l'ancienne version (mono-utilisateur)
 
 **Anciens fichiers** :
-```
+
+```text
 passwords.db  → À renommer en passwords_admin.db
 salt.bin      → À renommer en salt_admin.bin
 ```
 
 **Commandes** :
+
 ```bash
 cd ~/.local/share/passwordmanager/
 mv passwords.db passwords_admin.db

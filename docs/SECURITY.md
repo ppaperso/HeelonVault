@@ -7,19 +7,22 @@
 **Problème initial** : N'importe qui pouvait créer un compte depuis l'écran de login.
 
 **Solution implémentée** :
+
 - ❌ **Supprimé** : Bouton "Créer un nouveau compte" de l'écran de sélection utilisateur
 - ✅ **Ajouté** : Note informative "Pour créer un nouveau compte, connectez-vous en tant qu'administrateur"
 - ✅ **Ajouté** : Bouton "➕ Créer un nouvel utilisateur" dans le dialogue "Gestion des utilisateurs" (admin uniquement)
 - ✅ **Modifié** : CreateUserDialog permet maintenant de choisir le rôle (Utilisateur/Administrateur)
 
 **Fichiers modifiés** :
+
 - `password_manager.py` (lignes 1350-1610)
   - `UserSelectionDialog` : Suppression de `on_new_user_clicked()`
   - `CreateUserDialog` : Ajout du champ de sélection de rôle
   - `ManageUsersDialog` : Ajout du bouton de création
 
 **Nouveau comportement** :
-```
+
+```text
 Écran de login
 └─> Liste des utilisateurs existants
     └─> Clic sur utilisateur → Demande mot de passe
@@ -41,12 +44,14 @@ Menu admin (une fois connecté)
 **Accessible depuis** : Menu utilisateur (☰) → "Changer mon mot de passe"
 
 **Flux** :
+
 1. Saisir le mot de passe actuel (vérification obligatoire)
 2. Saisir le nouveau mot de passe (min. 8 caractères)
 3. Confirmer le nouveau mot de passe
 4. Le mot de passe est changé avec un nouveau salt
 
 **Implémentation** :
+
 - `ChangeOwnPasswordDialog` (password_manager.py, ligne ~1755)
 - `UserManager.verify_user()` : Vérifie le mot de passe actuel
 - `UserManager.change_user_password()` : Change avec vérification
@@ -56,18 +61,22 @@ Menu admin (une fois connecté)
 **Accessible depuis** : Gestion des utilisateurs → "Réinitialiser MdP"
 
 **Flux** :
+
 1. Admin sélectionne un utilisateur (pas soi-même)
 2. Saisit un nouveau mot de passe
 3. Le mot de passe est réinitialisé sans vérifier l'ancien
 
 **Implémentation** :
+
 - `ResetPasswordDialog` (password_manager.py, ligne ~1920)
 - `UserManager.reset_user_password()` : Réinitialise sans vérification
 
 ## 👥 Rôles et permissions
 
 ### Rôle : `user` (Utilisateur standard)
+
 **Peut** :
+
 - ✅ Se connecter avec son compte
 - ✅ Gérer ses propres mots de passe (CRUD)
 - ✅ Changer son propre mot de passe maître
@@ -75,13 +84,16 @@ Menu admin (une fois connecté)
 - ✅ Se déconnecter / Changer de compte
 
 **Ne peut pas** :
+
 - ❌ Créer de nouveaux utilisateurs
 - ❌ Voir les autres utilisateurs
 - ❌ Réinitialiser les mots de passe d'autres utilisateurs
 - ❌ Supprimer des comptes
 
 ### Rôle : `admin` (Administrateur)
+
 **Peut** (en plus des droits utilisateur) :
+
 - ✅ Créer de nouveaux utilisateurs (avec choix du rôle)
 - ✅ Voir tous les utilisateurs
 - ✅ Réinitialiser les mots de passe des autres utilisateurs
@@ -91,6 +103,7 @@ Menu admin (une fois connecté)
 ## 🔨 Architecture de sécurité
 
 ### Hachage des mots de passe
+
 ```python
 Algorithm: PBKDF2HMAC
 Hash: SHA256
@@ -101,7 +114,8 @@ Encoding: Base64
 ```
 
 ### Séparation des données
-```
+
+```text
 ~/.local/share/passwordmanager/
 ├── users.db              # Base centralisée des utilisateurs
 ├── passwords_admin.db    # Workspace de 'admin'
@@ -113,6 +127,7 @@ Encoding: Base64
 ```
 
 ### Chiffrement des mots de passe stockés
+
 ```python
 Algorithm: AES-256-GCM
 Key derivation: PBKDF2HMAC du mot de passe maître
@@ -123,7 +138,8 @@ Tag: 16 bytes (authentication)
 ## 📚 Modules de sécurité
 
 ### Nouveaux modules (src/)
-```
+
+```text
 src/
 ├── services/
 │   ├── auth_service.py          # Service d'authentification
@@ -143,6 +159,7 @@ src/
 ```
 
 ### Classes principales (password_manager.py)
+
 ```python
 UserManager                    # Gestion utilisateurs + auth
 ├── _hash_password()          # PBKDF2HMAC hashing
@@ -165,6 +182,7 @@ ManageUsersDialog             # UI gestion (admin)
 ### Tests manuels recommandés
 
 #### 1. Restriction de création de compte
+
 ```bash
 ./run-dev.sh
 
@@ -175,6 +193,7 @@ ManageUsersDialog             # UI gestion (admin)
 ```
 
 #### 2. Changement de mot de passe
+
 ```bash
 # Test utilisateur standard
 1. Se connecter (non-admin)
@@ -185,6 +204,7 @@ ManageUsersDialog             # UI gestion (admin)
 ```
 
 #### 3. Gestion admin
+
 ```bash
 # Test admin
 1. Se connecter avec admin/admin
@@ -198,6 +218,7 @@ ManageUsersDialog             # UI gestion (admin)
 ```
 
 #### 4. Isolation des workspaces
+
 ```bash
 # Test isolation
 1. Se connecter comme user1, créer des mots de passe
@@ -211,12 +232,14 @@ ManageUsersDialog             # UI gestion (admin)
 ### Pour les développeurs
 
 1. **Toujours vérifier les permissions** avant les opérations sensibles
+
    ```python
    if user['role'] != 'admin':
        return False, "Permission refusée"
    ```
 
 2. **Ne jamais stocker de mots de passe en clair**
+
    ```python
    # ❌ Mauvais
    db.store(username, password)
@@ -227,11 +250,13 @@ ManageUsersDialog             # UI gestion (admin)
    ```
 
 3. **Toujours utiliser des salts uniques**
+
    ```python
    salt = secrets.token_bytes(32)  # Un salt par utilisateur
    ```
 
 4. **Vérifier l'ancien mot de passe lors d'un changement**
+
    ```python
    if not self.verify_user(username, old_password):
        return False

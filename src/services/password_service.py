@@ -69,8 +69,30 @@ class PasswordService:
         logger.info("PasswordService: entrée %s mise à jour", entry.id)
 
     def delete_entry(self, entry_id: int) -> None:
+        """Déplace une entrée vers la corbeille."""
         self.repository.delete_entry(entry_id)
-        logger.info("PasswordService: entrée %s supprimée", entry_id)
+        logger.info("PasswordService: entrée %s déplacée vers la corbeille", entry_id)
+
+    def restore_entry(self, entry_id: int) -> None:
+        """Restaure une entrée de la corbeille."""
+        self.repository.restore_entry(entry_id)
+        logger.info("PasswordService: entrée %s restaurée", entry_id)
+
+    def delete_entry_permanently(self, entry_id: int) -> None:
+        """Supprime définitivement une entrée."""
+        self.repository.delete_entry_permanently(entry_id)
+        logger.info("PasswordService: entrée %s supprimée définitivement", entry_id)
+
+    def list_trash(self) -> List[PasswordEntry]:
+        """Liste les entrées dans la corbeille."""
+        records = self.repository.list_trash()
+        return [self._decrypt_record(r) for r in records]
+
+    def empty_trash(self) -> int:
+        """Vide complètement la corbeille. Retourne le nombre d'entrées supprimées."""
+        count = self.repository.empty_trash()
+        logger.info("PasswordService: corbeille vidée (%d entrées)", count)
+        return count
 
     # ------------------------------------------------------------------
     # Métadonnées

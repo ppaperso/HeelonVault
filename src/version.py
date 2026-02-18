@@ -2,12 +2,12 @@
 Informations de version de l'application
 """
 
-__version__ = "0.4.0-beta"
+__version__ = "1.0.0"
 __app_name__ = "Gestionnaire de Mots de Passe"
 __description__ = "Gestionnaire de mots de passe sécurisé pour Linux"
 __author__ = "Password Manager Team"
 __license__ = "MIT"
-__copyright__ = "Copyright © 2025"
+__copyright__ = "Copyright © 2025-2026"
 
 def get_version():
     """Retourne la version de l'application"""
