@@ -130,7 +130,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 
 ## [0.4.0-beta] - 2025-12-03
 
-### ✨ Ajouté
+### ✨ Ajouté-
 
 #### 🦊 Extension Firefox - Intégration Navigateur Complète
 
@@ -210,7 +210,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
   - `PHASE_2_FIX.md` : Fix du filtrage par URL
   - `QUICK_COMMANDS.sh` : Commandes rapides de développement
 
-### 🐛 Corrigé
+### 🐛 Corrigé-
 
 #### Extension Firefox
 
@@ -227,7 +227,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
   - Fix : La recherche fonctionne toujours dans toutes les entrées (pas de blocage)
   - Fix : Sur URL inconnue, affiche tout (pas de liste vide)
 
-### 🔧 Améliorations
+### 🔧 Améliorations-
 
 #### Architecture
 
@@ -235,20 +235,20 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 - **Variable DEV_MODE** : Contrôle automatique de l'environnement (0 ou 1)
 - **Logs séparés** : `native_host_dev.log` vs `native_host_prod.log`
 
-#### Performance
+#### Performance-
 
 - **1 seule requête SQL** : Récupération globale au lieu de multiples requêtes
 - **Filtrage côté client** : JavaScript rapide vs requêtes réseau
 - **Cache des credentials** : Variable `allCredentials` dans le popup
 
-#### Sécurité
+#### Sécurité-
 
 - **Communication chiffrée** : Via Native Messaging sécurisé de Firefox
 - **Validation des messages** : Format JSON strict avec gestion d'erreurs
 - **Isolation des environnements** : Bases de données et logs séparés
 - **Logs détaillés** : Traçabilité complète des opérations
 
-### 📊 Statistiques
+### 📊 Statistiques-
 
 - **Fichiers ajoutés** : 25+ (extensions, scripts, documentation)
 - **Lignes de code** : ~2000 (JavaScript + Python)
@@ -273,7 +273,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 
 ## [0.3.0-beta] - 2025-11-21
 
-### ✨ Ajouté-
+### ✨ Ajouté--
 
 #### Sauvegarde Automatique
 
@@ -312,7 +312,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 - **test-data-protection.sh** : Tests des permissions et de la protection
 - **Amélioration de test-app.sh** : Ajout des tests de sauvegarde et rotation
 
-### 🐛 Corrigé-
+### 🐛 Corrigé--
 
 - **Champ Notes** : Zone de texte maintenant accessible dans les dialogues d'ajout/édition
   - TextView correctement enveloppé dans un ScrolledWindow
@@ -349,7 +349,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 
 ## [0.2.0-beta] - 2025-11-20
 
-### ✨ Ajouté--
+### ✨ Ajouté---
 
 - Module `src/config/logging_config.py` avec rotation quotidienne, niveaux adaptés (DEBUG en DEV, INFO en PROD) et répertoires distincts (`./logs` vs `/var/log/password_manager`).
 - Script `tests/test-logging.sh` qui génère plusieurs journaux, valide la suppression des plus anciens et échoue si la rotation ne respecte pas la rétention de 7 fichiers.
@@ -370,7 +370,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 
 ## [0.1.0-beta] - 2025-11-19
 
-### ✨ Ajouté---
+### ✨ Ajouté----
 
 #### Import/Export
 
@@ -465,7 +465,7 @@ Cette version majeure marque la première release stable du gestionnaire de mots
 - Centralisation de la création des boîtes de dialogue via `present_alert()` pour harmoniser l'interface et réduire la duplication.
 - Gestion améliorée du focus initial avec `GLib.idle_add` afin d'éviter les warnings GTK lors de l'ouverture des fenêtres.
 
-### 🐛 Corrigé--
+### 🐛 Corrigé---
 
 - Correction des boîtes de dialogue de confirmation qui provoquaient une exception (`Task.get_string`).
 - Prévention des warnings `gdk_frame_clock_get_frame_time` en retardant la création d'un parent temporaire avant d'afficher un dialogue sans fenêtre active.
