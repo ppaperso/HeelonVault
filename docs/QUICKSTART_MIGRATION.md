@@ -15,7 +15,7 @@ mkdir -p data
 cp /path/to/users.db data/
 
 # 2. Exécuter la migration
-./migrate_to_email_2fa.py --data-dir ./data
+./scripts/migrate_to_email_2fa.py --data-dir ./data
 
 # 3. Vérifier
 sqlite3 data/users.db "SELECT username, email, workspace_uuid FROM users;"
@@ -27,7 +27,7 @@ sqlite3 data/users.db "SELECT username, email, workspace_uuid FROM users;"
 ## 🔄 Rollback en cas de problème
 
 ```bash
-./rollback_migration.py \
+./scripts/rollback_migration.py \
     --data-dir ./data \
     --backup ./data/backup_pre_migration_TIMESTAMP
 ```

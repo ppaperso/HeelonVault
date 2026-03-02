@@ -1,12 +1,12 @@
 [Desktop Entry]
 Version=0.4.0-Bêta
 Type=Application
-Name=HeelonValut
+Name=HeelonVault
 Comment=Gestionnaire de mots de passe sécurisé (Multi-utilisateurs avec sauvegarde automatique)
-Exec=/opt/password-manager/run.sh
+Exec=/opt/heelonvault/run.sh
 Icon=dialog-password
 Terminal=false
 Categories=Utility;Security;
 Keywords=password;security;encryption;vault;
 StartupNotify=true
-StartupWMClass=password-manager
+StartupWMClass=heelonvault

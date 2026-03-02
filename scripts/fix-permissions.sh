@@ -4,7 +4,7 @@
 
 set -e
 
-DATA_DIR="/var/lib/password-manager-shared"
+DATA_DIR="/var/lib/heelonvault-shared"
 
 echo "🔧 Réparation des permissions et ACL..."
 echo ""
@@ -104,7 +104,7 @@ echo "║             ✅ RÉPARATION TERMINÉE !                         ║"
 echo "╚══════════════════════════════════════════════════════════════╝"
 echo ""
 echo "🎯 Vous pouvez maintenant relancer l'application:"
-echo "   /opt/password-manager/run.sh"
+echo "   /opt/heelonvault/run.sh"
 echo ""
 echo "📝 Si l'accès en écriture échoue toujours:"
 echo "   1. Déconnectez-vous de votre session"

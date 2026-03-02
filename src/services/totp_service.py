@@ -35,7 +35,7 @@ class TOTPService:
     - HMAC-SHA256 pour hasher les codes de secours
     """
 
-    TOTP_ISSUER = "Password Manager"
+    TOTP_ISSUER = "HeelonVault"
     TOTP_INTERVAL = 30  # Secondes
     TOTP_DIGITS = 6
     BACKUP_CODES_COUNT = 10

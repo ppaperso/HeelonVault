@@ -9,7 +9,7 @@ export DEV_MODE=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 VENV_DIR="${SCRIPT_DIR}/venv-dev"
-APP_FILE="${SCRIPT_DIR}/password_manager.py"
+APP_FILE="${SCRIPT_DIR}/heelonvault.py"
 
 # Vérifier que le venv de dev existe, sinon le créer
 if [ ! -d "$VENV_DIR" ]; then

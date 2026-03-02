@@ -42,9 +42,9 @@ python3 -c "import pyotp, qrcode, validators; print('✅ Dépendances OK')"
 ```bash
 # Copier les données de production vers data/ pour les tests
 mkdir -p data
-cp /var/lib/password-manager-shared/users.db data/
-cp /var/lib/password-manager-shared/passwords_*.db data/ 2>/dev/null || true
-cp /var/lib/password-manager-shared/salt_*.bin data/ 2>/dev/null || true
+cp /var/lib/heelonvault-shared/users.db data/
+cp /var/lib/heelonvault-shared/passwords_*.db data/ 2>/dev/null || true
+cp /var/lib/heelonvault-shared/salt_*.bin data/ 2>/dev/null || true
 ```
 
 ---
@@ -55,7 +55,7 @@ cp /var/lib/password-manager-shared/salt_*.bin data/ 2>/dev/null || true
 
 ```bash
 # Dans le .venv
-./migrate_to_email_2fa.py --data-dir ./data
+./scripts/migrate_to_email_2fa.py --data-dir ./data
 
 # Sortie attendue :
 # ======================================================================
@@ -164,12 +164,12 @@ python3 password_manager.py
 
 ```bash
 # Restaurer depuis le backup
-./rollback_migration.py \
+./scripts/rollback_migration.py \
     --data-dir ./data \
     --backup ./data/backup_pre_migration_TIMESTAMP
 
 # Ou depuis le .tar.gz
-./rollback_migration.py \
+./scripts/rollback_migration.py \
     --data-dir ./data \
     --backup ./data/backup_pre_migration_TIMESTAMP.tar.gz
 ```
@@ -237,17 +237,17 @@ Plan de rollback : Prêt (backup automatique)
 
 ```bash
 # 1. Arrêter l'application (si elle tourne)
-sudo systemctl stop password-manager  # Si service systemd
+sudo systemctl stop heelonvault  # Si service systemd
 # OU
-pkill -f password_manager.py
+pkill -f heelonvault.py
 
 # 2. Backup complet manuel (sécurité supplémentaire)
-sudo cp -r /var/lib/password-manager-shared /var/backups/manual_backup_$(date +%Y%m%d)
+sudo cp -r /var/lib/heelonvault-shared /var/backups/manual_backup_$(date +%Y%m%d)
 
 # 3. Exécuter la migration
-cd /opt/password-manager
+cd /opt/heelonvault
 source venv/bin/activate
-./migrate_to_email_2fa.py --data-dir /var/lib/password-manager-shared
+./scripts/migrate_to_email_2fa.py --data-dir /var/lib/heelonvault-shared
 
 # 4. Vérifier le succès
 # ✅ Backup créé automatiquement
@@ -255,7 +255,7 @@ source venv/bin/activate
 # ✅ Tous les tests de validation passés
 
 # 5. Relancer l'application
-sudo systemctl start password-manager
+sudo systemctl start heelonvault
 # OU
 ./run.sh
 ```
@@ -434,9 +434,9 @@ pip install --upgrade qrcode[pil] Pillow
 En cas de problème critique lors de la migration en production :
 
 1. **Arrêter la migration immédiatement**
-2. **Exécuter le rollback** : `./rollback_migration.py`
-3. **Restaurer le service** : `systemctl start password-manager`
-4. **Analyser les logs** : `/var/log/password-manager/app.log`
+2. **Exécuter le rollback** : `./scripts/rollback_migration.py`
+3. **Restaurer le service** : `systemctl start heelonvault`
+4. **Analyser les logs** : `/var/log/heelonvault/app.log`
 5. **Contacter l'équipe technique**
 
 ---

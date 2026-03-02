@@ -6,13 +6,13 @@
 # - Validation avant application
 
 set -e
-exec > >(tee -i /tmp/update-password-manager.log) 2>&1
+exec > >(tee -i /tmp/update-heelonvault.log) 2>&1
 
 # Détection automatique du dossier source (là où se trouve ce script)
 SOURCE_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configuration
-APP_NAME="password-manager"
+APP_NAME="heelonvault"
 INSTALL_DIR="/opt/$APP_NAME"
 VENV_DIR="$INSTALL_DIR/venv"
 DATA_DIR="/var/lib/${APP_NAME}-shared"
@@ -59,14 +59,14 @@ NC='\033[0m' # No Color
 # Fonction pour afficher un message d'erreur et quitter
 error_exit() {
     echo -e "${RED}❌ ERREUR: $1${NC}" >&2
-    echo "   Voir /tmp/update-password-manager.log pour plus de détails."
+    echo "   Voir /tmp/update-heelonvault.log pour plus de détails."
     if [ -n "$BACKUP_FILE" ] && [ -f "$BACKUP_FILE" ]; then
         echo ""
         echo -e "${YELLOW}⚠️  Un backup complet a été créé: $BACKUP_FILE${NC}"
         echo ""
         echo "   Pour restaurer en cas de problème:"
         echo "   1. Arrêter l'application:"
-        echo "      sudo pkill -f password_manager.py"
+        echo "      sudo pkill -f heelonvault.py"
         echo ""
         echo "   2. Restaurer le backup:"
         echo "      sudo rm -rf $INSTALL_DIR"
@@ -236,6 +236,18 @@ create_backup() {
         error_exit "ERREUR CRITIQUE: Aucune base de données trouvée dans le backup!"
     fi
     echo "   ✅ Intégrité vérifiée ($db_in_backup fichiers .db sauvegardés)"
+    
+    # Vérifier la présence des fichiers secrets cachés dans le backup
+    local pepper_in_backup=$(tar -tzf "$BACKUP_FILE" 2>/dev/null | grep -c "\.email_pepper$" || echo "0")
+    local appkey_in_backup=$(tar -tzf "$BACKUP_FILE" 2>/dev/null | grep -c "\.app_key$" || echo "0")
+    if [ "$pepper_in_backup" -gt 0 ]; then
+        echo "   ✅ Pepper email sauvegardé"
+    else
+        echo "   ℹ️  Pepper email absent du backup (sera créé à la prochaine migration)"
+    fi
+    if [ "$appkey_in_backup" -gt 0 ]; then
+        echo "   ✅ Clé application sauvegardée"
+    fi
 }
 
 # Fonction pour appliquer la mise à jour
@@ -337,12 +349,28 @@ update_permissions() {
         # Si des nouveaux fichiers ont été créés, fixer les permissions de base
         find "$DATA_DIR" -type f -user root -exec chmod 664 {} \; 2>/dev/null || true
         
+        # ⚠️  SÉCURITÉ CRITIQUE: Fichiers secrets cachés (pepper email, clé app)
+        # Ces fichiers contiennent des secrets cryptographiques – permissions 600 obligatoires
+        for secret_file in ".email_pepper" ".app_key"; do
+            if [ -f "$DATA_DIR/$secret_file" ]; then
+                chmod 600 "$DATA_DIR/$secret_file"
+                chown root:root "$DATA_DIR/$secret_file"
+                echo "   🔒 Fichier secret protégé (600): $secret_file"
+            fi
+        done
+        
         # Réappliquer les ACL si SUDO_USER est défini
         if [ -n "$SUDO_USER" ] && command -v setfacl >/dev/null 2>&1; then
             echo "   🔧 Restauration des ACL pour $SUDO_USER..."
             setfacl -m "u:$SUDO_USER:rwx" "$DATA_DIR" 2>/dev/null || true
             find "$DATA_DIR" -type f -name "*.db" -exec setfacl -m "u:$SUDO_USER:rw" {} \; 2>/dev/null || true
             find "$DATA_DIR" -type f -name "salt_*.bin" -exec setfacl -m "u:$SUDO_USER:r" {} \; 2>/dev/null || true
+            # Fichiers secrets cachés: accès lecture seule pour l'utilisateur
+            for secret_file in ".email_pepper" ".app_key"; do
+                if [ -f "$DATA_DIR/$secret_file" ]; then
+                    setfacl -m "u:$SUDO_USER:r" "$DATA_DIR/$secret_file" 2>/dev/null || true
+                fi
+            done
         fi
     fi
     
@@ -353,21 +381,58 @@ update_permissions() {
 stop_application() {
     echo "⏹️  Arrêt de l'application en cours..."
     
-    # Méthode 1: systemd
-    if systemctl is-active --quiet password-manager 2>/dev/null; then
-        systemctl stop password-manager
-        echo "   ✅ Service arrêté via systemd"
+    # Méthode 1: systemd (utilise APP_NAME)
+    if systemctl is-active --quiet "$APP_NAME" 2>/dev/null; then
+        systemctl stop "$APP_NAME"
+        echo "   ✅ Service arrêté via systemd ($APP_NAME)"
         return
     fi
     
     # Méthode 2: pkill
-    if pkill -f password_manager.py 2>/dev/null; then
+    if pkill -f heelonvault.py 2>/dev/null; then
         sleep 2
         echo "   ✅ Processus arrêté via pkill"
         return
     fi
     
     echo "   ℹ️  Aucune instance en cours d'exécution"
+}
+
+# Fonction pour appliquer les migrations de base de données
+run_db_migrations() {
+    echo "🗄️  Vérification et application des migrations de base de données..."
+    echo ""
+    
+    local migration_script="$INSTALL_DIR/scripts/migrate_to_email_2fa.py"
+    
+    if [ ! -f "$migration_script" ]; then
+        echo "   ℹ️  Script de migration introuvable: $migration_script"
+        echo "   ℹ️  Aucune migration de schéma à appliquer"
+        return 0
+    fi
+    
+    if [ ! -f "$VENV_DIR/bin/python" ]; then
+        error_exit "Environnement virtuel manquant: $VENV_DIR/bin/python"
+    fi
+    
+    # Vérifier si les dépendances requises par la migration sont présentes
+    if ! "$VENV_DIR/bin/python" -c "import pyotp, validators" 2>/dev/null; then
+        echo "   ⚠️  Dépendances manquantes (pyotp, validators)"
+        echo "   🔄 Installation des dépendances manquantes..."
+        "$VENV_DIR/bin/pip" install --quiet pyotp validators \
+            || error_exit "Impossible d'installer les dépendances de migration"
+    fi
+    
+    echo "   🔄 Exécution de la migration Email + TOTP + UUID..."
+    echo "   📂 Données: $DATA_DIR"
+    echo ""
+    
+    # Exécuter la migration (idempotente – vérifie migration_status en interne)
+    "$VENV_DIR/bin/python" "$migration_script" --data-dir "$DATA_DIR" \
+        || error_exit "Échec de la migration de la base de données – restaurez le backup: $BACKUP_FILE"
+    
+    echo ""
+    echo "   ✅ Migrations de base de données appliquées avec succès"
 }
 
 # Fonction pour afficher le résumé final
@@ -387,14 +452,14 @@ print_summary() {
     echo "  Version installée     : $new_version"
     echo "  Backup créé           : $(basename "$backup_file")"
     echo "  Emplacement           : $backup_file"
-    echo "  Logs                  : /tmp/update-password-manager.log"
+    echo "  Logs                  : /tmp/update-heelonvault.log"
     echo ""
     echo "🎯 L'application peut maintenant être relancée:"
     echo "   • Via le menu Applications"
     echo "   • Ou avec: $INSTALL_DIR/run.sh"
     echo ""
     echo "💾 En cas de problème, restaurez le backup:"
-    echo "   sudo pkill -f password_manager.py"
+    echo "   sudo pkill -f heelonvault.py"
     echo "   sudo rm -rf $INSTALL_DIR"
     echo "   sudo mkdir -p $INSTALL_DIR"
     echo "   sudo tar -xzf $backup_file -C /"
@@ -416,7 +481,7 @@ echo "  📂 Dossier source: $SOURCE_DIR"
 echo "  📂 Installation: $INSTALL_DIR"
 echo "  📂 Données: $DATA_DIR"
 echo "  📂 Backups: $BACKUP_ROOT"
-echo "  📝 Logs: /tmp/update-password-manager.log"
+echo "  📝 Logs: /tmp/update-heelonvault.log"
 echo ""
 
 # ═══════════════════════════════════════════════════════════════
@@ -456,8 +521,8 @@ fi
 echo "✅ Permissions de lecture sur les données: OK"
 
 # Vérifier que le dossier source contient bien l'application
-if [ ! -f "$SOURCE_DIR/password_manager.py" ]; then
-    error_exit "Le dossier source ne contient pas password_manager.py. Êtes-vous dans le bon répertoire?"
+if [ ! -f "$SOURCE_DIR/heelonvault.py" ]; then
+    error_exit "Le dossier source ne contient pas heelonvault.py. Êtes-vous dans le bon répertoire?"
 fi
 echo "✅ Dossier source valide"
 
@@ -526,8 +591,9 @@ echo "   1. Création du backup complet (installation + données)"
 echo "   2. Arrêt de l'application"
 echo "   3. Mise à jour des fichiers de l'application UNIQUEMENT"
 echo "   4. Recréation de l'environnement virtuel Python"
-echo "   5. Mise à jour des permissions"
-echo "   6. Vérification de l'intégrité des données"
+echo "   5. Migration des bases de données (idempotente)"
+echo "   6. Mise à jour des permissions"
+echo "   7. Vérification de l'intégrité des données"
 echo ""
 read -p "Voulez-vous effectuer la mise à jour? [o/N] " -n 1 -r
 echo ""
@@ -579,7 +645,15 @@ print_header "🐍 Environnement virtuel Python"
 update_venv
 
 # ═══════════════════════════════════════════════════════════════
-# 9. MISE À JOUR DES PERMISSIONS
+# 9. MIGRATIONS DE BASE DE DONNÉES
+# ═══════════════════════════════════════════════════════════════
+
+print_header "🗄️  Migrations de base de données"
+
+run_db_migrations
+
+# ═══════════════════════════════════════════════════════════════
+# 10. MISE À JOUR DES PERMISSIONS
 # ═══════════════════════════════════════════════════════════════
 
 print_header "🔐 Permissions"
@@ -587,7 +661,7 @@ print_header "🔐 Permissions"
 update_permissions
 
 # ═══════════════════════════════════════════════════════════════
-# 10. NETTOYAGE DES ANCIENS BACKUPS
+# 11. NETTOYAGE DES ANCIENS BACKUPS
 # ═══════════════════════════════════════════════════════════════
 
 print_header "🗑️  Nettoyage"
@@ -595,7 +669,7 @@ print_header "🗑️  Nettoyage"
 cleanup_old_backups
 
 # ═══════════════════════════════════════════════════════════════
-# 11. VÉRIFICATION FINALE
+# 12. VÉRIFICATION FINALE
 # ═══════════════════════════════════════════════════════════════
 
 print_header "✅ Vérification finale"
@@ -642,7 +716,7 @@ done
 echo "✅ Intégrité des bases de données: OK"
 
 # ═══════════════════════════════════════════════════════════════
-# 12. RÉSUMÉ FINAL
+# 13. RÉSUMÉ FINAL
 # ═══════════════════════════════════════════════════════════════
 
 print_summary "$CURRENT_VERSION" "$INSTALLED_VERSION" "$BACKUP_FILE"

@@ -9,9 +9,9 @@ from pathlib import Path
 
 from .environment import is_dev_mode
 
-LOG_PREFIX = "password_manager"
+LOG_PREFIX = "heelonvault"
 KEEP_LOG_FILES = 7
-FALLBACK_DIR = Path("/tmp/password_manager_logs")  # noqa: S108
+FALLBACK_DIR = Path("/tmp/heelonvault_logs")  # noqa: S108
 
 
 def _get_project_root() -> Path:
@@ -21,7 +21,7 @@ def _get_project_root() -> Path:
 def _get_target_directory() -> Path:
     if is_dev_mode():
         return _get_project_root() / "logs"
-    return Path("/var/log/password_manager")
+    return Path("/var/log/heelonvault")
 
 
 def _ensure_directory(path: Path) -> tuple[Path, str | None]:

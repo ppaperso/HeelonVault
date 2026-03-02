@@ -3,12 +3,12 @@
 # Avec logs détaillés et gestion des erreurs
 
 set -e
-exec > >(tee -i /tmp/install-password-manager.log) 2>&1
+exec > >(tee -i /tmp/install-heelonvault.log) 2>&1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 
 # Configuration
-APP_NAME="password-manager"
+APP_NAME="heelonvault"
 INSTALL_DIR="/opt/$APP_NAME"
 VENV_DIR="$INSTALL_DIR/venv"
 DATA_DIR="/var/lib/${APP_NAME}-shared"
@@ -38,7 +38,7 @@ filter_pip_requirements() {
 # Fonction pour afficher un message d'erreur et quitter
 error_exit() {
     echo "❌ ERREUR: $1" >&2
-    echo "   Voir /tmp/install-password-manager.log pour plus de détails."
+    echo "   Voir /tmp/install-heelonvault.log pour plus de détails."
     exit 1
 }
 
@@ -148,7 +148,7 @@ echo "🔐 Installation du Gestionnaire de mots de passe en production"
 echo "============================================================"
 echo "  • Répertoire d'installation: $INSTALL_DIR"
 echo "  • Répertoire de données: $DATA_DIR"
-echo "  • Logs: /tmp/install-password-manager.log"
+echo "  • Logs: /tmp/install-heelonvault.log"
 echo ""
 
 # Vérifier que le script est lancé en root
@@ -157,7 +157,7 @@ if [ "$(id -u)" -ne 0 ]; then
 fi
 
 # Détecter si c'est une mise à jour
-if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/password_manager.py" ]; then
+if [ -d "$INSTALL_DIR" ] && [ -f "$INSTALL_DIR/heelonvault.py" ]; then
     echo ""
     echo "⚠️  Une installation existante a été détectée dans $INSTALL_DIR"
     echo ""
@@ -277,7 +277,7 @@ if [ -f "$SYSTEM_APPS_DIR/$DESKTOP_FILE" ] && [ -d "$VENV_DIR" ] && [ -d "$DATA_
     echo "   - Lanceur disponible dans le menu Applications."
     echo "   - Répertoire d'installation: $INSTALL_DIR"
     echo "   - Répertoire de données: $DATA_DIR"
-    echo "   - Logs: /tmp/install-password-manager.log"
+    echo "   - Logs: /tmp/install-heelonvault.log"
 else
     error_exit "L'installation a échoué. Vérifiez les erreurs ci-dessus."
 fi

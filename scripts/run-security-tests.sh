@@ -5,7 +5,8 @@
 set -e
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${SCRIPT_DIR}/venv-dev"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+VENV_DIR="${ROOT_DIR}/venv-dev"
 
 echo "🛡️  TESTS DE SÉCURITÉ - MODE DEV UNIQUEMENT"
 echo "============================================="
@@ -19,7 +20,7 @@ DATA_CHECK=$(python3 -c "
 import os
 import sys
 os.environ['DEV_MODE'] = '1'
-sys.path.insert(0, '$SCRIPT_DIR')
+sys.path.insert(0, '$ROOT_DIR')
 from src.config.environment import get_data_directory, is_dev_mode
 data_dir = get_data_directory()
 is_dev = is_dev_mode()
@@ -35,8 +36,8 @@ echo "   is_dev_mode()   : $IS_DEV"
 echo "   Répertoire data : $DATA_DIR"
 echo ""
 
-# VÉRIFICATION CRITIQUE : Le chemin NE DOIT PAS contenir /var/lib/password-manager-shared
-if [[ "$DATA_DIR" == *"/var/lib/password-manager-shared"* ]]; then
+# VÉRIFICATION CRITIQUE : Le chemin NE DOIT PAS contenir /var/lib/heelonvault-shared
+if [[ "$DATA_DIR" == *"/var/lib/heelonvault-shared"* ]]; then
     echo "❌ ERREUR CRITIQUE : Le répertoire de données pointe vers la PRODUCTION !"
     echo "   $DATA_DIR"
     echo ""
@@ -77,7 +78,7 @@ echo "🧪 EXÉCUTION DES TESTS"
 echo "============================================="
 echo ""
 
-python test_security_improvements.py
+python "${ROOT_DIR}/test_security_improvements.py"
 
 echo ""
 echo "============================================="

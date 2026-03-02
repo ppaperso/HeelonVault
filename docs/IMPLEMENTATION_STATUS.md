@@ -149,7 +149,7 @@ pip install -r requirements.txt
 **Usage** :
 
 ```bash
-./migrate_to_email_2fa.py --data-dir ./data
+./scripts/migrate_to_email_2fa.py --data-dir ./data
 ```
 
 ---
@@ -169,7 +169,7 @@ pip install -r requirements.txt
 **Usage** :
 
 ```bash
-./rollback_migration.py \
+./scripts/rollback_migration.py \
     --data-dir ./data \
     --backup ./data/backup_pre_migration_TIMESTAMP
 ```

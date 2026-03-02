@@ -9,7 +9,7 @@ authors = [
     {name = "Heelonys"}
 ]
 keywords = [
-    "password-manager",
+    "heelonvault",
     "security",
     "encryption",
     "gtk4",
@@ -51,15 +51,15 @@ browser = [
 ]
 
 [project.urls]
-Homepage = "https://github.com/[USERNAME]/password-manager"
-Documentation = "https://github.com/[USERNAME]/password-manager/blob/main/README.md"
-Repository = "https://github.com/[USERNAME]/password-manager"
-Issues = "https://github.com/[USERNAME]/password-manager/issues"
-Changelog = "https://github.com/[USERNAME]/password-manager/blob/main/CHANGELOG.md"
-"Security Policy" = "https://github.com/[USERNAME]/password-manager/blob/main/SECURITY.md"
+Homepage = "https://github.com/[USERNAME]/heelonvault"
+Documentation = "https://github.com/[USERNAME]/heelonvault/blob/main/README.md"
+Repository = "https://github.com/[USERNAME]/heelonvault"
+Issues = "https://github.com/[USERNAME]/heelonvault/issues"
+Changelog = "https://github.com/[USERNAME]/heelonvault/blob/main/CHANGELOG.md"
+"Security Policy" = "https://github.com/[USERNAME]/heelonvault/blob/main/SECURITY.md"
 
 [project.scripts]
-password-manager = "password_manager:main"
+heelonvault = "heelonvault:main"
 
 [build-system]
 requires = ["setuptools>=68.0", "wheel"]

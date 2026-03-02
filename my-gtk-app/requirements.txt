@@ -1,5 +1,0 @@
-gtk
-PyGObject
-pytest
-pytest-gtk
-```

@@ -4,8 +4,8 @@
 
 set -e
 
-PROD_DIR="/var/lib/password-manager-shared"
-BACKUP_BASE="$HOME/backups/password-manager-prod"
+PROD_DIR="/var/lib/heelonvault-shared"
+BACKUP_BASE="$HOME/backups/heelonvault-prod"
 TIMESTAMP=$(date +%Y%m%d-%H%M%S)
 BACKUP_DIR="${BACKUP_BASE}/backup-${TIMESTAMP}"
 

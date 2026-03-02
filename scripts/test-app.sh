@@ -11,12 +11,15 @@ set -e
 export DEV_MODE=1
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-VENV_DIR="${SCRIPT_DIR}/venv-dev"
-APP_FILE="${SCRIPT_DIR}/password_manager.py"
+ROOT_DIR="$(cd "$SCRIPT_DIR/.." && pwd)"
+cd "${ROOT_DIR}"  # Assure que tous les chemins relatifs sont corrects
+
+VENV_DIR="${ROOT_DIR}/venv-dev"
+APP_FILE="${ROOT_DIR}/heelonvault.py"
 
 # Si l'argument est "run", lancer directement l'application
 if [ "$1" = "run" ]; then
-    exec "${SCRIPT_DIR}/run-dev.sh"
+    exec "${ROOT_DIR}/run-dev.sh"
 fi
 
 echo "╔════════════════════════════════════════════════════╗"
@@ -269,7 +272,7 @@ echo ""
 
 # Test des permissions
 echo "🔐 Test des permissions des fichiers..."
-bash tests/test-data-protection.sh
+bash "${ROOT_DIR}/tests/test-data-protection.sh"
 if [ $? -ne 0 ]; then
     echo "⚠️  Avertissement: certains tests de protection ont échoué"
 fi
