@@ -24,6 +24,8 @@ MAX_BACKUPS=10
 EXCLUDE_PATTERNS=(
     "venv"
     "venv-dev"
+    ".venv"
+    ".ruff_cache"
     "__pycache__"
     ".git"
     ".gitignore"
