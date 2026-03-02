@@ -10,11 +10,10 @@ But: éviter la dispersion (print(), dialogs ad-hoc) et rendre l'i18n simple.
 from __future__ import annotations
 
 import logging
-from typing import Optional
-
-from src.i18n import _
 
 import gi  # type: ignore[import]
+
+from src.i18n import _
 
 gi.require_version("Adw", "1")
 from gi.repository import Adw  # type: ignore[attr-defined]  # noqa: E402
@@ -32,8 +31,8 @@ def toast(parent, message: str, *, timeout: int = 3) -> bool:
         toast_obj = Adw.Toast.new(message)
         try:
             toast_obj.set_timeout(timeout)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Impossible de définir le timeout du toast : {e}")
         overlay.add_toast(toast_obj)
         return True
     except Exception as exc:
@@ -41,7 +40,7 @@ def toast(parent, message: str, *, timeout: int = 3) -> bool:
         return False
 
 
-def message_dialog(parent, *, heading: str, body: str, ok_label: Optional[str] = None) -> None:
+def message_dialog(parent, *, heading: str, body: str, ok_label: str | None = None) -> None:
     dialog = Adw.MessageDialog.new(parent)
     dialog.set_heading(heading)
     dialog.set_body(body)
@@ -49,11 +48,11 @@ def message_dialog(parent, *, heading: str, body: str, ok_label: Optional[str] =
     dialog.present()
 
 
-def error(parent, body: str, *, heading: Optional[str] = None) -> None:
+def error(parent, body: str, *, heading: str | None = None) -> None:
     """Erreur critique: affiche un dialog."""
 
     message_dialog(parent, heading=heading or _("Erreur"), body=body)
 
 
-def info(parent, body: str, *, heading: Optional[str] = None) -> None:
+def info(parent, body: str, *, heading: str | None = None) -> None:
     message_dialog(parent, heading=heading or _("Information"), body=body)

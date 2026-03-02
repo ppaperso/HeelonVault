@@ -1,6 +1,7 @@
 """Dialogue d'ajout ou de modification d'une entrée."""
 
-from typing import List, Optional
+
+import gi  # type: ignore[import]
 
 from src.i18n import _
 from src.models.password_entry import PasswordEntry
@@ -9,21 +10,21 @@ from src.services.password_service import PasswordService
 from .helpers import present_alert
 from .password_generator_dialog import PasswordGeneratorDialog
 
-import gi  # type: ignore[import]
-
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 
-def split_tags(text: str) -> List[str]:
+def split_tags(text: str) -> list[str]:
     return [tag.strip() for tag in text.split(',') if tag.strip()]
 
 
 class AddEditDialog(Adw.Window):
     """Dialogue d'ajout/édition d'entrée"""
 
-    def __init__(self, parent, password_service: PasswordService, entry: Optional[PasswordEntry] = None):
+    def __init__(
+        self, parent, password_service: PasswordService, entry: PasswordEntry | None = None
+    ):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -93,7 +94,9 @@ class AddEditDialog(Adw.Window):
         self.username_entry.set_placeholder_text(_("Ex: user@exemple.com ou mon_login"))
         username_box.append(self.username_entry)
 
-        username_hint = Gtk.Label(label=_("Pour les sites web, entrez votre identifiant de connexion"), xalign=0)
+        username_hint = Gtk.Label(
+            label=_("Pour les sites web, entrez votre identifiant de connexion"), xalign=0
+        )
         username_hint.set_css_classes(['caption', 'dim-label'])
         username_box.append(username_hint)
         content.append(username_box)
@@ -137,18 +140,18 @@ class AddEditDialog(Adw.Window):
         notes_scrolled.set_min_content_height(150)
         notes_scrolled.set_vexpand(True)
         notes_scrolled.set_hexpand(True)
-        
+
         self.notes_text = Gtk.TextView()
         self.notes_text.set_wrap_mode(Gtk.WrapMode.WORD_CHAR)
         self.notes_text.set_left_margin(10)
         self.notes_text.set_right_margin(10)
         self.notes_text.set_top_margin(10)
         self.notes_text.set_bottom_margin(10)
-        
+
         if entry and entry.notes:
             buffer = self.notes_text.get_buffer()
             buffer.set_text(entry.notes)
-        
+
         notes_scrolled.set_child(self.notes_text)
         notes_box.append(notes_scrolled)
         content.append(notes_box)
@@ -196,13 +199,19 @@ class AddEditDialog(Adw.Window):
         url = self.url_entry.get_text()
 
         selected = self.category_dropdown.get_selected()
-        category = self.category_dropdown.get_model().get_string(selected) if selected != Gtk.INVALID_LIST_POSITION else ""
+        category = (
+            self.category_dropdown.get_model().get_string(selected)
+            if selected != Gtk.INVALID_LIST_POSITION
+            else ""
+        )
 
         tags_text = self.tags_entry.get_text()
         tags = split_tags(tags_text)
 
         notes_buffer = self.notes_text.get_buffer()
-        notes = notes_buffer.get_text(notes_buffer.get_start_iter(), notes_buffer.get_end_iter(), False)
+        notes = notes_buffer.get_text(
+            notes_buffer.get_start_iter(), notes_buffer.get_end_iter(), False
+        )
 
         if not title or not password:
             present_alert(

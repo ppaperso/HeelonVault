@@ -7,9 +7,9 @@ import logging
 import sqlite3
 from datetime import datetime
 from pathlib import Path
-from typing import TYPE_CHECKING, List, Optional
+from typing import TYPE_CHECKING
 
-from src.models.category import Category, DEFAULT_CATEGORIES
+from src.models.category import DEFAULT_CATEGORIES, Category
 from src.models.password_entry import PasswordRecord
 
 if TYPE_CHECKING:
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class PasswordRepository:
     """Encapsule toutes les requêtes SQLite liées aux mots de passe."""
 
-    def __init__(self, db_path: Path, backup_service: Optional["BackupService"] = None):
+    def __init__(self, db_path: Path, backup_service: BackupService | None = None):
         self.db_path = db_path
         self.backup_service = backup_service
         self.conn = sqlite3.connect(str(db_path))
@@ -123,7 +123,7 @@ class PasswordRepository:
     # ------------------------------------------------------------------
     # Catégories & tags
     # ------------------------------------------------------------------
-    def list_categories(self) -> List[Category]:
+    def list_categories(self) -> list[Category]:
         cursor = self.conn.cursor()
         cursor.execute("SELECT id, name, color, icon FROM categories ORDER BY name")
         categories = [
@@ -145,7 +145,7 @@ class PasswordRepository:
         )
         self.conn.commit()
 
-    def list_tags(self) -> List[str]:
+    def list_tags(self) -> list[str]:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT tags FROM passwords WHERE tags IS NOT NULL AND tags != ''"
@@ -267,7 +267,7 @@ class PasswordRepository:
         self._has_changes = True
         logger.debug("Éntrée %s supprimée définitivement", entry_id)
 
-    def list_trash(self) -> List[PasswordRecord]:
+    def list_trash(self) -> list[PasswordRecord]:
         """Liste toutes les entrées dans la corbeille."""
         cursor = self.conn.cursor()
         cursor.execute(
@@ -282,7 +282,10 @@ class PasswordRepository:
         return [self._row_to_record(row) for row in rows]
 
     def empty_trash(self) -> int:
-        """Vide complètement la corbeille (suppression définitive). Retourne le nombre d'entrées supprimées."""
+        """Vide complètement la corbeille (suppression définitive).
+
+        Retourne le nombre d'entrées supprimées.
+        """
         cursor = self.conn.cursor()
         cursor.execute("SELECT COUNT(*) FROM passwords WHERE deleted_at IS NOT NULL")
         count = cursor.fetchone()[0]
@@ -298,7 +301,7 @@ class PasswordRepository:
     # ------------------------------------------------------------------
     def get_entry(
         self, entry_id: int, include_deleted: bool = False
-    ) -> Optional[PasswordRecord]:
+    ) -> PasswordRecord | None:
         cursor = self.conn.cursor()
         query = """
             SELECT id, title, username, password_data, url, notes, category, tags,
@@ -317,15 +320,15 @@ class PasswordRepository:
     def list_entries(
         self,
         *,
-        category_filter: Optional[str] = None,
-        search_text: Optional[str] = None,
+        category_filter: str | None = None,
+        search_text: str | None = None,
         include_deleted: bool = False,
-    ) -> List[PasswordRecord]:
+    ) -> list[PasswordRecord]:
         query = [
             "SELECT id, title, username, password_data, url, notes, category, tags,",
             "created_at, modified_at, last_changed FROM passwords WHERE 1 = 1",
         ]
-        params: List[str] = []
+        params: list[str] = []
 
         # Exclure les entrées supprimées par défaut
         if not include_deleted:
@@ -347,10 +350,11 @@ class PasswordRepository:
         rows = cursor.fetchall()
         return [self._row_to_record(row) for row in rows]
 
-    def list_entries_for_duplicates(self) -> List[PasswordRecord]:
+    def list_entries_for_duplicates(self) -> list[PasswordRecord]:
         cursor = self.conn.cursor()
         cursor.execute(
-            "SELECT id, title, username, password_data, url, notes, category, tags, created_at, modified_at, last_changed FROM passwords"
+            "SELECT id, title, username, password_data, url, notes, category, tags, "
+            "created_at, modified_at, last_changed FROM passwords"
         )
         return [self._row_to_record(row) for row in cursor.fetchall()]
 
@@ -363,7 +367,7 @@ class PasswordRepository:
     def mark_as_saved(self) -> None:
         self._has_changes = False
 
-    def get_password_last_changed(self, entry_id: int) -> Optional[datetime]:
+    def get_password_last_changed(self, entry_id: int) -> datetime | None:
         cursor = self.conn.cursor()
         cursor.execute("SELECT last_changed FROM passwords WHERE id=?", (entry_id,))
         result = cursor.fetchone()
@@ -405,7 +409,7 @@ class PasswordRepository:
         )
 
     @staticmethod
-    def _parse_timestamp(value: Optional[str]) -> Optional[datetime]:
+    def _parse_timestamp(value: str | None) -> datetime | None:
         if not value:
             return None
         try:

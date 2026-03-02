@@ -1,6 +1,6 @@
 from __future__ import annotations
 
-from typing import Callable, Iterable, Optional, Tuple
+from collections.abc import Callable, Iterable
 
 import gi  # type: ignore[import]
 
@@ -8,7 +8,7 @@ gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
 from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
-ResponseList = Iterable[Tuple[str, str]]
+ResponseList = Iterable[tuple[str, str]]
 
 
 def present_alert(
@@ -17,10 +17,10 @@ def present_alert(
     body: str,
     responses: ResponseList,
     *,
-    default: Optional[str] = None,
-    destructive: Optional[str] = None,
-    close: Optional[str] = None,
-    on_response: Optional[Callable[[str], None]] = None,
+    default: str | None = None,
+    destructive: str | None = None,
+    close: str | None = None,
+    on_response: Callable[[str], None] | None = None,
 ) -> Adw.AlertDialog:
     """Create and present an Adw.AlertDialog with consistent defaults."""
     dialog = Adw.AlertDialog.new(title, body)

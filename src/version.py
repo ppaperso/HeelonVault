@@ -2,24 +2,34 @@
 Informations de version de l'application
 """
 
-__version__ = "1.0.0"
-__app_name__ = "Gestionnaire de Mots de Passe"
+__version__ = "0.4.0-Bêta"
+__app_name__ = "HeelonVault"
+__app_icon__ = "🔐"
+__app_display_name__ = f"{__app_icon__} {__app_name__}"
+__app_id__ = "org.heelonys.passwordmanager"
 __description__ = "Gestionnaire de mots de passe sécurisé pour Linux"
-__author__ = "Password Manager Team"
+__author__ = "HEELONYS"
+__website__ = "https://github.com/heelonys/heelonvault"
 __license__ = "MIT"
-__copyright__ = "Copyright © 2025-2026"
+__copyright__ = "Copyright © 2026"
 
-def get_version():
+
+def get_version() -> str:
     """Retourne la version de l'application"""
     return __version__
 
-def get_version_info():
+
+def get_version_info() -> dict:
     """Retourne toutes les informations de version"""
     return {
-        'version': __version__,
-        'app_name': __app_name__,
-        'description': __description__,
-        'author': __author__,
-        'license': __license__,
-        'copyright': __copyright__
+        "version": __version__,
+        "app_name": __app_name__,
+        "app_icon": __app_icon__,
+        "app_display_name": __app_display_name__,
+        "app_id": __app_id__,
+        "description": __description__,
+        "author": __author__,
+        "website": __website__,
+        "license": __license__,
+        "copyright": __copyright__,
     }

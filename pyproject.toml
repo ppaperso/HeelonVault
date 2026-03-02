@@ -1,0 +1,151 @@
+[project]
+name = "HeelonVault"
+version = "0.4.0-beta"
+description = "Gestionnaire de mots de passe sécurisé avec interface GTK4 et intégration navigateur Firefox"
+readme = "README.md"
+requires-python = ">=3.10"
+license = {text = "MIT"}
+authors = [
+    {name = "Heelonys"}
+]
+keywords = [
+    "password-manager",
+    "security",
+    "encryption",
+    "gtk4",
+    "cryptography",
+    "password-generator",
+    "firefox-extension",
+]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: End Users/Desktop",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Security",
+    "Topic :: Security :: Cryptography",
+    "Topic :: Utilities",
+    "Natural Language :: French",
+    "Natural Language :: English",
+]
+
+dependencies = [
+    "PyGObject>=3.42.0",
+    "cryptography>=41.0.0",
+    "validators>=0.20.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "ruff>=0.1.0",
+    "pytest>=7.0.0",
+    "pytest-cov>=4.0.0",
+    "bandit>=1.7.0",
+]
+browser = [
+    # Dépendances pour l'intégration navigateur
+]
+
+[project.urls]
+Homepage = "https://github.com/[USERNAME]/password-manager"
+Documentation = "https://github.com/[USERNAME]/password-manager/blob/main/README.md"
+Repository = "https://github.com/[USERNAME]/password-manager"
+Issues = "https://github.com/[USERNAME]/password-manager/issues"
+Changelog = "https://github.com/[USERNAME]/password-manager/blob/main/CHANGELOG.md"
+"Security Policy" = "https://github.com/[USERNAME]/password-manager/blob/main/SECURITY.md"
+
+[project.scripts]
+password-manager = "password_manager:main"
+
+[build-system]
+requires = ["setuptools>=68.0", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools]
+packages = ["src"]
+
+[tool.ruff]
+line-length = 100
+target-version = "py310"
+exclude = [
+    ".git",
+    ".ruff_cache",
+    ".venv",
+    "venv-dev",
+    "__pycache__",
+    "build",
+    "dist",
+    "*.egg-info",
+]
+
+[tool.ruff.lint]
+select = [
+    "E",   # pycodestyle errors
+    "F",   # pyflakes
+    "W",   # pycodestyle warnings
+    "I",   # isort
+    "N",   # pep8-naming
+    "UP",  # pyupgrade
+    "B",   # flake8-bugbear
+    "C4",  # flake8-comprehensions
+    "S",   # flake8-bandit (security)
+    "T20", # flake8-print
+]
+ignore = [
+    "S101",   # Use of assert (OK in tests)
+    "S311",   # Use of random (we use secrets for crypto)
+    "T201",   # print found (OK for CLI output)
+]
+
+[tool.ruff.lint.per-file-ignores]
+"tests/*" = ["S101", "S105", "S106"]  # Allow assert and hardcoded passwords in tests
+"add_test_data.py" = ["S105", "S106"]  # Test data script
+"**/__init__.py" = ["F401"]  # Unused imports OK in __init__
+
+[tool.pytest.ini_options]
+minversion = "7.0"
+testpaths = ["tests"]
+python_files = ["test_*.py"]
+python_classes = ["Test*"]
+python_functions = ["test_*"]
+addopts = [
+    "-v",
+    "--strict-markers",
+    "--cov=src",
+    "--cov-report=term-missing",
+    "--cov-report=html",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = [
+    "*/tests/*",
+    "*/__pycache__/*",
+    "*/venv*/*",
+]
+
+[tool.coverage.report]
+precision = 2
+show_missing = true
+skip_covered = false
+exclude_lines = [
+    "pragma: no cover",
+    "def __repr__",
+    "raise AssertionError",
+    "raise NotImplementedError",
+    "if __name__ == .__main__.:",
+    "if TYPE_CHECKING:",
+    "@abstractmethod",
+]
+
+[tool.bandit]
+targets = ["src"]
+exclude_dirs = ["/tests", "/venv-dev"]
+skips = ["B101", "B601"]  # assert_used, paramiko_calls
+
+[tool.bandit.assert_used]
+skips = ["*/test_*.py"]

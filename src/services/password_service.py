@@ -5,7 +5,6 @@ from __future__ import annotations
 import hashlib
 import logging
 from datetime import datetime
-from typing import Dict, List, Optional
 
 from src.models.category import Category
 from src.models.password_entry import PasswordEntry, PasswordRecord
@@ -28,10 +27,10 @@ class PasswordService:
     def list_entries(
         self,
         *,
-        category_filter: Optional[str] = None,
-        tag_filter: Optional[str] = None,
-        search_text: Optional[str] = None,
-    ) -> List[PasswordEntry]:
+        category_filter: str | None = None,
+        tag_filter: str | None = None,
+        search_text: str | None = None,
+    ) -> list[PasswordEntry]:
         records = self.repository.list_entries(
             category_filter=category_filter,
             search_text=search_text,
@@ -42,7 +41,7 @@ class PasswordService:
             entries = [entry for entry in entries if tag_filter in entry.tags]
         return entries
 
-    def get_entry(self, entry_id: int) -> Optional[PasswordEntry]:
+    def get_entry(self, entry_id: int) -> PasswordEntry | None:
         record = self.repository.get_entry(entry_id)
         if not record:
             return None
@@ -83,7 +82,7 @@ class PasswordService:
         self.repository.delete_entry_permanently(entry_id)
         logger.info("PasswordService: entrée %s supprimée définitivement", entry_id)
 
-    def list_trash(self) -> List[PasswordEntry]:
+    def list_trash(self) -> list[PasswordEntry]:
         """Liste les entrées dans la corbeille."""
         records = self.repository.list_trash()
         return [self._decrypt_record(r) for r in records]
@@ -97,30 +96,31 @@ class PasswordService:
     # ------------------------------------------------------------------
     # Métadonnées
     # ------------------------------------------------------------------
-    def list_categories(self) -> List[Category]:
+    def list_categories(self) -> list[Category]:
         return self.repository.list_categories()
 
     def add_category(self, category: Category) -> None:
         self.repository.add_category(category)
 
-    def list_tags(self) -> List[str]:
+    def list_tags(self) -> list[str]:
         return self.repository.list_tags()
 
     # ------------------------------------------------------------------
     # Analyse & outils
     # ------------------------------------------------------------------
-    def detect_duplicates(self) -> Dict[int, List[int]]:
+    def detect_duplicates(self) -> dict[int, list[int]]:
         """Retourne un mapping entry_id -> autres ids partageant le même mot de passe."""
-        duplicates: Dict[str, List[int]] = {}
+        duplicates: dict[str, list[int]] = {}
         for record in self.repository.list_entries_for_duplicates():
             try:
                 password = self.crypto.decrypt(record.password_data)
-            except Exception:
+            except Exception as e:
+                logger.debug(f"Impossible de déchiffrer l'entrée {record.id} : {e}")
                 continue
             pwd_hash = hashlib.sha256(password.encode()).hexdigest()
             duplicates.setdefault(pwd_hash, []).append(record.id or 0)
 
-        result: Dict[int, List[int]] = {}
+        result: dict[int, list[int]] = {}
         for ids in duplicates.values():
             if len(ids) <= 1:
                 continue
@@ -128,7 +128,7 @@ class PasswordService:
                 result[entry_id] = [other for other in ids if other != entry_id]
         return result
 
-    def get_password_age_days(self, entry_id: int) -> Optional[int]:
+    def get_password_age_days(self, entry_id: int) -> int | None:
         last_changed = self.repository.get_password_last_changed(entry_id)
         if not last_changed:
             return None

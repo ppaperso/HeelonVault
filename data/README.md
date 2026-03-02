@@ -7,7 +7,7 @@ Ce répertoire contient les données de **développement et de test uniquement**
 L'application utilise deux répertoires distincts selon le mode :
 
 | Mode | Variable | Emplacement | Usage |
-|------|----------|-------------|-------|
+| ------ | ---------- | ------------- | ------- |
 | **DEV** | `DEV_MODE=1` | `./data/` | Développement et tests |
 | **PROD** | (par défaut) | `/var/lib/password-manager-shared/` | Production |
 
@@ -20,7 +20,7 @@ L'application utilise deux répertoires distincts selon le mode :
 
 ## 📦 Contenu
 
-```
+```text
 data/
 ├── users.db              # Comptes utilisateurs de test
 ├── passwords_*.db        # Mots de passe de test chiffrés
@@ -31,6 +31,7 @@ data/
 ## 🚀 Utilisation
 
 ### Mode développement
+
 ```bash
 ./run-dev.sh              # Lance avec DEV_MODE=1 automatiquement
 # OU
@@ -38,6 +39,7 @@ DEV_MODE=1 python3 password_manager.py
 ```
 
 ### Mode production
+
 ```bash
 python3 password_manager.py    # Utilise /var/lib/password-manager-shared/
 # OU via l'icône du menu Applications

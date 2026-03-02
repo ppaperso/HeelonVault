@@ -1,0 +1,260 @@
+.
+├── ACTIONS_SECURITE_OPENSOURCE.md
+├── ANALYSE_MIGRATION_EMAIL_2FA.md
+├── backup-prod-before-tests.sh
+├── CHANGELOG.md
+├── CODE_OF_CONDUCT.md
+├── CONTRIBUTING.md
+├── data
+│   ├── backup_before_rollback_20260302_143003
+│   │   ├── passwords_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.db
+│   │   ├── salt_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.bin
+│   │   └── users.db
+│   ├── backup_pre_migration_20260302_142726
+│   │   ├── passwords_admin.db
+│   │   ├── salt_admin.bin
+│   │   └── users.db
+│   ├── backup_pre_migration_20260302_142726.tar.gz
+│   ├── backup_pre_migration_20260302_143046
+│   │   ├── passwords_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.db
+│   │   ├── passwords_admin.db
+│   │   ├── salt_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.bin
+│   │   ├── salt_admin.bin
+│   │   └── users.db
+│   ├── backup_pre_migration_20260302_143046.tar.gz
+│   ├── passwords_1fb5cd9f-392e-4172-a3bc-417f2ffa0951.db
+│   ├── passwords_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.db
+│   ├── README.md
+│   ├── salt_1fb5cd9f-392e-4172-a3bc-417f2ffa0951.bin
+│   ├── salt_6f226e33-1eca-4a5a-bbb5-dbc39f666dee.bin
+│   ├── security.log
+│   ├── users.db
+│   └── users.db.before_rollback
+├── docs
+│   ├── ARCHITECTURE.md
+│   ├── BRUTE_FORCE_PROTECTION.md
+│   ├── CHANGELOG_CSV_IMPORT.md
+│   ├── CHANGELOG_DATA_PROTECTION.md
+│   ├── CSV_IMPORT_GUIDE.md
+│   ├── DATA_PROTECTION.md
+│   ├── MULTI_USER_GUIDE.md
+│   ├── OPEN_SOURCE_IMPROVEMENTS.md
+│   ├── QUICK_IMPORT.md
+│   ├── REFACTORING_GUIDE.md
+│   ├── RESUME_PROTECTION_DONNEES.md
+│   ├── SECURITY_IMPROVEMENTS_CHANGELOG.md
+│   ├── SECURITY.md
+│   ├── TRASH_SYSTEM.md
+│   ├── UPDATE_GUIDE.md
+│   ├── URL_FIELD_GUIDE.md
+│   ├── VERSION_0.1.0-beta.md
+│   ├── VERSION_0.2.0-beta.md
+│   ├── VERSION_0.3.0-beta.md
+│   ├── VERSION_0.4.0-beta.md
+│   └── VERSION_SUMMARY.md
+├── export-csv
+│   └── lastpass_vault_export.csv
+├── fix-permissions.sh
+├── IMPLEMENTATION_GUIDE.md
+├── IMPLEMENTATION_STATUS.md
+├── install.sh
+├── INTEGRATION_APPLICATION_COMPLETE.md
+├── LICENSE
+├── locales
+│   └── README.md
+├── logs
+│   ├── native_host_dev.log
+│   └── password_manager_20260302.log
+├── migrate_to_email_2fa.py
+├── MIGRATION_GUIDE.md
+├── my-gtk-app
+│   ├── data
+│   │   └── schemas
+│   ├── docs
+│   │   └── api
+│   ├── pyproject.toml
+│   ├── README.md
+│   ├── requirements.txt
+│   ├── scripts
+│   │   └── setup.sh
+│   ├── src
+│   │   ├── controllers
+│   │   │   └── __init__.py
+│   │   ├── core
+│   │   │   ├── app.py
+│   │   │   └── __init__.py
+│   │   ├── main.py
+│   │   ├── models
+│   │   │   └── __init__.py
+│   │   ├── ui
+│   │   │   ├── assets
+│   │   │   ├── dialogs
+│   │   │   │   ├── base_dialog.py
+│   │   │   │   └── __init__.py
+│   │   │   ├── glade
+│   │   │   │   └── main_window.ui
+│   │   │   └── widgets
+│   │   │       ├── custom_widget.py
+│   │   │       └── __init__.py
+│   │   └── utils
+│   │       └── __init__.py
+│   └── tests
+│       ├── integration
+│       │   └── __init__.py
+│       └── unit
+│           └── __init__.py
+├── password-manager.desktop
+├── password_manager.py
+├── __pycache__
+│   └── password_manager.cpython-314.pyc
+├── pyproject.toml
+├── QUICKSTART.md
+├── QUICKSTART_MIGRATION.md
+├── RAPPORT_TESTS_SECURITE.md
+├── README.md
+├── requirements.txt
+├── RESUME_ACTIONS.md
+├── rollback_migration.py
+├── run-dev.sh
+├── run-security-tests.sh
+├── run.sh
+├── SECURITY.md
+├── SECURITY_MODEL.md
+├── SECURITY_RECOMMENDATIONS.md
+├── src
+│   ├── app
+│   │   ├── application.py
+│   │   └── __pycache__
+│   │       └── application.cpython-314.pyc
+│   ├── config
+│   │   ├── environment.py
+│   │   ├── __init__.py
+│   │   ├── logging_config.py
+│   │   └── __pycache__
+│   │       ├── environment.cpython-314.pyc
+│   │       ├── __init__.cpython-314.pyc
+│   │       └── logging_config.cpython-314.pyc
+│   ├── data
+│   │   ├── backup_pre_migration_20260302_144233
+│   │   │   ├── passwords_admin.db
+│   │   │   ├── salt_admin.bin
+│   │   │   └── users.db
+│   │   ├── backup_pre_migration_20260302_144233.tar.gz
+│   │   ├── backups
+│   │   │   ├── passwords_admin_20251121_141032.db
+│   │   │   ├── passwords_admin_20251121_144435.db
+│   │   │   └── system_backup_20251121_144401
+│   │   │       ├── MANIFEST.txt
+│   │   │       ├── passwords_admin.db
+│   │   │       ├── salt_admin.bin
+│   │   │       └── users.db
+│   │   ├── french_wordlist_extended.py
+│   │   ├── french_wordlist_extended.py.backup
+│   │   ├── __init__.py
+│   │   ├── passwords_4714564f-4fd9-4285-bfe8-a9bc3e36943d.db
+│   │   ├── __pycache__
+│   │   │   ├── french_wordlist_extended.cpython-314.pyc
+│   │   │   └── __init__.cpython-314.pyc
+│   │   ├── salt_4714564f-4fd9-4285-bfe8-a9bc3e36943d.bin
+│   │   ├── security.log
+│   │   └── users.db
+│   ├── i18n.py
+│   ├── __init__.py
+│   ├── models
+│   │   ├── category.py
+│   │   ├── __init__.py
+│   │   ├── password_entry.py
+│   │   ├── __pycache__
+│   │   │   ├── category.cpython-314.pyc
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   ├── password_entry.cpython-314.pyc
+│   │   │   └── user.cpython-314.pyc
+│   │   └── user.py
+│   ├── __pycache__
+│   │   ├── i18n.cpython-314.pyc
+│   │   ├── __init__.cpython-314.pyc
+│   │   └── version.cpython-314.pyc
+│   ├── repositories
+│   │   ├── __init__.py
+│   │   ├── password_repository.py
+│   │   └── __pycache__
+│   │       ├── __init__.cpython-314.pyc
+│   │       └── password_repository.cpython-314.pyc
+│   ├── services
+│   │   ├── auth_service.py
+│   │   ├── backup_service.py
+│   │   ├── crypto_service.py
+│   │   ├── csv_importer.py
+│   │   ├── __init__.py
+│   │   ├── login_attempt_tracker.py
+│   │   ├── master_password_validator.py
+│   │   ├── password_generator.py
+│   │   ├── password_service.py
+│   │   ├── __pycache__
+│   │   │   ├── auth_service.cpython-314.pyc
+│   │   │   ├── backup_service.cpython-314.pyc
+│   │   │   ├── crypto_service.cpython-314.pyc
+│   │   │   ├── csv_importer.cpython-314.pyc
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   ├── login_attempt_tracker.cpython-314.pyc
+│   │   │   ├── master_password_validator.cpython-314.pyc
+│   │   │   ├── password_generator.cpython-314.pyc
+│   │   │   ├── password_service.cpython-314.pyc
+│   │   │   └── totp_service.cpython-314.pyc
+│   │   └── totp_service.py
+│   ├── ui
+│   │   ├── dialogs
+│   │   │   ├── about_dialog.py
+│   │   │   ├── add_edit_dialog.py
+│   │   │   ├── backup_manager_dialog.py
+│   │   │   ├── email_login_dialog.py
+│   │   │   ├── entry_details_dialog.py
+│   │   │   ├── helpers.py
+│   │   │   ├── import_dialog.py
+│   │   │   ├── __init__.py
+│   │   │   ├── login_dialog.py
+│   │   │   ├── password_generator_dialog.py
+│   │   │   ├── __pycache__
+│   │   │   │   ├── about_dialog.cpython-314.pyc
+│   │   │   │   ├── add_edit_dialog.cpython-314.pyc
+│   │   │   │   ├── backup_manager_dialog.cpython-314.pyc
+│   │   │   │   ├── email_login_dialog.cpython-314.pyc
+│   │   │   │   ├── entry_details_dialog.cpython-314.pyc
+│   │   │   │   ├── helpers.cpython-314.pyc
+│   │   │   │   ├── import_dialog.cpython-314.pyc
+│   │   │   │   ├── __init__.cpython-314.pyc
+│   │   │   │   ├── login_dialog.cpython-314.pyc
+│   │   │   │   ├── password_generator_dialog.cpython-314.pyc
+│   │   │   │   ├── setup_2fa_dialog.cpython-314.pyc
+│   │   │   │   ├── trash_dialog.cpython-314.pyc
+│   │   │   │   ├── update_email_dialog.cpython-314.pyc
+│   │   │   │   ├── user_selection_dialog.cpython-314.pyc
+│   │   │   │   └── verify_totp_dialog.cpython-314.pyc
+│   │   │   ├── setup_2fa_dialog.py
+│   │   │   ├── trash_dialog.py
+│   │   │   ├── update_email_dialog.py
+│   │   │   ├── user_selection_dialog.py
+│   │   │   └── verify_totp_dialog.py
+│   │   ├── __init__.py
+│   │   ├── notifications.py
+│   │   ├── __pycache__
+│   │   │   ├── __init__.cpython-314.pyc
+│   │   │   └── notifications.cpython-314.pyc
+│   │   ├── widgets
+│   │   │   ├── __init__.py
+│   │   │   └── __pycache__
+│   │   │       └── __init__.cpython-314.pyc
+│   │   └── windows
+│   │       ├── __init__.py
+│   │       ├── main_window.py
+│   │       └── __pycache__
+│   │           ├── __init__.cpython-314.pyc
+│   │           └── main_window.cpython-314.pyc
+│   └── version.py
+├── structure-projet.txt
+├── test-app.sh
+├── update.sh
+├── update.sh.old
+└── venv-dev -> .venv
+
+52 directories, 206 files

@@ -2,13 +2,12 @@
 Modèle de données pour les catégories.
 """
 from dataclasses import dataclass
-from typing import Optional
 
 
 @dataclass
 class Category:
     """Représente une catégorie d'entrées de mots de passe.
-    
+
     Attributes:
         name: Nom unique de la catégorie
         color: Couleur hexadécimale pour l'affichage
@@ -18,8 +17,8 @@ class Category:
     name: str
     color: str = "#999999"
     icon: str = "folder-symbolic"
-    id: Optional[int] = None
-    
+    id: int | None = None
+
     def __str__(self) -> str:
         return f"Category(name='{self.name}', color='{self.color}')"
 

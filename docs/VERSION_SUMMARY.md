@@ -6,7 +6,8 @@
 
 **Intégration complète avec Firefox** via extension navigateur et Native Messaging Host.
 
-#### Nouveautés principales :
+#### Nouveautés principales
+
 - 🦊 **Extension Firefox** (DEV & PROD) avec popup interactif
 - 🔌 **Native Messaging Host** : Communication bidirectionnelle sécurisée
 - 🎯 **Filtrage intelligent par URL** : Affichage contextuel des identifiants
@@ -14,13 +15,15 @@
 - 📚 **10+ documents** de configuration et debugging
 - 🧪 **9 tests validés** : Communication + filtrage URL
 
-#### Fichiers clés :
+#### Fichiers clés
+
 - `browser_integration/firefox_extension_dev/` - Extension DEV avec badge "DEV"
 - `browser_integration/firefox_extension/` - Extension PROD
 - `browser_integration/native_host.py` - Host de communication
 - `docs/VERSION_0.4.0-beta.md` - Documentation complète
 
-#### Limitations :
+#### Limitations
+
 - ⏳ Récupération des mots de passe (décryption à implémenter)
 - ⏳ Auto-fill automatique des formulaires
 - ⏳ Sauvegarde de nouveaux identifiants
@@ -50,11 +53,13 @@ Cette version consolide toute l'infrastructure de logs et facilite le support en
 ## 🆕 Ce qui change pour 0.2.0-beta
 
 ### 1. Journaux robustes
+
 - Initialisation unique via `configure_logging()` (stdout + fichier horodaté)
 - Répertoires séparés : `./logs/` en DEV, `/var/log/password_manager/` en PROD
 - Gestion de repli vers `/tmp/password_manager_logs` en cas de permission refusée
 
 ### 2. Visibilité accrue
+
 - Ajout de logs structurés dans :
   - `password_manager.py` (cycle de vie complet)
   - Services (`auth_service`, `crypto_service`, `login_attempt_tracker`, `password_generator`, `csv_importer`…)
@@ -62,11 +67,13 @@ Cette version consolide toute l'infrastructure de logs et facilite le support en
 - Messages adaptés aux niveaux INFO/DEBUG/WARNING/ERROR
 
 ### 3. Tests dédiés
+
 - `tests/test-logging.sh` génère 9 journaux et vérifie la rotation
 - `tests/run_all_tests.sh` exécute désormais ce script après la suite d'intégration
 - `tests/test-version.sh` attend la nouvelle version `0.2.0-beta`
 
 ### 4. Documentation & métadonnées
+
 - `README.md` : badge mis à jour
 - `CHANGELOG.md` : nouvelle section 0.2.0-beta
 - `VERSION_0.2.0-beta.md` : notes de version détaillées
@@ -108,5 +115,3 @@ python3 -c "from src.version import get_version; print(get_version())"
 - Support d'autres gestionnaires (KeePass, Dashlane)
 
 ---
-
-**Profitez de la tranquillité d'esprit avec la version 0.2.0-beta ! 🔐**

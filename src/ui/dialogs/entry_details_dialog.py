@@ -1,19 +1,18 @@
 """Dialogue d'informations détaillées sur une entrée de mot de passe."""
 
 import logging
-from typing import Callable
+from collections.abc import Callable
+
+import gi  # type: ignore[import]
 
 from src.i18n import _
 from src.models.password_entry import PasswordEntry
 from src.ui.notifications import error as show_error
 from src.ui.notifications import toast as show_toast
 
-import gi  # type: ignore[import]
-
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gdk, GLib  # type: ignore[attr-defined]  # noqa: E402
-
+from gi.repository import Adw, Gdk, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -77,10 +76,14 @@ class EntryDetailsDialog(Adw.Window):
         content.append(sep1)
 
         if entry.username:
-            username_box = self._create_field_box(_("👤 Nom d'utilisateur"), entry.username, copyable=True)
+            username_box = self._create_field_box(
+                _("👤 Nom d'utilisateur"), entry.username, copyable=True
+            )
             content.append(username_box)
 
-        password_box = self._create_field_box(_("🔑 Mot de passe"), entry.password, copyable=True, is_password=True)
+        password_box = self._create_field_box(
+            _("🔑 Mot de passe"), entry.password, copyable=True, is_password=True
+        )
         content.append(password_box)
 
         if entry.url:
@@ -148,7 +151,10 @@ class EntryDetailsDialog(Adw.Window):
         if is_password:
             show_btn = Gtk.Button(icon_name="view-reveal-symbolic")
             show_btn.set_tooltip_text(_("Afficher/masquer"))
-            show_btn.connect("clicked", lambda x: value_entry.set_visibility(not value_entry.get_visibility()))
+            show_btn.connect(
+                "clicked",
+                lambda x: value_entry.set_visibility(not value_entry.get_visibility()),
+            )
             value_box.append(show_btn)
 
         if copyable:
@@ -177,7 +183,9 @@ class EntryDetailsDialog(Adw.Window):
         if clipboard:
             try:
                 bytes_value = GLib.Bytes.new(text.encode('utf-8'))
-                provider = Gdk.ContentProvider.new_for_bytes("text/plain;charset=utf-8", bytes_value)
+                provider = Gdk.ContentProvider.new_for_bytes(
+                    "text/plain;charset=utf-8", bytes_value
+                )
                 clipboard.set_content(provider)
                 clipboard.store_async(None, self._on_clipboard_store_finished, None)
             except Exception:
@@ -188,8 +196,8 @@ class EntryDetailsDialog(Adw.Window):
     def _on_clipboard_store_finished(self, clipboard, result, _data):
         try:
             clipboard.store_finish(result)
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug(f"Erreur lors du stockage dans le presse-papiers : {e}")
 
     def _open_url(self, url):
         import subprocess
@@ -202,7 +210,7 @@ class EntryDetailsDialog(Adw.Window):
             target = url
             if target and not target.startswith(("http://", "https://")):
                 target = "https://" + target
-            subprocess.Popen(['xdg-open', target])
+            subprocess.Popen(['xdg-open', target])  # noqa: S603, S607
         except Exception as e:
             logger.exception("Erreur lors de l'ouverture de l'URL")
             show_error(
@@ -221,7 +229,11 @@ class EntryDetailsDialog(Adw.Window):
         dialog = Adw.MessageDialog.new(self)
         dialog.set_heading(_("Confirmer la suppression"))
         dialog.set_body(
-            _("Êtes-vous sûr de vouloir supprimer l'entrée '%s' ?\n\nCette action est irréversible.") % self.entry.title
+            _(
+                "Êtes-vous sûr de vouloir supprimer l'entrée '%s' ?\n\n"
+                "Cette action est irréversible."
+            )
+            % self.entry.title
         )
         dialog.add_response("cancel", _("Annuler"))
         dialog.add_response("delete", _("Supprimer"))
@@ -230,7 +242,7 @@ class EntryDetailsDialog(Adw.Window):
         dialog.set_close_response("cancel")
         dialog.connect("response", lambda d, r: self._on_delete_confirmed(r))
         dialog.present()
-    
+
     def _on_delete_confirmed(self, response):
         """Callback de confirmation de suppression"""
         if response == "delete":

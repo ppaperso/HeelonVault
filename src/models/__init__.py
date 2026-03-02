@@ -1,9 +1,9 @@
 """
 Exports des modèles de données.
 """
+from .category import DEFAULT_CATEGORIES, Category
+from .password_entry import EncryptedPasswordEntry, PasswordEntry
 from .user import User, UserCredentials
-from .password_entry import PasswordEntry, EncryptedPasswordEntry
-from .category import Category, DEFAULT_CATEGORIES
 
 __all__ = [
     'User',

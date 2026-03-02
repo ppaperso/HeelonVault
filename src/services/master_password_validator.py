@@ -5,7 +5,6 @@ Implémente les recommandations NIST SP 800-63B et OWASP.
 """
 
 import re
-from typing import Tuple, List
 
 
 class MasterPasswordValidator:
@@ -79,7 +78,7 @@ class MasterPasswordValidator:
     ]
 
     @classmethod
-    def validate(cls, password: str) -> Tuple[bool, List[str], int]:
+    def validate(cls, password: str) -> tuple[bool, list[str], int]:
         """Valide un mot de passe maître.
 
         Args:
@@ -258,7 +257,7 @@ class MasterPasswordValidator:
             return "Très faible ❌"
 
     @classmethod
-    def suggest_improvements(cls, password: str) -> List[str]:
+    def suggest_improvements(cls, password: str) -> list[str]:
         """Suggère des améliorations pour un mot de passe.
 
         Args:
@@ -311,7 +310,7 @@ def test_validator():
     print("🧪 Tests de validation des mots de passe\n")
     print("=" * 70)
 
-    for password, expected_level in test_cases:
+    for password, _expected_level in test_cases:
         is_valid, errors, score = MasterPasswordValidator.validate(password)
         strength = MasterPasswordValidator.get_strength_description(score)
 

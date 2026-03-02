@@ -1,13 +1,13 @@
 """Dialogue de génération de mot de passe."""
 
+import gi  # type: ignore[import]
+
 from src.i18n import _
 from src.services.password_generator import PasswordGenerator
 
-import gi  # type: ignore[import]
-
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 
 class PasswordGeneratorDialog(Adw.Window):
@@ -106,7 +106,9 @@ class PasswordGeneratorDialog(Adw.Window):
         self.symbols_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.symbols_check)
 
-        self.ambiguous_check = Gtk.CheckButton(label=_("Exclure caractères ambigus (0, O, l, 1, I)"))
+        self.ambiguous_check = Gtk.CheckButton(
+            label=_("Exclure caractères ambigus (0, O, l, 1, I)")
+        )
         self.ambiguous_check.set_active(True)
         self.ambiguous_check.connect("toggled", lambda x: self.generate_password())
         self.random_options.append(self.ambiguous_check)

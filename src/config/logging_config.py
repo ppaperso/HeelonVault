@@ -11,7 +11,7 @@ from .environment import is_dev_mode
 
 LOG_PREFIX = "password_manager"
 KEEP_LOG_FILES = 7
-FALLBACK_DIR = Path("/tmp/password_manager_logs")
+FALLBACK_DIR = Path("/tmp/password_manager_logs")  # noqa: S108
 
 
 def _get_project_root() -> Path:

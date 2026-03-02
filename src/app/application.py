@@ -3,8 +3,10 @@
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
+
+import gi  # type: ignore[import]
 
 from src.config.environment import get_data_directory
 from src.config.logging_config import configure_logging
@@ -14,18 +16,26 @@ from src.services.auth_service import AuthService
 from src.services.backup_service import BackupService
 from src.services.crypto_service import CryptoService
 from src.services.csv_importer import CSVImporter
+from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.services.password_service import PasswordService
+from src.services.totp_service import TOTPService
 from src.ui.dialogs.about_dialog import show_about_dialog
 from src.ui.dialogs.backup_manager_dialog import BackupManagerDialog
+from src.ui.dialogs.email_login_dialog import EmailLoginDialog
 from src.ui.dialogs.import_dialog import ImportCSVDialog
+from src.ui.dialogs.setup_2fa_dialog import Setup2FADialog
+from src.ui.dialogs.update_email_dialog import UpdateEmailDialog
+from src.ui.dialogs.verify_totp_dialog import VerifyTOTPDialog
 from src.ui.windows.main_window import PasswordManagerWindow
-from src.version import get_version
-
-import gi  # type: ignore[import]
+from src.version import (
+    __app_display_name__,
+    __app_id__,
+    get_version,
+)
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, Gio  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gio, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 configure_logging()
 init_i18n()
@@ -38,17 +48,19 @@ class PasswordManagerApplication(Adw.Application):
 
     def __init__(self):
         super().__init__(
-            application_id="org.example.passwordmanager",
+            application_id=__app_id__,
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
-        self.window: Optional[PasswordManagerWindow] = None
-        self.selection_dialog: Optional[UserSelectionDialog] = None
-        self.auth_service: Optional[AuthService] = None
-        self.crypto_service: Optional[CryptoService] = None
-        self.repository: Optional[PasswordRepository] = None
-        self.password_service: Optional[PasswordService] = None
-        self.current_user: Optional[dict] = None
-        self.current_db_path: Optional[Path] = None
+        self.window: PasswordManagerWindow | None = None
+        self.email_login_dialog = None  # EmailLoginDialog (nouveau flux)
+        self.auth_service: AuthService | None = None
+        self.totp_service: TOTPService | None = None
+        self.login_tracker: LoginAttemptTracker | None = None
+        self.crypto_service: CryptoService | None = None
+        self.repository: PasswordRepository | None = None
+        self.password_service: PasswordService | None = None
+        self.current_user: dict | None = None
+        self.current_db_path: Path | None = None
         self.backup_service = BackupService(DATA_DIR)
 
         self._register_actions()
@@ -76,61 +88,247 @@ class PasswordManagerApplication(Adw.Application):
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         users_db_path = DATA_DIR / "users.db"
         self.auth_service = AuthService(users_db_path)
-        self.show_user_selection()
+        self.totp_service = TOTPService(DATA_DIR)
+        self.login_tracker = LoginAttemptTracker()
+        self.show_email_login()
 
-    def show_user_selection(self):
+    def show_email_login(self):
+        """Affiche le dialogue de connexion par email (nouveau flux)."""
         self._secure_sensitive_files()
-        if not self.auth_service:
-            raise RuntimeError("AuthService non initialisé")
-        self.selection_dialog = UserSelectionDialog(
-            self, self.auth_service, self.on_user_authenticated
+        if not self.auth_service or not self.login_tracker:
+            raise RuntimeError("Services non initialisés")
+
+        self.email_login_dialog = EmailLoginDialog(
+            parent=None,
+            auth_service=self.auth_service,
+            login_tracker=self.login_tracker
         )
-        self.selection_dialog.set_application(self)
-        self.selection_dialog.present()
+        self.email_login_dialog.set_application(self)
+        self.email_login_dialog.connect('close-request', self._on_email_login_closed)
+        self.email_login_dialog.present()
+
+    def _on_email_login_closed(self, dialog):
+        """Callback après fermeture du dialogue de connexion email."""
+        user_info = dialog.get_user_info()
+        master_password = dialog.get_master_password()
+
+        if user_info and master_password:
+            # Vérifier si email temporaire (migration)
+            if self.auth_service and self.auth_service.is_migration_email(user_info['email']):
+                self.show_update_email_dialog(user_info, master_password)
+            else:
+                # Vérifier si 2FA configuré
+                if not user_info.get('totp_enabled'):
+                    self.show_setup_2fa_dialog(user_info, master_password)
+                else:
+                    self.show_verify_totp_dialog(user_info, master_password)
+
+        return False  # Propager l'événement close-request
+
+    def show_update_email_dialog(self, user_info: dict, master_password: str):
+        """Affiche le dialogue de mise à jour d'email (pour utilisateurs migrés).
+
+        Args:
+            user_info: Infos utilisateur avec email temporaire
+            master_password: Master password (portée locale uniquement)
+        """
+        dialog = UpdateEmailDialog(
+            parent=None,
+            auth_service=self.auth_service,
+            user_info=user_info
+        )
+        dialog.set_application(self)
+
+        def on_closed(dlg):
+            new_email = dlg.get_new_email()
+            if new_email:
+                # Mettre à jour user_info avec le nouvel email
+                user_info['email'] = new_email
+                # Forcer la configuration 2FA après mise à jour email
+                self.show_setup_2fa_dialog(user_info, master_password)
+            else:
+                # Si l'utilisateur annule, retour au login
+                logger.warning("Mise à jour email annulée pour %s", user_info.get('username'))
+                self.show_email_login()
+            return False
+
+        dialog.connect('close-request', on_closed)
+        dialog.present()
+
+    def show_setup_2fa_dialog(self, user_info: dict, master_password: str):
+        """Affiche le dialogue de configuration 2FA (OBLIGATOIRE).
+
+        Args:
+            user_info: Infos utilisateur
+            master_password: Master password (portée locale uniquement)
+        """
+        dialog = Setup2FADialog(
+            parent=None,
+            totp_service=self.totp_service,
+            auth_service=self.auth_service,
+            user_info=user_info
+        )
+        dialog.set_application(self)
+
+        def on_closed(dlg):
+            if dlg.get_success():
+                # 2FA configuré avec succès
+                logger.info("2FA configuré avec succès pour %s", user_info.get('username'))
+                # Charger le workspace
+                self.on_user_authenticated(user_info, master_password)
+            else:
+                # Si annulé, politique stricte : fermer l'application
+                logger.warning("Configuration 2FA annulée pour %s", user_info.get('username'))
+                self._show_error_and_quit(
+                    _("Configuration 2FA Requise"),
+                    _("La double authentification est obligatoire pour utiliser l'application.")
+                )
+            return False
+
+        dialog.connect('close-request', on_closed)
+        dialog.present()
+
+    def show_verify_totp_dialog(self, user_info: dict, master_password: str):
+        """Affiche le dialogue de vérification TOTP.
+
+        Args:
+            user_info: Infos utilisateur avec 2FA activé
+            master_password: Master password (portée locale uniquement)
+        """
+        dialog = VerifyTOTPDialog(
+            parent=None,
+            totp_service=self.totp_service,
+            auth_service=self.auth_service,
+            user_info=user_info
+        )
+        dialog.set_application(self)
+
+        def on_closed(dlg):
+            if dlg.get_verified():
+                # TOTP vérifié avec succès
+                logger.info("TOTP vérifié pour %s", user_info.get('username'))
+                # Charger le workspace
+                self.on_user_authenticated(user_info, master_password)
+            else:
+                # Retour au login
+                logger.warning("Vérification TOTP échouée pour %s", user_info.get('username'))
+                self.show_email_login()
+            return False
+
+        dialog.connect('close-request', on_closed)
+        dialog.present()
+
+    def _show_error_and_quit(self, title: str, message: str):
+        """Affiche une erreur et ferme l'application.
+
+        Args:
+            title: Titre de l'erreur
+            message: Message d'erreur
+        """
+        dialog = Adw.MessageDialog.new(None, title, message)
+        dialog.add_response("ok", _("OK"))
+        dialog.connect("response", lambda d, r: self.quit())
+        dialog.present()
+
+    # ANCIENNE MÉTHODE - Conservée pour compatibilité si nécessaire
+    # def show_user_selection(self):
+    #     self._secure_sensitive_files()
+    #     if not self.auth_service:
+    #         raise RuntimeError("AuthService non initialisé")
+    #     self.selection_dialog = UserSelectionDialog(
+    #         self, self.auth_service, self.on_user_authenticated
+    #     )
+    #     self.selection_dialog.set_application(self)
+    #     self.selection_dialog.present()
 
     def _secure_sensitive_files(self):
         try:
             users_db = DATA_DIR / "users.db"
             if users_db.exists():
                 users_db.chmod(0o600)
+
+            # Sécuriser les fichiers de sécurité 2FA
+            email_pepper = DATA_DIR / ".email_pepper"
+            if email_pepper.exists():
+                email_pepper.chmod(0o600)
+
+            app_key = DATA_DIR / ".app_key"
+            if app_key.exists():
+                app_key.chmod(0o600)
+
+            # Sécuriser les salt files (username ET uuid)
             for salt_file in DATA_DIR.glob("salt_*.bin"):
                 salt_file.chmod(0o600)
+
+            # Sécuriser les databases (username ET uuid)
             for db_file in DATA_DIR.glob("passwords_*.db"):
                 db_file.chmod(0o600)
         except Exception as exc:
             logger.warning("Impossible de sécuriser certains fichiers: %s", exc)
 
     def on_user_authenticated(self, user_info: dict, master_password: str):
-        try:
-            username = user_info["username"]
-            self.current_user = user_info
-            db_path = DATA_DIR / f"passwords_{username}.db"
-            salt_path = DATA_DIR / f"salt_{username}.bin"
+        """Appelé après authentification complète (Email + Password + TOTP).
 
+        IMPORTANT: master_password reste UNIQUEMENT dans cette portée locale,
+        jamais stocké dans une variable de classe.
+
+        Args:
+            user_info: Dictionnaire contenant les infos utilisateur (avec workspace_uuid)
+            master_password: Master password (JAMAIS stocké en variable de classe)
+        """
+        try:
+            # Utiliser workspace_uuid au lieu de username pour les fichiers
+            workspace_uuid = user_info.get("workspace_uuid")
+            username = user_info.get("username")  # Conservé pour l'affichage
+
+            if not workspace_uuid:
+                raise ValueError("workspace_uuid manquant dans user_info")
+
+            self.current_user = user_info
+
+            # Chemins basés sur workspace_uuid
+            db_path = DATA_DIR / f"passwords_{workspace_uuid}.db"
+            salt_path = DATA_DIR / f"salt_{workspace_uuid}.bin"
+
+            # Charger ou créer le salt
             if salt_path.exists():
                 salt = salt_path.read_bytes()
             else:
-                salt = user_info["salt"]
+                # Créer un nouveau salt (cas d'un nouvel utilisateur)
+                import secrets
+                salt = secrets.token_bytes(32)
                 salt_path.write_bytes(salt)
                 salt_path.chmod(0o600)
 
+            # Fermer l'ancien repository si existant
             self._close_repository()
+
+            # Initialiser CryptoService avec le master_password (portée locale uniquement)
             self.crypto_service = CryptoService(master_password, salt)
+
+            # Initialiser repository et password service
             self.repository = PasswordRepository(db_path, self.backup_service)
             self.password_service = PasswordService(
                 self.repository, self.crypto_service
             )
             self.current_db_path = db_path
 
-            if self.selection_dialog:
-                self.selection_dialog.close()
-                self.selection_dialog = None
+            # Fermer le dialogue de login si ouvert
+            if self.email_login_dialog:
+                self.email_login_dialog.close()
+                self.email_login_dialog = None
+
+            # Fermer la fenêtre principale si déjà ouverte (switch user)
             if self.window:
                 self.window.close()
 
+            # Ouvrir la fenêtre principale
             self.window = PasswordManagerWindow(self, self.password_service, user_info)
             self.window.present()
-            logger.debug("Fenêtre principale affichée pour %s", username)
+            logger.debug(
+                "Fenêtre principale affichée pour %s (UUID: %s)", username, workspace_uuid[:8]
+            )
+
         except Exception as exc:
             logger.exception(
                 "Erreur lors de l'initialisation pour %s", user_info.get("username")
@@ -161,7 +359,7 @@ class PasswordManagerApplication(Adw.Application):
         self._close_repository()
         self.current_user = None
         self.current_db_path = None
-        self.show_user_selection()
+        self.show_email_login()
 
     def on_switch_user(self, action, param):
         self.on_logout(action, param)
@@ -222,7 +420,7 @@ class PasswordManagerApplication(Adw.Application):
         self.crypto_service = None
 
 
-def _validate_password_rules(password: str, confirm: str) -> Optional[str]:
+def _validate_password_rules(password: str, confirm: str) -> str | None:
     if not password:
         return _("Le mot de passe est requis")
     if len(password) < 8:
@@ -254,7 +452,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
         content.set_margin_top(20)
         content.set_margin_bottom(40)
 
-        title = Gtk.Label(label=_("🔐 Gestionnaire de mots de passe"))
+        title = Gtk.Label(label=_(__app_display_name__))
         title.set_css_classes(["title-1"])
         content.append(title)
 
@@ -282,7 +480,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
     def load_users(self):
         self.users_listbox.remove_all()
         users = self.auth_service.get_all_users()
-        for username, role, created_at, last_login in users:
+        for username, role, _created_at, last_login in users:
             row = Gtk.ListBoxRow()
             row.username = username
             user_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -660,7 +858,8 @@ class ManageUsersDialog(Adw.Window):
         dialog.set_heading(_("Confirmer la suppression"))
         dialog.set_body(
             _(
-                "Voulez-vous vraiment supprimer l'utilisateur '%s' ?\n\nToutes ses données seront perdues."
+                "Voulez-vous vraiment supprimer l'utilisateur '%s' ?\n\n"
+                "Toutes ses données seront perdues."
             )
             % username
         )

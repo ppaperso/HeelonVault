@@ -9,8 +9,8 @@ from __future__ import annotations
 import gettext
 import locale
 import logging
+from collections.abc import Callable
 from pathlib import Path
-from typing import Callable, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -24,7 +24,9 @@ def _(message: str) -> str:
     return _translation.gettext(message)
 
 
-def init_i18n(*, domain: str = DEFAULT_DOMAIN, localedir: Optional[Path] = None) -> Callable[[str], str]:
+def init_i18n(
+    *, domain: str = DEFAULT_DOMAIN, localedir: Path | None = None
+) -> Callable[[str], str]:
     """Initialise gettext.
 
     Ne lève pas d'exception: en cas de problème, utilise un fallback "no-op".
@@ -45,7 +47,9 @@ def init_i18n(*, domain: str = DEFAULT_DOMAIN, localedir: Optional[Path] = None)
     try:
         _translation = gettext.translation(domain, localedir=str(locales_dir), fallback=True)
     except Exception as exc:
-        logger.debug("Chargement gettext impossible (domain=%s, dir=%s): %s", domain, locales_dir, exc)
+        logger.debug(
+            "Chargement gettext impossible (domain=%s, dir=%s): %s", domain, locales_dir, exc
+        )
         _translation = gettext.NullTranslations()
 
     return _

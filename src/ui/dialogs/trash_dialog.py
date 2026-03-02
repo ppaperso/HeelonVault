@@ -1,18 +1,17 @@
 """Dialogue de gestion de la corbeille."""
 
 import logging
-from typing import Callable
+from collections.abc import Callable
+
+import gi  # type: ignore[import]
 
 from src.i18n import _
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
 
-import gi  # type: ignore[import]
-
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw  # type: ignore[attr-defined]  # noqa: E402
-
+from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +134,7 @@ class TrashDialog(Adw.Window):
 
         # Boutons d'action
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
-        
+
         entry_id = entry.id  # Capturer l'ID pour éviter les problèmes de type
 
         # Bouton restaurer
@@ -210,7 +209,8 @@ class TrashDialog(Adw.Window):
             self,
             _("Vider la corbeille ?"),
             _(
-                "Toutes les entrées seront supprimées définitivement. Cette action est irréversible."
+                "Toutes les entrées seront supprimées définitivement. "
+                "Cette action est irréversible."
             ),
             [("cancel", _("Annuler")), ("delete", _("Vider la corbeille"))],
             default="cancel",

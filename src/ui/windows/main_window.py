@@ -3,21 +3,21 @@
 from __future__ import annotations
 
 import logging
-from typing import Optional
+
+import gi  # type: ignore[import]
 
 from src.config.environment import is_dev_mode
 from src.i18n import _
+from src.version import __app_name__
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
 from src.ui.dialogs.add_edit_dialog import AddEditDialog
 from src.ui.dialogs.entry_details_dialog import EntryDetailsDialog
 from src.ui.dialogs.helpers import present_alert
 
-import gi  # type: ignore[import]
-
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Gtk, Adw, GLib, Gio, Gdk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -61,8 +61,8 @@ class PasswordCard(Gtk.FlowBoxChild):
     def __init__(
         self,
         entry: PasswordEntry,
-        parent_window: "PasswordManagerWindow",
-        password_age: Optional[int] = None,
+        parent_window: PasswordManagerWindow,
+        password_age: int | None = None,
         is_duplicate: bool = False,
     ):
         super().__init__()
@@ -273,12 +273,12 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     """Fenêtre principale affichant les entrées de mots de passe."""
 
     def __init__(self, app, password_service: PasswordService, user_info: dict):
-        super().__init__(application=app, title=_("Gestionnaire de mots de passe"))
+        super().__init__(application=app, title=__app_name__)
         self.password_service = password_service
         self.user_info = user_info
         self.current_category_filter = "Toutes"
-        self.current_tag_filter: Optional[str] = None
-        self._clipboard_clear_source_id: Optional[int] = None
+        self.current_tag_filter: str | None = None
+        self._clipboard_clear_source_id: int | None = None
         self._clipboard_token = 0
 
         self._init_layout()
@@ -727,7 +727,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self,
             _("Mettre à la corbeille ?"),
             _(
-                "Cette entrée sera déplacée dans la corbeille. Vous pourrez la restaurer depuis le menu Corbeille."
+                "Cette entrée sera déplacée dans la corbeille. Vous pourrez la restaurer "
+                "depuis le menu Corbeille."
             ),
             [("cancel", _("Annuler")), ("delete", _("Mettre à la corbeille"))],
             default="cancel",
@@ -839,8 +840,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         if not url.startswith(("http://", "https://")):
             url = "https://" + url
         try:
-            subprocess.Popen(
-                ["xdg-open", url], stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL
+            # Commande système sûre : xdg-open est l'outil standard sur Linux
+            subprocess.Popen(  # noqa: S603
+                ["xdg-open", url],  # noqa: S607
+                stdout=subprocess.DEVNULL,
+                stderr=subprocess.DEVNULL,
             )
         except Exception as exc:
             logger.exception("Erreur lors de l'ouverture de l'URL %s", url)

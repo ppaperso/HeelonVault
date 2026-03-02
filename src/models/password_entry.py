@@ -3,13 +3,12 @@ Modèle de données pour une entrée de mot de passe.
 """
 from dataclasses import dataclass, field
 from datetime import datetime
-from typing import Optional, List, Dict
 
 
 @dataclass
 class PasswordEntry:
     """Représente une entrée de mot de passe stockée.
-    
+
     Attributes:
         id: Identifiant unique de l'entrée
         title: Titre/nom de l'entrée
@@ -25,23 +24,23 @@ class PasswordEntry:
     title: str
     username: str
     password: str
-    id: Optional[int] = None
+    id: int | None = None
     url: str = ""
     notes: str = ""
     category: str = ""
-    tags: List[str] = field(default_factory=list)
-    created_at: Optional[datetime] = None
-    modified_at: Optional[datetime] = None
-    
+    tags: list[str] = field(default_factory=list)
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+
     def __str__(self) -> str:
         return f"PasswordEntry(id={self.id}, title='{self.title}', category='{self.category}')"
-    
+
     def matches_search(self, search_text: str) -> bool:
         """Vérifie si l'entrée correspond à un texte de recherche.
-        
+
         Args:
             search_text: Texte à rechercher
-            
+
         Returns:
             bool: True si l'entrée correspond
         """
@@ -51,13 +50,13 @@ class PasswordEntry:
             search_lower in self.username.lower() or
             search_lower in self.url.lower()
         )
-    
+
     def has_tag(self, tag: str) -> bool:
         """Vérifie si l'entrée possède un tag spécifique.
-        
+
         Args:
             tag: Tag à vérifier
-            
+
         Returns:
             bool: True si le tag existe
         """
@@ -67,13 +66,13 @@ class PasswordEntry:
 @dataclass
 class EncryptedPasswordEntry:
     """Représente une entrée de mot de passe avec données chiffrées.
-    
+
     Attributes:
         password_data: Données du mot de passe chiffré (dict avec nonce et ciphertext)
         notes_data: Données des notes chiffrées
     """
     password_data: dict
-    notes_data: Optional[dict] = None
+    notes_data: dict | None = None
 
 
 @dataclass
@@ -82,12 +81,12 @@ class PasswordRecord:
 
     title: str
     username: str
-    password_data: Dict[str, str]
-    id: Optional[int] = None
+    password_data: dict[str, str]
+    id: int | None = None
     url: str = ""
-    notes_data: Optional[Dict[str, str]] = None
+    notes_data: dict[str, str] | None = None
     category: str = ""
-    tags: List[str] = field(default_factory=list)
-    created_at: Optional[datetime] = None
-    modified_at: Optional[datetime] = None
-    last_changed: Optional[datetime] = None
+    tags: list[str] = field(default_factory=list)
+    created_at: datetime | None = None
+    modified_at: datetime | None = None
+    last_changed: datetime | None = None
