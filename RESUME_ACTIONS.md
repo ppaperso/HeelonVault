@@ -43,7 +43,7 @@
 
 ## 🔴 Actions CRITIQUES restantes avant open-source
 
-### 1. Supprimer l'utilisateur admin/admin par défaut
+### 1. Supprimer l'utilisateur admin/admin par défaut : FAIT
 
 **Impact** : 🔴 BLOQUANT pour publication  
 **Temps estimé** : 4 heures  
@@ -64,7 +64,7 @@ def on_activate(self):
         self.show_login()
 ```
 
-### 2. Configurer les emails de contact
+### 2. Configurer les emails de contact : FAIT
 
 **Impact** : 🔴 BLOQUANT pour publication  
 **Temps estimé** : 15 minutes  
