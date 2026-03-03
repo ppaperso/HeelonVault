@@ -47,3 +47,21 @@ grep -E "^[^:]+:[0-9]+:[0-9]+: W0718:" logs/pylint_report_phase2.txt | wc -l
 - Le flux “changement mot de passe maître + réchiffrement du coffre” est déjà intégré dans `src/app/application.py`.
 - Le dialogue centralisé de compte est ajouté: `src/ui/dialogs/manage_account_dialog.py`.
 - Les rapports lint complets de référence sont présents dans `logs/pylint_report_full.txt` et `logs/pylint_report_phase1.txt`.
+
+## Mini checklist (démarrage demain) — 5 commandes
+```bash
+# 1) Se placer dans le repo
+cd /home/ppaadmin/Vscode/HeelonVault
+
+# 2) Vérifier que la branche locale est bien à jour
+git pull --ff-only origin main
+
+# 3) Générer un état de travail Pylint pour Phase 2
+/home/ppaadmin/Vscode/HeelonVault/venv-dev/bin/python -m pylint src > logs/pylint_report_phase2_work.txt 2>&1 || true
+
+# 4) Lister uniquement les W0718 à traiter
+grep -E "^[^:]+:[0-9]+:[0-9]+: W0718:" logs/pylint_report_phase2_work.txt
+
+# 5) Après corrections, contrôle final rapide (score + syntaxe)
+grep -E "Your code has been rated at" logs/pylint_report_phase2_work.txt | tail -n 1 && /home/ppaadmin/Vscode/HeelonVault/venv-dev/bin/python -m py_compile $(find src -name "*.py")
+```
