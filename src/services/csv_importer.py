@@ -60,7 +60,7 @@ class CSVImporter:
                     return 'generic_comma'
 
         except Exception as e:
-            logger.error(f"Erreur lors de la détection du format: {e}")
+            logger.error("Erreur lors de la détection du format: %s", e)
 
         return None
 
@@ -119,8 +119,12 @@ class CSVImporter:
                     except Exception as e:
                         self.errors.append(f"Ligne {line_num}: {str(e)}")
 
-            logger.info(f"Import CSV: {len(self.entries)} entrées importées, "
-                       f"{len(self.errors)} erreurs, {len(self.warnings)} avertissements")
+            logger.info(
+                "Import CSV: %d entrées importées, %d erreurs, %d avertissements",
+                len(self.entries),
+                len(self.errors),
+                len(self.warnings),
+            )
 
             return {
                 'success': len(self.entries) > 0,
@@ -130,7 +134,7 @@ class CSVImporter:
             }
 
         except Exception as e:
-            logger.error(f"Erreur lors de l'import CSV: {e}")
+            logger.error("Erreur lors de l'import CSV: %s", e)
             return {
                 'success': False,
                 'entries': [],
@@ -180,7 +184,12 @@ class CSVImporter:
 
         # Log pour debug
         pwd_preview = entry.get('password')[:3] if entry.get('password') else 'VIDE'
-        logger.debug(f"Ligne {line_num}: name='{entry.get('name')}', password='{pwd_preview}...'")
+        logger.debug(
+            "Ligne %d: name='%s', password='%s...'",
+            line_num,
+            entry.get("name"),
+            pwd_preview,
+        )
 
         # Validation minimale
         if not entry.get('name') or not entry.get('name').strip():

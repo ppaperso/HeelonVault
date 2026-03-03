@@ -12,7 +12,7 @@ from src.ui.notifications import toast as show_toast
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -286,7 +286,7 @@ class BackupManagerDialog(Adw.Window):
         # Utiliser GLib.idle_add pour exécuter dans le thread principal
         GLib.idle_add(do_backup)
 
-    def on_show_backup_details(self, button, info: dict):
+    def on_show_backup_details(self, _button, info: dict):
         """Affiche les détails d'une sauvegarde.
 
         Args:
@@ -313,7 +313,7 @@ class BackupManagerDialog(Adw.Window):
         dialog.add_response("ok", _("OK"))
         dialog.present()
 
-    def on_open_folder_clicked(self, button):
+    def on_open_folder_clicked(self, _button):
         """Ouvre le dossier des sauvegardes dans le gestionnaire de fichiers."""
         import subprocess
 

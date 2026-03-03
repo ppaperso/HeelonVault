@@ -21,13 +21,14 @@ logger = logging.getLogger(__name__)
 class UpdateEmailDialog(Adw.Window):
     """Dialog pour mettre à jour l'email d'un utilisateur migré."""
 
-    def __init__(self, parent, auth_service, user_info, **kwargs):
+    def __init__(self, parent, auth_service, user_info, migration_required: bool = True, **kwargs):
         """Initialise le dialog de mise à jour d'email.
 
         Args:
             parent: Fenêtre parente
             auth_service: Service d'authentification
             user_info: Informations de l'utilisateur (dict)
+            migration_required: True si la mise à jour est obligatoire (post-migration)
         """
         super().__init__(**kwargs)
         self.set_transient_for(parent)
@@ -37,6 +38,7 @@ class UpdateEmailDialog(Adw.Window):
 
         self.auth_service = auth_service
         self.user_info = user_info
+        self.migration_required = migration_required
 
         # État
         self.new_email = None
@@ -75,9 +77,14 @@ class UpdateEmailDialog(Adw.Window):
         icon_box.append(icon_label)
 
         title_label = Gtk.Label()
-        title_label.set_markup(
-            "<span size='large' weight='bold'>Mise à jour de l'email requise</span>"
-        )
+        if self.migration_required:
+            title_label.set_markup(
+                "<span size='large' weight='bold'>Mise à jour de l'email requise</span>"
+            )
+        else:
+            title_label.set_markup(
+                "<span size='large' weight='bold'>Modifier votre adresse email</span>"
+            )
         icon_box.append(title_label)
 
         # Message explicatif
@@ -86,11 +93,17 @@ class UpdateEmailDialog(Adw.Window):
         content_box.append(message_box)
 
         info_label = Gtk.Label()
-        info_label.set_markup(
-            "Suite à la migration vers le nouveau système d'authentification, "
-            "vous devez fournir votre adresse email réelle.\n\n"
-            "Cette adresse sera utilisée comme identifiant de connexion."
-        )
+        if self.migration_required:
+            info_label.set_markup(
+                "Suite à la migration vers le nouveau système d'authentification, "
+                "vous devez fournir votre adresse email réelle.\n\n"
+                "Cette adresse sera utilisée comme identifiant de connexion."
+            )
+        else:
+            info_label.set_markup(
+                "Cette adresse sera utilisée comme identifiant de connexion.\n\n"
+                "Assurez-vous d'utiliser une adresse que vous contrôlez."
+            )
         info_label.set_wrap(True)
         info_label.set_justify(Gtk.Justification.CENTER)
         message_box.append(info_label)
@@ -126,24 +139,25 @@ class UpdateEmailDialog(Adw.Window):
         content_box.append(self.status_label)
 
         # Avertissement
-        warning_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        warning_box.set_margin_top(10)
-        warning_box.add_css_class("card")
-        warning_box.add_css_class("warning")
-        content_box.append(warning_box)
+        if self.migration_required:
+            warning_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+            warning_box.set_margin_top(10)
+            warning_box.add_css_class("card")
+            warning_box.add_css_class("warning")
+            content_box.append(warning_box)
 
-        warning_icon = Gtk.Label(label="⚠️")
-        warning_box.append(warning_icon)
+            warning_icon = Gtk.Label(label="⚠️")
+            warning_box.append(warning_icon)
 
-        warning_label = Gtk.Label()
-        warning_label.set_markup(
-            "<span size='small'><b>Important :</b> "
-            "Vous ne pourrez plus utiliser votre ancien identifiant. "
-            "Utilisez une adresse email que vous contrôlez.</span>"
-        )
-        warning_label.set_wrap(True)
-        warning_label.set_hexpand(True)
-        warning_box.append(warning_label)
+            warning_label = Gtk.Label()
+            warning_label.set_markup(
+                "<span size='small'><b>Important :</b> "
+                "Vous ne pourrez plus utiliser votre ancien identifiant. "
+                "Utilisez une adresse email que vous contrôlez.</span>"
+            )
+            warning_label.set_wrap(True)
+            warning_label.set_hexpand(True)
+            warning_box.append(warning_label)
 
         # Boutons d'action
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -168,7 +182,7 @@ class UpdateEmailDialog(Adw.Window):
         # Effacer le statut
         self.status_label.set_text("")
 
-    def _on_update_clicked(self, button):
+    def _on_update_clicked(self, _button):
         """Met à jour l'email."""
         new_email = self.email_entry.get_text().strip()
 
@@ -195,7 +209,7 @@ class UpdateEmailDialog(Adw.Window):
                 self.new_email = new_email
                 self.updated = True
                 self._show_status("✅ Email mis à jour avec succès !", "success")
-                logger.info(f"Email mis à jour pour user_id={self.user_info['id']}")
+                logger.info("Email mis à jour pour user_id=%s", self.user_info["id"])
 
                 # Fermer après un court délai
                 from gi.repository import GLib

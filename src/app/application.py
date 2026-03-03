@@ -23,6 +23,7 @@ from src.ui.dialogs.about_dialog import show_about_dialog
 from src.ui.dialogs.backup_manager_dialog import BackupManagerDialog
 from src.ui.dialogs.email_login_dialog import EmailLoginDialog
 from src.ui.dialogs.import_dialog import ImportCSVDialog
+from src.ui.dialogs.manage_account_dialog import ManageAccountDialog
 from src.ui.dialogs.setup_2fa_dialog import Setup2FADialog
 from src.ui.dialogs.update_email_dialog import UpdateEmailDialog
 from src.ui.dialogs.verify_totp_dialog import VerifyTOTPDialog
@@ -35,12 +36,597 @@ from src.version import (
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gio, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # noqa: E402
 
 configure_logging()
 init_i18n()
 logger = logging.getLogger(__name__)
 DATA_DIR = get_data_directory()
+
+
+def _install_branding_css() -> None:
+    """Charge le thème Heelonys global dans GTK."""
+    display = Gdk.Display.get_default()
+    if not display:
+        return
+
+    css = """
+    * {
+        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
+    }
+
+    window,
+    dialog,
+    .background {
+        background: #F3F6F3;
+        color: #2C3E50;
+    }
+
+    headerbar {
+        background: linear-gradient(135deg, #07393A, #0A5F5C);
+        color: #FFFFFF;
+    }
+
+    headerbar label,
+    headerbar image,
+    headerbar button {
+        color: #FFFFFF;
+    }
+
+    headerbar .title-1,
+    headerbar .title-2,
+    headerbar .title-3,
+    headerbar .title-4,
+    headerbar .heading,
+    headerbar .caption,
+    headerbar .dim-label {
+        color: #FFFFFF;
+    }
+
+    headerbar .accent {
+        background: rgba(255, 255, 255, 0.18);
+        color: #FFFFFF;
+    }
+
+    headerbar .warning {
+        color: #A4DFCF;
+    }
+
+    popover,
+    popover.background {
+        background: transparent;
+        border: none;
+        box-shadow: none;
+    }
+
+    popover contents {
+        background: transparent;
+        padding: 0;
+        border: none;
+    }
+
+    popover menu,
+    popover box {
+        background: #FFFFFF;
+        color: #2C3E50;
+        border-radius: 16px;
+        border: 1px solid #A4DFCF;
+        box-shadow: 0 20px 40px rgba(7, 57, 58, 0.12);
+    }
+
+    popover modelbutton,
+    popover menuitem,
+    popover label {
+        color: #2C3E50;
+    }
+
+    popover modelbutton:hover,
+    popover menuitem:hover {
+        background: #F3F6F3;
+    }
+
+    toast {
+        background-image: linear-gradient(120deg, #13A1A1, #1F8678);
+        color: #FFFFFF;
+        border-radius: 12px;
+        border: 1px solid rgba(7, 57, 58, 0.18);
+        box-shadow: 0 10px 24px rgba(7, 57, 58, 0.22);
+    }
+
+    toast label,
+    toast button,
+    toast image {
+        color: #FFFFFF;
+    }
+
+    toast button {
+        background: rgba(255, 255, 255, 0.14);
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 999px;
+        transition: all 220ms ease;
+    }
+
+    toast button:hover {
+        background: rgba(255, 255, 255, 0.22);
+        transform: translateY(-2px);
+        box-shadow: 0 8px 20px rgba(7, 57, 58, 0.20);
+    }
+
+    toast button:active {
+        background: rgba(7, 57, 58, 0.22);
+        transform: translateY(0);
+        box-shadow: none;
+    }
+
+    toast button:focus {
+        outline: 2px solid #13A1A1;
+        outline-offset: 2px;
+    }
+
+    button {
+        border-radius: 12px;
+        transition: all 220ms ease;
+    }
+
+    button.suggested-action {
+        background-image: linear-gradient(120deg, #13A1A1, #1F8678);
+        color: #FFFFFF;
+        border-radius: 999px;
+        padding: 12px 20px;
+        box-shadow: 0 8px 20px rgba(7, 57, 58, 0.18);
+        border: none;
+    }
+
+    button.suggested-action:hover {
+        transform: translateY(-2px);
+        box-shadow: 0 12px 24px rgba(7, 57, 58, 0.24);
+    }
+
+    button.suggested-action:active {
+        transform: translateY(0);
+    }
+
+    button.pill {
+        border-radius: 999px;
+    }
+
+    button.destructive-action {
+        border-radius: 999px;
+    }
+
+    .card {
+        background: linear-gradient(135deg, #FFFFFF, #F3F6F3);
+        border: 1px solid #A4DFCF;
+        border-radius: 20px;
+        box-shadow: 0 20px 40px rgba(7, 57, 58, 0.08);
+    }
+
+    .sidebar-card,
+    .sidebar-expander {
+        border-color: rgba(87, 185, 177, 0.40);
+        box-shadow: 0 6px 18px rgba(7, 57, 58, 0.07);
+    }
+
+    .sidebar-branding {
+        border-color: rgba(87, 185, 177, 0.55);
+        border-radius: 18px;
+        background: linear-gradient(135deg, #FFFFFF 0%, #EEF8F7 100%);
+        box-shadow: 0 10px 24px rgba(7, 57, 58, 0.10);
+        padding: 8px 12px;
+    }
+
+    .sidebar-brand-logo {
+        min-width: 22px;
+        min-height: 22px;
+        padding: 0;
+    }
+
+    .sidebar-brand-title {
+        font-size: 1.00rem;
+        font-weight: 780;
+        letter-spacing: 0.08em;
+        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
+        color: #07393A;
+    }
+
+    .dashboard-footer {
+        border-top: 1px solid rgba(164, 223, 207, 0.65);
+        padding-top: 8px;
+    }
+
+    .dashboard-footer-label {
+        color: #6B9EA3;
+        font-size: 0.84rem;
+        font-weight: 520;
+    }
+
+    .header-date-label {
+        color: #FFFFFF;
+        font-size: 0.96rem;
+        font-weight: 640;
+        letter-spacing: 0.04em;
+    }
+
+    .account-page-title {
+        color: #07393A;
+        font-size: 1.18rem;
+        font-weight: 760;
+        letter-spacing: 0.02em;
+    }
+
+    .account-page-subtitle {
+        color: #6B9EA3;
+        font-size: 0.86rem;
+        font-weight: 500;
+    }
+
+    .account-group {
+        margin-top: 2px;
+        margin-bottom: 2px;
+    }
+
+    .account-action-btn {
+        min-height: 30px;
+        padding-left: 12px;
+        padding-right: 12px;
+    }
+
+    .account-status {
+        font-size: 0.86rem;
+        font-weight: 520;
+        margin-top: 2px;
+    }
+
+    /* ─── STATUS CARD ──────────────────────────────────────────────────── */
+    .status-card {
+        background: linear-gradient(135deg, #FFFFFF 0%, #EEF8F7 100%);
+        border-color: rgba(87, 185, 177, 0.50);
+        border-radius: 18px;
+        box-shadow: 0 4px 16px rgba(7, 57, 58, 0.08);
+    }
+
+    /* Avatar name / role */
+    .status-username {
+        font-weight: 650;
+        font-size: 1.12rem;
+        color: #07393A;
+    }
+    .status-role-pill {
+        font-size: 0.80rem;
+        font-weight: 700;
+        letter-spacing: 0.05em;
+        border-radius: 999px;
+        padding: 2px 10px;
+    }
+    .status-role-admin {
+        background: rgba(19, 161, 161, 0.14);
+        color: #0A5F5C;
+        border: 1px solid rgba(19, 161, 161, 0.32);
+    }
+    .status-role-user {
+        background: rgba(44, 62, 80, 0.09);
+        color: #4A5568;
+        border: 1px solid rgba(44, 62, 80, 0.18);
+    }
+
+    /* Séparateurs verticaux dans la status card */
+    .status-vsep {
+        background: rgba(164, 223, 207, 0.55);
+        min-width: 1px;
+    }
+
+    /* Chips de statistiques */
+    .status-stat-chip { /* no background, just spacing via margins */ }
+    .status-stat-icon { color: #57B9B1; opacity: 0.80; }
+    .status-stat-value {
+        font-weight: 700;
+        font-size: 1.20rem;
+        color: #07393A;
+    }
+    .status-stat-sub {
+        font-size: 0.82rem;
+        color: #8CACB0;
+        font-weight: 500;
+    }
+
+    /* Dernière connexion */
+    .status-meta-icon   { color: #8CACB0; }
+    .status-last-login  { font-size: 0.88rem; color: #8CACB0; }
+
+    /* Badge sécurité */
+    .status-weak-badge {
+        border-radius: 999px;
+        padding: 2px 8px;
+    }
+    .status-weak-ok {
+        background: rgba(31, 134, 120, 0.10);
+        border: 1px solid rgba(31, 134, 120, 0.28);
+    }
+    .status-weak-warn {
+        background: rgba(231, 76, 60, 0.10);
+        border: 1px solid rgba(231, 76, 60, 0.30);
+    }
+    .status-weak-label      { font-size: 0.88rem; font-weight: 600; color: #6B9EA3; }
+    .status-weak-label-warn { color: #C0392B; }
+
+    /* ---legacy metric-tile kept for compat--- */
+    .metric-tile {
+        background: rgba(19, 161, 161, 0.08);
+        border: 1px solid rgba(87, 185, 177, 0.40);
+        border-radius: 12px;
+        padding: 8px 10px;
+    }
+
+    flowbox checkbutton {
+        border-radius: 999px;
+        border: 1px solid rgba(87, 185, 177, 0.55);
+        padding: 4px 8px;
+        background: rgba(255, 255, 255, 0.9);
+    }
+
+    flowbox checkbutton:checked {
+        background-image: linear-gradient(120deg, rgba(19, 161, 161, 0.20), rgba(31, 134, 120, 0.20));
+        border-color: #13A1A1;
+    }
+
+    flowboxchild > .card {
+        border-radius: 14px;
+        box-shadow: 0 8px 16px rgba(7, 57, 58, 0.06);
+    }
+
+    /* ─── TOOLTIPS PREMIUM ─────────────────────────────────────────────── */
+
+    tooltip {
+        background: transparent;
+        padding: 0;
+    }
+
+    tooltip > * {
+        background: linear-gradient(145deg, #07393A 0%, #0C5254 60%, #0F6B60 100%);
+        color: #FFFFFF;
+        border-radius: 14px;
+        border: 1px solid rgba(164, 223, 207, 0.35);
+        box-shadow:
+            0 16px 40px rgba(7, 57, 58, 0.40),
+            0  4px 12px rgba(7, 57, 58, 0.25),
+            inset 0 1px 0 rgba(255, 255, 255, 0.10);
+        padding: 0;
+    }
+
+    tooltip label {
+        color: #FFFFFF;
+        font-size: 0.90rem;
+        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
+        padding: 11px 15px;
+        line-height: 1.55;
+    }
+
+    /* ─── PASSWORD CARDS ────────────────────────────────────────────── */
+
+    .password-card {
+        border-radius: 18px;
+        border: 1px solid rgba(164, 223, 207, 0.65);
+        background: #FFFFFF;
+        box-shadow: 0 4px 14px rgba(7, 57, 58, 0.07);
+        transition: all 200ms ease;
+    }
+
+    .password-card:hover {
+        border-color: #57B9B1;
+        box-shadow: 0 10px 30px rgba(7, 57, 58, 0.14);
+        transform: translateY(-2px);
+    }
+
+    /* Bande de force en haut */
+    .card-strength-bar {
+        border-radius: 18px 18px 0 0;
+        min-height: 4px;
+    }
+    .card-strength-success { background: linear-gradient(90deg, #1F8678, #13A1A1); }
+    .card-strength-warning { background: linear-gradient(90deg, #E6B800, #F0C040); }
+    .card-strength-error   { background: linear-gradient(90deg, #E74C3C, #FF6B6B); }
+
+    /* Badge icône */
+    .card-icon-badge {
+        border-radius: 10px;
+        padding: 6px;
+        min-width: 32px;
+        min-height: 32px;
+    }
+    .card-icon-badge-success { background: rgba(31, 134, 120, 0.12); }
+    .card-icon-badge-warning { background: rgba(230, 184, 0,   0.12); }
+    .card-icon-badge-error   { background: rgba(231,  76, 60,  0.12); }
+
+    /* Titre de la card */
+    .card-title {
+        font-weight: 650;
+        font-size: 0.95rem;
+        color: #07393A;
+    }
+
+    /* Catégorie */
+    .card-category {
+        font-size: 0.73rem;
+        color: #6B9EA3;
+        font-weight: 500;
+    }
+
+    /* Ligne identifiant/domaine */
+    .card-hint {
+        font-family: "Space Mono", "JetBrains Mono", monospace;
+        font-size: 0.72rem;
+        color: #8CACB0;
+        font-weight: 400;
+    }
+
+    /* Séparateur fin */
+    .card-sep {
+        background: rgba(164, 223, 207, 0.5);
+        min-height: 1px;
+        margin-top: 2px;
+        margin-bottom: 2px;
+    }
+
+    /* Boutons d'action dans les cards */
+    .card-action-btn {
+        min-width: 28px;
+        min-height: 28px;
+        padding: 4px;
+        opacity: 0.65;
+        transition: opacity 150ms ease, transform 150ms ease;
+    }
+    .card-action-btn:hover {
+        opacity: 1;
+        transform: scale(1.15);
+    }
+
+    /* Bouton corbeille */
+    .card-delete-btn {
+        opacity: 0.35;
+        min-width: 26px;
+        min-height: 26px;
+        padding: 3px;
+        transition: opacity 180ms ease, color 180ms ease;
+    }
+    .card-delete-btn:hover {
+        opacity: 0.9;
+    }
+
+    /* Badges d'alerte */
+    .card-alert-badge {
+        font-size: 0.68rem;
+        font-weight: 700;
+        border-radius: 999px;
+        padding: 2px 6px;
+    }
+    .card-alert-warning {
+        background: rgba(230, 184, 0, 0.15);
+        color: #9A7A00;
+        border: 1px solid rgba(230, 184, 0, 0.4);
+    }
+    .card-alert-error {
+        background: rgba(231, 76, 60, 0.12);
+        color: #C0392B;
+        border: 1px solid rgba(231, 76, 60, 0.35);
+    }
+
+    /* Tag pills */
+    .card-tag-pill {
+        font-size: 0.65rem;
+        font-weight: 600;
+        color: #0A5F5C;
+        background: rgba(19, 161, 161, 0.10);
+        border: 1px solid rgba(19, 161, 161, 0.28);
+        border-radius: 999px;
+        padding: 1px 7px;
+    }
+    .card-tag-more {
+        font-size: 0.63rem;
+        font-weight: 600;
+        color: #6B9EA3;
+    }
+
+    .accent,
+    label.accent {
+        background: rgba(19, 161, 161, 0.12);
+        color: #0A5F5C;
+        border-radius: 999px;
+        padding: 6px 14px;
+    }
+
+    label.success,
+    .success {
+        color: #1F8678;
+    }
+
+    label.warning,
+    .warning {
+        color: #13A1A1;
+    }
+
+    label.error,
+    .error {
+        color: #E74C3C;
+    }
+
+    label.heading,
+    .heading,
+    .title-1,
+    .title-2,
+    .title-3,
+    .title-4 {
+        color: #07393A;
+    }
+
+    entry,
+    textview,
+    spinbutton {
+        border-radius: 12px;
+        border: 1px solid #57B9B1;
+        background: #FFFFFF;
+        color: #2C3E50;
+    }
+
+    entry:focus,
+    textview:focus,
+    spinbutton:focus,
+    button:focus,
+    row:focus {
+        outline: 2px solid #13A1A1;
+        outline-offset: 2px;
+    }
+
+    list,
+    listview,
+    preferencesgroup {
+        background: transparent;
+    }
+
+    /* Overrides finaux: badges dans la barre haute */
+    headerbar label.accent,
+    headerbar .accent {
+        background: rgba(255, 255, 255, 0.22);
+        color: #FFFFFF;
+        border: 1px solid rgba(255, 255, 255, 0.35);
+        border-radius: 999px;
+        padding: 3px 10px;
+    }
+
+    headerbar label.warning,
+    headerbar .warning {
+        background: rgba(255, 255, 255, 0.16);
+        color: #FFFFFF;
+        border: 1px solid rgba(255, 255, 255, 0.28);
+        border-radius: 999px;
+        padding: 3px 10px;
+    }
+
+    headerbar label.header-badge,
+    headerbar .header-badge {
+        font-size: 0.80rem;
+        font-weight: 600;
+        min-height: 22px;
+        line-height: 1;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+
+    headerbar label.admin-badge,
+    headerbar .admin-badge,
+    headerbar label.dev-badge,
+    headerbar .dev-badge {
+        padding-left: 10px;
+        padding-right: 10px;
+    }
+    """
+
+    provider = Gtk.CssProvider()
+    provider.load_from_data(css.encode("utf-8"))
+    Gtk.StyleContext.add_provider_for_display(
+        display,
+        provider,
+        Gtk.STYLE_PROVIDER_PRIORITY_APPLICATION,
+    )
 
 
 class PasswordManagerApplication(Adw.Application):
@@ -51,6 +637,7 @@ class PasswordManagerApplication(Adw.Application):
             application_id=__app_id__,
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
+        self._branding_css_loaded = False
         self.window: PasswordManagerWindow | None = None
         self.email_login_dialog = None  # EmailLoginDialog (nouveau flux)
         self.auth_service: AuthService | None = None
@@ -71,7 +658,10 @@ class PasswordManagerApplication(Adw.Application):
         self._add_action("logout", self.on_logout)
         self._add_action("switch_user", self.on_switch_user)
         self._add_action("manage_users", self.on_manage_users)
+        self._add_action("manage_account", self.on_manage_account)
         self._add_action("change_own_password", self.on_change_own_password)
+        self._add_action("change_own_email", self.on_change_own_email)
+        self._add_action("reconfigure_2fa", self.on_reconfigure_2fa)
         self._add_action("import_csv", self.on_import_csv)
         self._add_action("manage_backups", self.on_manage_backups)
         self._add_action("open_trash", self.on_open_trash)
@@ -85,11 +675,14 @@ class PasswordManagerApplication(Adw.Application):
     # ------------------------------------------------------------------
     def do_activate(self):
         logger.info("Activation de l'application")
+        if not self._branding_css_loaded:
+            _install_branding_css()
+            self._branding_css_loaded = True
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         users_db_path = DATA_DIR / "users.db"
         self.auth_service = AuthService(users_db_path)
         self.totp_service = TOTPService(DATA_DIR)
-        self.login_tracker = LoginAttemptTracker()
+        self.login_tracker = LoginAttemptTracker(DATA_DIR / ".login_attempts.json")
         self.show_email_login()
 
     def show_email_login(self):
@@ -135,7 +728,8 @@ class PasswordManagerApplication(Adw.Application):
         dialog = UpdateEmailDialog(
             parent=None,
             auth_service=self.auth_service,
-            user_info=user_info
+            user_info=user_info,
+            migration_required=True,
         )
         dialog.set_application(self)
 
@@ -166,7 +760,8 @@ class PasswordManagerApplication(Adw.Application):
             parent=None,
             totp_service=self.totp_service,
             auth_service=self.auth_service,
-            user_info=user_info
+            user_info=user_info,
+            reconfiguration=False,
         )
         dialog.set_application(self)
 
@@ -375,11 +970,161 @@ class PasswordManagerApplication(Adw.Application):
                 self.window, self.auth_service, self.current_user["username"]
             ).present()
 
+    def on_manage_account(self, _action, _param):
+        """Ouvre la page centralisée de gestion du compte connecté."""
+        if not (self.current_user and self.window and self.auth_service and self.totp_service):
+            return
+
+        dialog = ManageAccountDialog(
+            parent=self.window,
+            auth_service=self.auth_service,
+            current_user=self.current_user,
+            on_profile_updated=self._on_account_profile_updated,
+            on_change_password=lambda: self.on_change_own_password(None, None),
+            on_change_email=lambda: self.on_change_own_email(None, None),
+            on_reconfigure_2fa=lambda: self.on_reconfigure_2fa(None, None),
+        )
+        dialog.present()
+
     def on_change_own_password(self, _action, _param):
         if self.current_user and self.window and self.auth_service:
             ChangeOwnPasswordDialog(
-                self.window, self.auth_service, self.current_user["username"]
+                self.window,
+                self.auth_service,
+                self.current_user["username"],
+                self._change_master_password_and_reencrypt,
             ).present()
+
+    def _reencrypt_workspace_entries(self, source_crypto: CryptoService, target_crypto: CryptoService) -> bool:
+        """Réchiffre toutes les entrées du coffre de la clé source vers la clé cible."""
+        if not self.repository:
+            return False
+
+        records = self.repository.list_entries(include_deleted=True)
+        conn = self.repository.conn
+        try:
+            conn.execute("BEGIN")
+            for record in records:
+                if record.id is None:
+                    continue
+
+                plaintext_password = source_crypto.decrypt(record.password_data)
+                plaintext_notes = (
+                    source_crypto.decrypt(record.notes_data) if record.notes_data else None
+                )
+
+                encrypted_password = target_crypto.encrypt(plaintext_password)
+                encrypted_notes = (
+                    target_crypto.encrypt(plaintext_notes) if plaintext_notes else None
+                )
+
+                self.repository.update_encrypted_payload(
+                    record.id,
+                    encrypted_password,
+                    encrypted_notes,
+                )
+            conn.commit()
+            return True
+        except Exception:
+            conn.rollback()
+            logger.exception("Echec du rechiffrement du coffre")
+            return False
+
+    def _change_master_password_and_reencrypt(self, old_password: str, new_password: str) -> bool:
+        """Change le mot de passe maître et rechiffre le coffre associé."""
+        if not (self.current_user and self.auth_service and self.password_service):
+            return False
+
+        workspace_uuid = self.current_user.get("workspace_uuid")
+        if not workspace_uuid:
+            logger.error("workspace_uuid manquant pour changement de mot de passe")
+            return False
+
+        salt_path = DATA_DIR / f"salt_{workspace_uuid}.bin"
+        if not salt_path.exists():
+            logger.error("Fichier salt introuvable: %s", salt_path)
+            return False
+
+        salt = salt_path.read_bytes()
+        old_crypto = CryptoService(old_password, salt)
+        new_crypto = CryptoService(new_password, salt)
+
+        if not self._reencrypt_workspace_entries(old_crypto, new_crypto):
+            return False
+
+        if not self.auth_service.change_user_password(
+            self.current_user["username"], old_password, new_password
+        ):
+            logger.error("Echec update auth, tentative rollback du rechiffrement")
+            rollback_ok = self._reencrypt_workspace_entries(new_crypto, old_crypto)
+            if not rollback_ok:
+                logger.critical("Rollback rechiffrement impossible")
+            return False
+
+        self.crypto_service = new_crypto
+        self.password_service.crypto = new_crypto
+        return True
+
+    def on_change_own_email(self, _action, _param):
+        """Permet à l'utilisateur connecté de changer son email."""
+        if not (self.current_user and self.window and self.auth_service):
+            return
+
+        dialog = UpdateEmailDialog(
+            parent=self.window,
+            auth_service=self.auth_service,
+            user_info=self.current_user,
+            migration_required=False,
+        )
+
+        def on_closed(dlg):
+            new_email = dlg.get_new_email()
+            if new_email and self.current_user:
+                self.current_user["email"] = new_email
+                if self.window and hasattr(self.window, "toast_overlay"):
+                    toast = Adw.Toast.new(_("✅ Email mis à jour"))
+                    toast.set_timeout(3)
+                    self.window.toast_overlay.add_toast(toast)
+            return False
+
+        dialog.connect("close-request", on_closed)
+        dialog.present()
+
+    def on_reconfigure_2fa(self, _action, _param):
+        """Permet à l'utilisateur connecté de relier un nouveau TOTP."""
+        if not (self.current_user and self.window and self.auth_service and self.totp_service):
+            return
+
+        dialog = Setup2FADialog(
+            parent=self.window,
+            totp_service=self.totp_service,
+            auth_service=self.auth_service,
+            user_info=self.current_user,
+            reconfiguration=True,
+        )
+
+        def on_closed(dlg):
+            if dlg.get_success() and self.current_user:
+                self.current_user["totp_enabled"] = True
+                self.current_user["totp_confirmed"] = True
+                if self.window and hasattr(self.window, "toast_overlay"):
+                    toast = Adw.Toast.new(_("✅ Double authentification reconfigurée"))
+                    toast.set_timeout(4)
+                    self.window.toast_overlay.add_toast(toast)
+            return False
+
+        dialog.connect("close-request", on_closed)
+        dialog.present()
+
+    def _on_account_profile_updated(self, updates: dict) -> None:
+        """Synchronise la fenêtre principale après mise à jour profil."""
+        if not self.current_user:
+            return
+
+        self.current_user.update(updates)
+
+        if self.window and hasattr(self.window, "refresh_account_profile"):
+            self.window.refresh_account_profile(self.current_user)
 
     def on_import_csv(self, _action, _param):
         if self.window and self.password_service:
@@ -497,10 +1242,14 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             name_label = Gtk.Label(label=username, xalign=0)
             name_label.set_css_classes(["title-4"])
             name_box.append(name_label)
+
+            badges_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             if role == "admin":
                 admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(["caption", "accent"])
-                name_box.append(admin_label)
+                badges_box.append(admin_label)
+            if badges_box.get_first_child() is not None:
+                name_box.append(badges_box)
             info_box.append(name_box)
             if last_login:
                 last_login_label = Gtk.Label(
@@ -821,10 +1570,14 @@ class ManageUsersDialog(Adw.Window):
             name_label = Gtk.Label(label=username, xalign=0)
             name_label.set_css_classes(["title-4"])
             name_box.append(name_label)
+
+            badges_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
             if role == "admin":
                 admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(["caption", "accent"])
-                name_box.append(admin_label)
+                badges_box.append(admin_label)
+            if badges_box.get_first_child() is not None:
+                name_box.append(badges_box)
             info_box.append(name_box)
             created_label = Gtk.Label(label=_("Créé: %s") % created_at[:10], xalign=0)
             created_label.set_css_classes(["caption", "dim-label"])
@@ -884,7 +1637,13 @@ class ManageUsersDialog(Adw.Window):
 class ChangeOwnPasswordDialog(Adw.Window):
     """Dialogue pour changer son mot de passe maître."""
 
-    def __init__(self, parent, auth_service: AuthService, username: str):
+    def __init__(
+        self,
+        parent,
+        auth_service: AuthService,
+        username: str,
+        on_change_master_password: Callable[[str, str], bool] | None = None,
+    ):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
@@ -892,6 +1651,7 @@ class ChangeOwnPasswordDialog(Adw.Window):
         self.set_title(_("Changer mon mot de passe"))
         self.auth_service = auth_service
         self.username = username
+        self.on_change_master_password = on_change_master_password
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         box.set_margin_start(40)
@@ -946,15 +1706,21 @@ class ChangeOwnPasswordDialog(Adw.Window):
         self.error_label.set_wrap(True)
         box.append(self.error_label)
 
+        self.progress_label = Gtk.Label(label="")
+        self.progress_label.set_css_classes(["caption", "dim-label"])
+        self.progress_label.set_visible(False)
+        self.progress_label.set_wrap(True)
+        box.append(self.progress_label)
+
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         button_box.set_halign(Gtk.Align.END)
         cancel_btn = Gtk.Button(label=_("Annuler"))
         cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
-        change_btn = Gtk.Button(label=_("Changer le mot de passe"))
-        change_btn.set_css_classes(["suggested-action"])
-        change_btn.connect("clicked", self.on_change_clicked)
-        button_box.append(change_btn)
+        self.change_btn = Gtk.Button(label=_("Changer le mot de passe"))
+        self.change_btn.set_css_classes(["suggested-action"])
+        self.change_btn.connect("clicked", self.on_change_clicked)
+        button_box.append(self.change_btn)
         box.append(button_box)
 
         self.set_content(box)
@@ -963,6 +1729,8 @@ class ChangeOwnPasswordDialog(Adw.Window):
         current = self.current_entry.get_text()
         new_password = self.password_entry.get_text()
         confirm = self.confirm_entry.get_text()
+        self.error_label.set_visible(False)
+        self.progress_label.set_visible(False)
 
         if not current:
             self.show_error(_("Veuillez saisir votre mot de passe actuel"))
@@ -981,7 +1749,29 @@ class ChangeOwnPasswordDialog(Adw.Window):
                 _("Le nouveau mot de passe doit être différent de l'ancien")
             )
             return
-        if self.auth_service.change_user_password(self.username, current, new_password):
+
+        self.progress_label.set_text(
+            _("🔐 Réchiffrement du coffre en cours… Cette opération peut prendre quelques instants.")
+        )
+        self.progress_label.set_visible(True)
+        self.change_btn.set_sensitive(False)
+        self.current_entry.set_sensitive(False)
+        self.password_entry.set_sensitive(False)
+        self.confirm_entry.set_sensitive(False)
+
+        context = GLib.MainContext.default()
+        while context.pending():
+            context.iteration(False)
+
+        changed = False
+        if self.on_change_master_password:
+            changed = self.on_change_master_password(current, new_password)
+        else:
+            changed = self.auth_service.change_user_password(
+                self.username, current, new_password
+            )
+
+        if changed:
             dialog = Adw.MessageDialog.new(self)
             dialog.set_heading(_("✅ Succès"))
             dialog.set_body(_("Votre mot de passe maître a été changé avec succès."))
@@ -989,7 +1779,14 @@ class ChangeOwnPasswordDialog(Adw.Window):
             dialog.connect("response", lambda _d, _r: self.close())
             dialog.present()
         else:
-            self.show_error(_("❌ Erreur lors du changement de mot de passe"))
+            self.progress_label.set_visible(False)
+            self.change_btn.set_sensitive(True)
+            self.current_entry.set_sensitive(True)
+            self.password_entry.set_sensitive(True)
+            self.confirm_entry.set_sensitive(True)
+            self.show_error(
+                _("❌ Erreur lors du changement de mot de passe ou du rechiffrement du coffre")
+            )
 
     def show_error(self, message: str):
         self.error_label.set_text(message)

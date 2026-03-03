@@ -233,7 +233,7 @@ class BackupService:
                             if line.strip().startswith("-")
                         ]
             except Exception as e:
-                logger.debug(f"Impossible de lire la liste des fichiers : {e}")
+                logger.debug("Impossible de lire la liste des fichiers : %s", e)
 
         return {
             'name': backup_folder.name,

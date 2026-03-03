@@ -7,7 +7,7 @@ from src.services.password_generator import PasswordGenerator
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # noqa: E402
 
 
 class PasswordGeneratorDialog(Adw.Window):
@@ -172,9 +172,9 @@ class PasswordGeneratorDialog(Adw.Window):
             )
         self.password_display.set_text(password)
 
-    def on_copy_clicked(self, button):
+    def on_copy_clicked(self, _button):
         self.get_clipboard().set(self.password_display.get_text())
 
-    def on_use_clicked(self, button):
+    def on_use_clicked(self, _button):
         self.callback(self.password_display.get_text())
         self.close()

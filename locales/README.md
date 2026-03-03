@@ -5,7 +5,7 @@ Ce dossier est utilisé par `gettext` pour charger les traductions.
 - Domaine: `passwordmanager`
 - Exemple de structure:
 
-```
+```text
 locales/
   fr/
     LC_MESSAGES/

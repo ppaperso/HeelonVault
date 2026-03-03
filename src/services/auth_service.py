@@ -16,6 +16,7 @@ import logging
 import secrets
 import sqlite3
 import time
+from datetime import datetime
 from pathlib import Path
 
 import validators
@@ -106,6 +107,17 @@ class AuthService:
                 last_login TIMESTAMP
             )
         ''')
+
+        self._ensure_user_profile_columns(cursor)
+
+        cursor.execute('''
+            CREATE TABLE IF NOT EXISTS login_events (
+                id INTEGER PRIMARY KEY AUTOINCREMENT,
+                user_id INTEGER NOT NULL,
+                login_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+                FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+            )
+        ''')
         self.conn.commit()
 
         # Créer un utilisateur admin par défaut si aucun utilisateur n'existe
@@ -115,6 +127,16 @@ class AuthService:
         cursor.execute('SELECT COUNT(*) FROM users')
         total_users = cursor.fetchone()[0]
         logger.info("AuthService: %d comptes utilisateurs disponibles", total_users)
+
+    def _ensure_user_profile_columns(self, cursor) -> None:
+        """Ajoute les colonnes de profil manquantes sur les bases existantes."""
+        cursor.execute("PRAGMA table_info(users)")
+        existing_columns = {row[1] for row in cursor.fetchall()}
+
+        if "avatar_path" not in existing_columns:
+            cursor.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
+
+        self.conn.commit()
 
     def _hash_password(self, password: str, salt: bytes = None) -> tuple:
         """Hache un mot de passe avec PBKDF2HMAC.
@@ -177,7 +199,7 @@ class AuthService:
         """
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT id, username, password_hash, salt, role
+            SELECT id, username, password_hash, salt, role, last_login
             FROM users WHERE username = ?
         ''', (username,))
         row = cursor.fetchone()
@@ -188,7 +210,7 @@ class AuthService:
             )
             return None
 
-        user_id, username, stored_hash, salt_b64, role = row
+        user_id, username, stored_hash, salt_b64, role, previous_last_login = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
 
@@ -198,6 +220,10 @@ class AuthService:
                 UPDATE users SET last_login = CURRENT_TIMESTAMP
                 WHERE id = ?
             ''', (user_id,))
+            cursor.execute(
+                "INSERT INTO login_events (user_id) VALUES (?)",
+                (user_id,),
+            )
             self.conn.commit()
             logger.info("AuthService: authentification reussie %s (role=%s)", username, role)
 
@@ -205,7 +231,9 @@ class AuthService:
                 'id': user_id,
                 'username': username,
                 'role': role,
-                'salt': salt
+                'salt': salt,
+                'last_login_previous': previous_last_login,
+                'login_count_today': self._get_login_count_today(user_id),
             }
         logger.warning(
             "AuthService: authentification echouee, mauvais mot de passe pour %s", username
@@ -394,7 +422,7 @@ class AuthService:
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT id, username, email, role, workspace_uuid, totp_enabled, totp_confirmed,
-                   created_at, last_login
+                   created_at, last_login, avatar_path
             FROM users
             WHERE email_hash = ?
         ''', (email_hash,))
@@ -412,7 +440,8 @@ class AuthService:
             'totp_enabled': bool(row[5]),
             'totp_confirmed': bool(row[6]),
             'created_at': row[7],
-            'last_login': row[8]
+            'last_login': row[8],
+            'avatar_path': row[9],
         }
 
     def authenticate_by_email(
@@ -432,8 +461,8 @@ class AuthService:
         email_hash = self.hash_email(email)
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT id, username, email, password_hash, salt, role, workspace_uuid,
-                   totp_enabled, totp_confirmed
+             SELECT id, username, email, password_hash, salt, role, workspace_uuid,
+                 totp_enabled, totp_confirmed, last_login, avatar_path
             FROM users
             WHERE email_hash = ?
         ''', (email_hash,))
@@ -446,8 +475,17 @@ class AuthService:
             return None
 
         (
-            user_id, username, email_stored, stored_hash, salt_b64, role,
-            workspace_uuid, totp_enabled, totp_confirmed
+            user_id,
+            username,
+            email_stored,
+            stored_hash,
+            salt_b64,
+            role,
+            workspace_uuid,
+            totp_enabled,
+            totp_confirmed,
+            previous_last_login,
+            avatar_path,
         ) = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
@@ -458,6 +496,10 @@ class AuthService:
                 UPDATE users SET last_login = CURRENT_TIMESTAMP
                 WHERE id = ?
             ''', (user_id,))
+            cursor.execute(
+                "INSERT INTO login_events (user_id) VALUES (?)",
+                (user_id,),
+            )
             self.conn.commit()
             logger.info("AuthService: authentification reussie pour %s (role=%s)", email, role)
 
@@ -469,13 +511,32 @@ class AuthService:
                 'workspace_uuid': workspace_uuid,
                 'totp_enabled': bool(totp_enabled),
                 'totp_confirmed': bool(totp_confirmed),
-                'salt': salt
+                'salt': salt,
+                'last_login_previous': previous_last_login,
+                'last_login': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
+                'login_count_today': self._get_login_count_today(user_id),
+                'avatar_path': avatar_path,
             }
 
         logger.warning("AuthService: authentification echouee, mauvais mot de passe pour %s", email)
         if enforce_delay:
             time.sleep(self.AUTH_FAILURE_DELAY)
         return None
+
+    def _get_login_count_today(self, user_id: int) -> int:
+        """Retourne le nombre de connexions réussies de l'utilisateur aujourd'hui."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            '''
+            SELECT COUNT(*)
+            FROM login_events
+            WHERE user_id = ?
+              AND date(login_at, 'localtime') = date('now', 'localtime')
+            ''',
+            (user_id,),
+        )
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
 
     def update_user_email(self, user_id: int, new_email: str) -> bool:
         """Met à jour l'email d'un utilisateur (post-migration).
@@ -515,6 +576,47 @@ class AuthService:
             return True
         except Exception:
             logger.exception("AuthService: erreur lors de la mise a jour email")
+            return False
+
+    def update_username(self, user_id: int, new_username: str) -> bool:
+        """Met à jour le nom affiché/utilisateur d'un compte."""
+        cleaned = new_username.strip()
+        if len(cleaned) < 3:
+            logger.warning("AuthService: username trop court")
+            return False
+
+        cursor = self.conn.cursor()
+        cursor.execute(
+            "SELECT COUNT(*) FROM users WHERE username = ? AND id != ?",
+            (cleaned, user_id),
+        )
+        if cursor.fetchone()[0] > 0:
+            logger.warning("AuthService: username deja utilise: %s", cleaned)
+            return False
+
+        try:
+            cursor.execute(
+                "UPDATE users SET username = ? WHERE id = ?",
+                (cleaned, user_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception:
+            logger.exception("AuthService: erreur lors de la mise a jour username")
+            return False
+
+    def update_avatar_path(self, user_id: int, avatar_path: str | None) -> bool:
+        """Met à jour le chemin d'avatar d'un utilisateur."""
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE users SET avatar_path = ? WHERE id = ?",
+                (avatar_path, user_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except Exception:
+            logger.exception("AuthService: erreur lors de la mise a jour avatar")
             return False
 
     def setup_2fa(self, user_id: int, secret_encrypted: str, backup_codes_encrypted: str) -> bool:

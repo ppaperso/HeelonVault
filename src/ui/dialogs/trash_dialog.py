@@ -11,7 +11,7 @@ from src.services.password_service import PasswordService
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # noqa: E402
 
 logger = logging.getLogger(__name__)
 

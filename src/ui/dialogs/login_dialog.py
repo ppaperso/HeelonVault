@@ -8,7 +8,7 @@ from src.services.login_attempt_tracker import LoginAttemptTracker
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, GLib, Gtk  # noqa: E402
 
 
 class LoginDialog(Adw.Window):
@@ -156,7 +156,7 @@ class LoginDialog(Adw.Window):
                 self.show_error(_("⏳ Veuillez patienter %ss avant de réessayer") % remaining)
             return True  # Continuer le timer
 
-    def on_login_clicked(self, button):
+    def on_login_clicked(self, _button):
         """Callback du bouton de connexion.
 
         Authentifie l'utilisateur et appelle le callback si succès.

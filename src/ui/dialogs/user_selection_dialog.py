@@ -7,7 +7,7 @@ from src.version import __app_display_name__
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # noqa: E402
 
 
 class UserSelectionDialog(Adw.ApplicationWindow):
@@ -110,10 +110,15 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             name_label.set_css_classes(['title-4'])
             name_box.append(name_label)
 
+            badges_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+
             if role == 'admin':
                 admin_label = Gtk.Label(label=_("Admin"))
                 admin_label.set_css_classes(['caption', 'accent'])
-                name_box.append(admin_label)
+                badges_box.append(admin_label)
+
+            if badges_box.get_first_child() is not None:
+                name_box.append(badges_box)
 
             info_box.append(name_box)
 
@@ -134,7 +139,7 @@ class UserSelectionDialog(Adw.ApplicationWindow):
             row.set_child(user_box)
             self.users_listbox.append(row)
 
-    def on_user_selected(self, listbox, row):
+    def on_user_selected(self, _listbox, row):
         """Callback quand un utilisateur est sélectionné.
 
         Ouvre le dialogue de connexion pour demander le mot de passe.

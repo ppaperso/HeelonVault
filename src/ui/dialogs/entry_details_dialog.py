@@ -12,7 +12,7 @@ from src.ui.notifications import toast as show_toast
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -197,7 +197,7 @@ class EntryDetailsDialog(Adw.Window):
         try:
             clipboard.store_finish(result)
         except Exception as e:
-            logger.debug(f"Erreur lors du stockage dans le presse-papiers : {e}")
+            logger.debug("Erreur lors du stockage dans le presse-papiers : %s", e)
 
     def _open_url(self, url):
         import subprocess

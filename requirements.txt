@@ -3,3 +3,6 @@ cryptography>=41.0.0
 pyotp>=2.8.0
 qrcode[pil]>=7.4.0
 validators>=0.20.0
+# Qualité statique : stubs GI pour Pylance/Pylint (sans masquer les erreurs).
+PyGObject-stubs>=2.13.0
+pylint>=3.2.0

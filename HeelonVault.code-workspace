@@ -6,7 +6,7 @@
         }
     ],
     "settings": {
-        "python.defaultInterpreterPath": "./venv-dev/bin/python",
+        "python.defaultInterpreterPath": "${workspaceFolder}/venv-dev/bin/python3",
         "files.exclude": {
             "**/__pycache__": true,
             "**/.git": true,

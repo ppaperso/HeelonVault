@@ -42,6 +42,8 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "ruff>=0.1.0",
+    "pylint>=3.2.0",
+    "PyGObject-stubs>=2.13.0",
     "pytest>=7.0.0",
     "pytest-cov>=4.0.0",
     "bandit>=1.7.0",
@@ -149,3 +151,34 @@ skips = ["B101", "B601"]  # assert_used, paramiko_calls
 
 [tool.bandit.assert_used]
 skips = ["*/test_*.py"]
+
+[tool.pylint.main]
+py-version = "3.10"
+jobs = 0
+persistent = true
+
+[tool.pylint.messages_control]
+enable = [
+    "use-symbolic-message-instead",
+]
+disable = [
+    "missing-module-docstring",
+    "missing-class-docstring",
+    "missing-function-docstring",
+    "too-few-public-methods",
+]
+
+[tool.pylint.format]
+max-line-length = 100
+
+[tool.pylint.typecheck]
+extension-pkg-allow-list = ["gi"]
+generated-members = [
+    "gi.repository.*",
+    "Gtk.*",
+    "Adw.*",
+    "Gdk.*",
+    "Gio.*",
+    "GLib.*",
+    "GdkPixbuf.*",
+]

@@ -85,7 +85,7 @@ class PasswordService:
     def list_trash(self) -> list[PasswordEntry]:
         """Liste les entrées dans la corbeille."""
         records = self.repository.list_trash()
-        return [self._decrypt_record(r) for r in records]
+        return [self._record_to_entry(record) for record in records]
 
     def empty_trash(self) -> int:
         """Vide complètement la corbeille. Retourne le nombre d'entrées supprimées."""
@@ -115,7 +115,11 @@ class PasswordService:
             try:
                 password = self.crypto.decrypt(record.password_data)
             except Exception as e:
-                logger.debug(f"Impossible de déchiffrer l'entrée {record.id} : {e}")
+                logger.debug(
+                    "Impossible de déchiffrer l'entrée %s : %s",
+                    record.id,
+                    e,
+                )
                 continue
             pwd_hash = hashlib.sha256(password.encode()).hexdigest()
             duplicates.setdefault(pwd_hash, []).append(record.id or 0)

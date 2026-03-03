@@ -12,7 +12,7 @@ from .password_generator_dialog import PasswordGeneratorDialog
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gtk  # noqa: E402
 
 
 def split_tags(text: str) -> list[str]:
@@ -185,14 +185,14 @@ class AddEditDialog(Adw.Window):
         box.append(entry)
         return box, entry
 
-    def on_generate_clicked(self, button):
+    def on_generate_clicked(self, _button):
         dialog = PasswordGeneratorDialog(self, self.set_generated_password)
         dialog.present()
 
     def set_generated_password(self, password: str):
         self.password_entry.set_text(password)
 
-    def on_save_clicked(self, button):
+    def on_save_clicked(self, _button):
         title = self.title_entry.get_text()
         username = self.username_entry.get_text()
         password = self.password_entry.get_text()

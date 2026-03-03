@@ -16,7 +16,7 @@ import gi  # type: ignore[import]
 from src.i18n import _
 
 gi.require_version("Adw", "1")
-from gi.repository import Adw  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -32,7 +32,7 @@ def toast(parent, message: str, *, timeout: int = 3) -> bool:
         try:
             toast_obj.set_timeout(timeout)
         except Exception as e:
-            logger.debug(f"Impossible de définir le timeout du toast : {e}")
+            logger.debug("Impossible de définir le timeout du toast : %s", e)
         overlay.add_toast(toast_obj)
         return True
     except Exception as exc:

@@ -13,7 +13,7 @@ from .helpers import present_alert
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
-from gi.repository import Adw, Gio, Gtk  # type: ignore[attr-defined]  # noqa: E402
+from gi.repository import Adw, Gio, Gtk  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -173,7 +173,7 @@ class ImportCSVDialog(Adw.Window):
         main_box.append(content)
         self.set_content(main_box)
 
-    def on_select_file_clicked(self, button):
+    def on_select_file_clicked(self, _button):
         """Ouvre le sélecteur de fichier"""
         file_dialog = Gtk.FileDialog()
         file_dialog.set_title(_("Sélectionner un fichier CSV"))
@@ -208,7 +208,7 @@ class ImportCSVDialog(Adw.Window):
                 # Afficher un aperçu
                 self.show_preview()
         except Exception as e:
-            logger.error(f"Erreur lors de la sélection du fichier: {e}")
+            logger.error("Erreur lors de la sélection du fichier: %s", e)
 
     def show_preview(self):
         """Affiche un aperçu du fichier"""
@@ -285,7 +285,11 @@ class ImportCSVDialog(Adw.Window):
                     self.password_service.create_entry(password_entry)
                     saved_count += 1
                 except Exception as e:
-                    logger.error(f"Erreur lors de la sauvegarde de l'entrée {entry['name']}: {e}")
+                    logger.error(
+                        "Erreur lors de la sauvegarde de l'entrée %s: %s",
+                        entry["name"],
+                        e,
+                    )
                     failed_count += 1
 
             # Afficher le résumé

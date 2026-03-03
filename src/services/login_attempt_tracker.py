@@ -9,8 +9,10 @@ Ce service gère :
 """
 
 import logging
+import json
 import time
 from dataclasses import dataclass, field
+from pathlib import Path
 
 # Configuration du logging
 logger = logging.getLogger(__name__)
@@ -52,11 +54,88 @@ class LoginAttemptTracker:
     GLOBAL_MAX_ATTEMPTS_PER_MINUTE = 5
     GLOBAL_MAX_ATTEMPTS_PER_HOUR = 30
 
-    def __init__(self):
-        """Initialise le tracker."""
+    def __init__(self, state_file: Path | None = None):
+        """Initialise le tracker.
+
+        Args:
+            state_file: Fichier JSON de persistance des tentatives (optionnel)
+        """
         self._attempts: dict[str, LoginAttemptInfo] = {}
         self._global_tracker = GlobalAttemptTracker()
+        self._state_file = state_file
+        self._load_state()
         logger.info("Service de protection anti-brute force initialisé (avec rate limiting global)")
+
+    def _load_state(self):
+        """Charge l'état persistant des tentatives depuis le disque."""
+        if not self._state_file or not self._state_file.exists():
+            return
+
+        try:
+            payload = json.loads(self._state_file.read_text(encoding="utf-8"))
+            attempts: dict[str, LoginAttemptInfo] = {}
+
+            for identifier, raw_info in payload.get("attempts", {}).items():
+                attempts[identifier] = LoginAttemptInfo(
+                    failed_attempts=int(raw_info.get("failed_attempts", 0)),
+                    last_attempt_time=float(raw_info.get("last_attempt_time", 0.0)),
+                    lockout_until=(
+                        float(raw_info["lockout_until"])
+                        if raw_info.get("lockout_until") is not None
+                        else None
+                    ),
+                )
+
+            global_data = payload.get("global", {})
+            global_tracker = GlobalAttemptTracker(
+                attempts_minute=[float(v) for v in global_data.get("attempts_minute", [])],
+                attempts_hour=[float(v) for v in global_data.get("attempts_hour", [])],
+            )
+
+            self._attempts = attempts
+            self._global_tracker = global_tracker
+
+            now = time.time()
+            self._clean_old_global_attempts(now)
+            expired = [
+                identifier
+                for identifier, info in self._attempts.items()
+                if info.lockout_until and info.lockout_until <= now
+            ]
+            for identifier in expired:
+                del self._attempts[identifier]
+
+        except Exception as exc:
+            logger.warning("Impossible de charger l'état anti-brute force: %s", exc)
+
+    def _save_state(self):
+        """Sauvegarde l'état persistant des tentatives sur le disque."""
+        if not self._state_file:
+            return
+
+        try:
+            self._state_file.parent.mkdir(parents=True, exist_ok=True)
+            payload = {
+                "attempts": {
+                    identifier: {
+                        "failed_attempts": info.failed_attempts,
+                        "last_attempt_time": info.last_attempt_time,
+                        "lockout_until": info.lockout_until,
+                    }
+                    for identifier, info in self._attempts.items()
+                },
+                "global": {
+                    "attempts_minute": self._global_tracker.attempts_minute,
+                    "attempts_hour": self._global_tracker.attempts_hour,
+                },
+            }
+            self._state_file.write_text(
+                json.dumps(payload, ensure_ascii=False),
+                encoding="utf-8",
+            )
+            self._state_file.chmod(0o600)
+        except Exception as exc:
+            logger.warning("Impossible de sauvegarder l'état anti-brute force: %s", exc)
 
     def _clean_old_global_attempts(self, current_time: float):
         """Nettoie les anciennes tentatives globales.
@@ -76,6 +155,7 @@ class LoginAttemptTracker:
         self._global_tracker.attempts_hour = [
             t for t in self._global_tracker.attempts_hour if t > one_hour_ago
         ]
+        self._save_state()
 
     def check_global_rate_limit(self) -> tuple[bool, int | None]:
         """Vérifie le rate limiting global (tous utilisateurs).
@@ -91,16 +171,19 @@ class LoginAttemptTracker:
         # Vérifier la limite par minute
         if len(self._global_tracker.attempts_minute) >= self.GLOBAL_MAX_ATTEMPTS_PER_MINUTE:
             logger.warning(
-                f"⚠️  Rate limiting global: trop de tentatives par minute "
-                f"({len(self._global_tracker.attempts_minute)}/{self.GLOBAL_MAX_ATTEMPTS_PER_MINUTE})"
+                "⚠️  Rate limiting global: trop de tentatives par minute "
+                "(%d/%d)",
+                len(self._global_tracker.attempts_minute),
+                self.GLOBAL_MAX_ATTEMPTS_PER_MINUTE,
             )
             return (False, 60)
 
         # Vérifier la limite par heure
         if len(self._global_tracker.attempts_hour) >= self.GLOBAL_MAX_ATTEMPTS_PER_HOUR:
             logger.warning(
-                f"🔒 Rate limiting global: trop de tentatives par heure "
-                f"({len(self._global_tracker.attempts_hour)}/{self.GLOBAL_MAX_ATTEMPTS_PER_HOUR})"
+                "🔒 Rate limiting global: trop de tentatives par heure (%d/%d)",
+                len(self._global_tracker.attempts_hour),
+                self.GLOBAL_MAX_ATTEMPTS_PER_HOUR,
             )
             return (False, 3600)
 
@@ -111,6 +194,7 @@ class LoginAttemptTracker:
         current_time = time.time()
         self._global_tracker.attempts_minute.append(current_time)
         self._global_tracker.attempts_hour.append(current_time)
+        self._save_state()
 
     def check_can_attempt(self, identifier: str) -> tuple[bool, int | None]:
         """Vérifie si une tentative de connexion est autorisée.
@@ -139,14 +223,15 @@ class LoginAttemptTracker:
         if info.lockout_until and current_time < info.lockout_until:
             remaining = int(info.lockout_until - current_time)
             logger.warning(
-                f"Tentative de connexion bloquée pour '{identifier[:16]}...' "
-                f"({remaining}s restantes)"
+                "Tentative de connexion bloquée pour '%s...' (%ss restantes)",
+                identifier[:16],
+                remaining,
             )
             return (False, remaining)
 
         # Si le verrouillage est expiré, réinitialiser
         if info.lockout_until and current_time >= info.lockout_until:
-            logger.info(f"Fin du verrouillage pour '{identifier[:16]}...'")
+            logger.info("Fin du verrouillage pour '%s...'", identifier[:16])
             self._reset_attempts(identifier)
             return (True, None)
 
@@ -158,8 +243,9 @@ class LoginAttemptTracker:
             if time_since_last < delay:
                 remaining = int(delay - time_since_last)
                 logger.debug(
-                    f"Délai anti-brute force actif pour '{identifier[:16]}...' "
-                    f"({remaining}s restantes)"
+                    "Délai anti-brute force actif pour '%s...' (%ss restantes)",
+                    identifier[:16],
+                    remaining,
                 )
                 return (False, remaining)
 
@@ -186,18 +272,22 @@ class LoginAttemptTracker:
         # Journalisation (masquer une partie de l'identifiant pour privacy)
         masked_id = identifier[:16] + "..." if len(identifier) > 16 else identifier
         logger.warning(
-            f"Tentative de connexion échouée pour '{masked_id}' "
-            f"(tentative {info.failed_attempts}/{self.MAX_ATTEMPTS_BEFORE_LOCKOUT})"
+            "Tentative de connexion échouée pour '%s' (tentative %d/%d)",
+            masked_id,
+            info.failed_attempts,
+            self.MAX_ATTEMPTS_BEFORE_LOCKOUT,
         )
 
         # Vérifier si verrouillage nécessaire
         if info.failed_attempts >= self.MAX_ATTEMPTS_BEFORE_LOCKOUT:
             info.lockout_until = current_time + self.LOCKOUT_DURATION_SECONDS
             logger.error(
-                f"🔒 VERROUILLAGE: Compte '{masked_id}' verrouillé pendant "
-                f"{self.LOCKOUT_DURATION_SECONDS // 60} minutes "
-                f"(trop de tentatives échouées)"
+                "🔒 VERROUILLAGE: Compte '%s' verrouillé pendant %d minutes "
+                "(trop de tentatives échouées)",
+                masked_id,
+                self.LOCKOUT_DURATION_SECONDS // 60,
             )
+        self._save_state()
 
     def record_successful_attempt(self, identifier: str):
         """Enregistre une tentative de connexion réussie.
@@ -213,12 +303,14 @@ class LoginAttemptTracker:
             masked_id = identifier[:16] + "..." if len(identifier) > 16 else identifier
             if attempts > 0:
                 logger.info(
-                    f"✅ Connexion réussie pour '{masked_id}' "
-                    f"(après {attempts} tentative(s) échouée(s))"
+                    "✅ Connexion réussie pour '%s' (après %d tentative(s) échouée(s))",
+                    masked_id,
+                    attempts,
                 )
             self._reset_attempts(identifier)
         else:
             logger.info("✅ Connexion réussie")
+        self._save_state()
 
     def _calculate_delay(self, failed_attempts: int) -> float:
         """Calcule le délai progressif en fonction du nombre d'échecs.
@@ -243,6 +335,7 @@ class LoginAttemptTracker:
         if identifier in self._attempts:
             del self._attempts[identifier]
             logger.debug("Compteur de tentatives réinitialisé")
+            self._save_state()
 
     def get_attempt_info(self, identifier: str) -> LoginAttemptInfo | None:
         """Récupère les informations de tentatives pour un utilisateur.
@@ -260,7 +353,11 @@ class LoginAttemptTracker:
         count = len(self._attempts)
         self._attempts.clear()
         self._global_tracker = GlobalAttemptTracker()
-        logger.info(f"Tous les compteurs de tentatives réinitialisés ({count} utilisateurs)")
+        logger.info(
+            "Tous les compteurs de tentatives réinitialisés (%d utilisateurs)",
+            count,
+        )
+        self._save_state()
 
     def get_global_stats(self) -> dict[str, int]:
         """Récupère les statistiques globales.

@@ -71,10 +71,10 @@ class TOTPService:
                 try:
                     machine_id = path.read_text().strip()
                     if machine_id:
-                        logger.debug(f"Machine ID trouvé dans {path}")
+                        logger.debug("Machine ID trouvé dans %s", path)
                         return machine_id
                 except Exception as e:
-                    logger.warning(f"Erreur lecture {path}: {e}")
+                    logger.warning("Erreur lecture %s: %s", path, e)
 
         # Fallback pour développement : utiliser un ID persistant local
         fallback_path = self.data_dir / ".machine_id_fallback"
@@ -86,7 +86,7 @@ class TOTPService:
             # Générer un ID unique et le persister
             machine_id = secrets.token_hex(16)
             fallback_path.write_text(machine_id)
-            logger.warning(f"Machine-id fallback généré : {machine_id}")
+            logger.warning("Machine-id fallback généré : %s", machine_id)
             return machine_id
 
     def _get_or_create_system_key(self) -> bytes:
@@ -108,7 +108,7 @@ class TOTPService:
                 pepper = app_key_path.read_bytes()
                 logger.debug(".app_key trouvé, dérivation de la clé système")
             except Exception as e:
-                logger.error(f"Erreur lecture .app_key : {e}")
+                logger.error("Erreur lecture .app_key : %s", e)
                 raise
         else:
             # Générer un nouveau pepper
@@ -119,7 +119,7 @@ class TOTPService:
                 app_key_path.chmod(0o600)
                 logger.info(".app_key créé avec permissions 600")
             except Exception as e:
-                logger.error(f"Erreur création .app_key : {e}")
+                logger.error("Erreur création .app_key : %s", e)
                 raise
 
         # Dériver la clé système avec PBKDF2
@@ -166,7 +166,7 @@ class TOTPService:
             logger.debug("Secret TOTP chiffré")
             return result
         except Exception as e:
-            logger.error(f"Erreur chiffrement secret TOTP : {e}")
+            logger.error("Erreur chiffrement secret TOTP : %s", e)
             raise
 
     def decrypt_secret(self, encrypted_secret: str) -> str:
@@ -192,7 +192,7 @@ class TOTPService:
             logger.debug("Secret TOTP déchiffré")
             return secret
         except Exception as e:
-            logger.error(f"Erreur déchiffrement secret TOTP : {e}")
+            logger.error("Erreur déchiffrement secret TOTP : %s", e)
             raise ValueError("Impossible de déchiffrer le secret TOTP") from e
 
     def generate_qr_code(self, secret: str, email: str) -> bytes:
@@ -225,10 +225,10 @@ class TOTPService:
             buffer = BytesIO()
             img.save(buffer, format="PNG")
             qr_bytes = buffer.getvalue()
-            logger.info(f"QR code généré pour {email}")
+            logger.info("QR code généré pour %s", email)
             return qr_bytes
         except Exception as e:
-            logger.error(f"Erreur génération QR code : {e}")
+            logger.error("Erreur génération QR code : %s", e)
             raise
 
     def verify_totp(self, secret: str, code: str, window: int = 1) -> bool:
@@ -245,10 +245,13 @@ class TOTPService:
         try:
             totp = pyotp.TOTP(secret)
             is_valid = totp.verify(code, valid_window=window)
-            logger.debug(f"Vérification TOTP : {'✅ valide' if is_valid else '❌ invalide'}")
+            logger.debug(
+                "Vérification TOTP : %s",
+                "✅ valide" if is_valid else "❌ invalide",
+            )
             return is_valid
         except Exception as e:
-            logger.error(f"Erreur vérification TOTP : {e}")
+            logger.error("Erreur vérification TOTP : %s", e)
             return False
 
     def generate_backup_codes(self) -> list[str]:
@@ -266,7 +269,7 @@ class TOTPService:
             code = f"{code_part1}-{code_part2}-{code_part3}"
             codes.append(code)
 
-        logger.info(f"{self.BACKUP_CODES_COUNT} codes de secours générés")
+        logger.info("%d codes de secours générés", self.BACKUP_CODES_COUNT)
         return codes
 
     def hash_backup_code(self, code: str) -> str:
@@ -318,7 +321,7 @@ class TOTPService:
         """
         hashed_codes = [self.hash_backup_code(code) for code in codes]
         result = json.dumps(hashed_codes)
-        logger.debug(f"{len(hashed_codes)} codes de secours hashés")
+        logger.debug("%d codes de secours hashés", len(hashed_codes))
         return result
 
     def decrypt_backup_codes(self, encrypted_codes: str) -> list[str]:
@@ -332,10 +335,10 @@ class TOTPService:
         """
         try:
             hashed_codes = json.loads(encrypted_codes)
-            logger.debug(f"{len(hashed_codes)} codes de secours chargés")
+            logger.debug("%d codes de secours chargés", len(hashed_codes))
             return hashed_codes
         except Exception as e:
-            logger.error(f"Erreur déchiffrement codes de secours : {e}")
+            logger.error("Erreur déchiffrement codes de secours : %s", e)
             return []
 
     def mark_backup_code_used(self, encrypted_codes: str, used_hash: str) -> str:
@@ -352,10 +355,13 @@ class TOTPService:
             hashed_codes = json.loads(encrypted_codes)
             if used_hash in hashed_codes:
                 hashed_codes.remove(used_hash)
-                logger.info(f"Code de secours marqué comme utilisé (reste {len(hashed_codes)})")
+                logger.info(
+                    "Code de secours marqué comme utilisé (reste %d)",
+                    len(hashed_codes),
+                )
             return json.dumps(hashed_codes)
         except Exception as e:
-            logger.error(f"Erreur marquage code utilisé : {e}")
+            logger.error("Erreur marquage code utilisé : %s", e)
             return encrypted_codes
 
     def get_current_totp(self, secret: str) -> str:

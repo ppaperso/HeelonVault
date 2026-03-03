@@ -240,6 +240,28 @@ class PasswordRepository:
             "Entrée %s mise à jour (mdp changé=%s)", record.id, password_changed
         )
 
+    def update_encrypted_payload(
+        self,
+        entry_id: int,
+        password_data: dict[str, str],
+        notes_data: dict[str, str] | None,
+    ) -> None:
+        """Met à jour uniquement les blobs chiffrés d'une entrée."""
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE passwords
+            SET password_data = ?, notes = ?
+            WHERE id = ?
+            """,
+            (
+                json.dumps(password_data),
+                json.dumps(notes_data) if notes_data else None,
+                entry_id,
+            ),
+        )
+        self._has_changes = True
+
     def delete_entry(self, entry_id: int) -> None:
         """Déplace une entrée vers la corbeille (soft delete)."""
         cursor = self.conn.cursor()

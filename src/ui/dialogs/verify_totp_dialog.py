@@ -188,7 +188,7 @@ class VerifyTOTPDialog(Adw.Window):
 
         return box
 
-    def _on_switch_mode(self, link_button):
+    def _on_switch_mode(self, _link_button):
         """Change entre code TOTP et code de secours."""
         current_page = self.stack.get_visible_child_name()
 
@@ -207,7 +207,7 @@ class VerifyTOTPDialog(Adw.Window):
         self._on_code_changed(None)
         return True
 
-    def _on_code_changed(self, entry):
+    def _on_code_changed(self, _entry):
         """Appelé quand le code change."""
         if self.use_backup_code:
             code = self.backup_entry.get_text().strip()
@@ -218,7 +218,7 @@ class VerifyTOTPDialog(Adw.Window):
             # Code TOTP : 6 chiffres
             self.verify_button.set_sensitive(len(code) == 6 and code.isdigit())
 
-    def _on_verify_clicked(self, button):
+    def _on_verify_clicked(self, _button):
         """Vérifie le code saisi."""
         try:
             # Récupérer le secret TOTP chiffré

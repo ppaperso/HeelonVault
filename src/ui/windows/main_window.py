@@ -3,21 +3,23 @@
 from __future__ import annotations
 
 import logging
+from datetime import datetime
+from pathlib import Path
 
 import gi  # type: ignore[import]
 
-from src.config.environment import is_dev_mode
 from src.i18n import _
-from src.version import __app_name__
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
 from src.ui.dialogs.add_edit_dialog import AddEditDialog
 from src.ui.dialogs.entry_details_dialog import EntryDetailsDialog
 from src.ui.dialogs.helpers import present_alert
+from src.version import __app_name__, __copyright__, __version__
 
 gi.require_version("Gtk", "4.0")
 gi.require_version("Adw", "1")
-from gi.repository import Adw, Gdk, Gio, GLib, Gtk  # type: ignore[attr-defined]  # noqa: E402
+gi.require_version("Pango", "1.0")
+from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -73,96 +75,134 @@ class PasswordCard(Gtk.FlowBoxChild):
         self.is_duplicate = is_duplicate
 
         frame = Gtk.Frame()
-        frame.set_css_classes(["card"])
+        frame.set_css_classes(["card", "password-card"])
 
-        # Container vertical : header + actions
-        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
-        main_box.set_margin_start(12)
-        main_box.set_margin_end(12)
-        main_box.set_margin_top(12)
-        main_box.set_margin_bottom(12)
-        main_box.set_size_request(200, -1)
-
-        # Header : Icône + Titre/Catégorie + Badges
-        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        header_box.set_hexpand(True)
-
-        icon_name = self._get_icon_for_entry(entry.category, entry.url)
-        icon = Gtk.Image.new_from_icon_name(icon_name)
-        icon.set_pixel_size(28)
-        header_box.append(icon)
-
-        # Titre et catégorie
-        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        title_box.set_hexpand(True)
-
-        strength_score, strength_label, strength_color = analyze_password_strength(
+        strength_score, strength_label, strength_css = analyze_password_strength(
             entry.password
         )
 
-        title_label = Gtk.Label(label=entry.title, xalign=0)
-        title_label.set_css_classes(["heading", strength_color])
-        title_label.set_ellipsize(3)
-        title_label.set_max_width_chars(18)
-        # Tooltip avec toutes les infos
-        tooltip_parts = [_("Mot de passe %s") % strength_label]
+        # ── Container principal ──────────────────────────────────────────
+        main_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        main_box.set_size_request(220, -1)
+
+        # ── Bande de force en haut de la card ────────────────────────────
+        strength_bar = Gtk.Box()
+        strength_bar.set_css_classes(["card-strength-bar", f"card-strength-{strength_css}"])
+        strength_bar.set_size_request(-1, 4)
+        main_box.append(strength_bar)
+
+        # ── Contenu interne ──────────────────────────────────────────────
+        inner = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        inner.set_margin_start(12)
+        inner.set_margin_end(12)
+        inner.set_margin_top(10)
+        inner.set_margin_bottom(8)
+
+        # ── Header : icône dans badge + titres + alertes ─────────────────
+        header_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        header_box.set_hexpand(True)
+
+        # Icône dans un conteneur circulaire teinté
+        icon_name = self._get_icon_for_entry(entry.category, entry.url)
+        icon_container = Gtk.Box()
+        icon_container.set_css_classes(["card-icon-badge", f"card-icon-badge-{strength_css}"])
+        icon_container.set_valign(Gtk.Align.CENTER)
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.set_pixel_size(18)
+        icon_container.append(icon)
+        header_box.append(icon_container)
+
+        # Titre + catégorie
+        title_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+        title_box.set_hexpand(True)
+
+        tooltip_parts = [_("%s") % strength_label]
         if entry.username:
-            tooltip_parts.append(_("Utilisateur : %s") % entry.username)
+            tooltip_parts.append(_("User : %s") % entry.username)
         if entry.url:
             tooltip_parts.append(_("URL : %s") % entry.url)
         if entry.tags:
             tooltip_parts.append(_("Tags : %s") % ", ".join(entry.tags))
+
+        title_label = Gtk.Label(label=entry.title, xalign=0)
+        title_label.set_css_classes(["card-title"])
+        title_label.set_ellipsize(Pango.EllipsizeMode.END)
+        title_label.set_max_width_chars(20)
         title_label.set_tooltip_text("\n".join(tooltip_parts))
         title_box.append(title_label)
 
         if entry.category:
             cat_label = Gtk.Label(label=entry.category, xalign=0)
-            cat_label.set_css_classes(["caption", "dim-label"])
-            cat_label.set_ellipsize(3)
-            cat_label.set_max_width_chars(18)
+            cat_label.set_css_classes(["card-category"])
+            cat_label.set_ellipsize(Pango.EllipsizeMode.END)
+            cat_label.set_max_width_chars(22)
             title_box.append(cat_label)
 
         header_box.append(title_box)
 
-        # Badges et indicateur de force
-        badges_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
-        badges_box.set_valign(Gtk.Align.START)
+        # Alertes (duplicata / âge)
+        if is_duplicate or (password_age is not None and password_age > 90):
+            alerts_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
+            alerts_box.set_valign(Gtk.Align.START)
+            if is_duplicate:
+                dup = Gtk.Label(label="⚠")
+                dup.set_css_classes(["card-alert-badge", "card-alert-warning"])
+                dup.set_tooltip_text(_("Mot de passe dupliqué"))
+                alerts_box.append(dup)
+            if password_age is not None and password_age > 90:
+                age_cls = "card-alert-error" if password_age > 180 else "card-alert-warning"
+                age_badge = Gtk.Label(label=f"{password_age}d")
+                age_badge.set_css_classes(["card-alert-badge", age_cls])
+                age_badge.set_tooltip_text(
+                    _("Expiré depuis %s jours – à renouveler") % password_age
+                )
+                alerts_box.append(age_badge)
+            header_box.append(alerts_box)
 
-        if is_duplicate:
-            dup_badge = Gtk.Label(label="⚠")
-            dup_badge.set_css_classes(["warning"])
-            dup_badge.set_tooltip_text(_("Mot de passe dupliqué"))
-            badges_box.append(dup_badge)
+        inner.append(header_box)
 
-        if password_age is not None and password_age > 90:
-            renew_badge = Gtk.Label(label="🔄")
-            renew_badge.set_tooltip_text(
-                _("Mot de passe ancien (%s jours)") % password_age
-            )
-            renew_badge.set_css_classes(["error" if password_age > 180 else "warning"])
-            badges_box.append(renew_badge)
+        # ── Ligne identifiant (username ou domaine URL) ───────────────────
+        hint_text = None
+        if entry.username:
+            hint_text = entry.username
+        elif entry.url:
+            # Extraire juste le domaine
+            raw = entry.url.split("//")[-1].split("/")[0].replace("www.", "")
+            hint_text = raw
 
-        if badges_box.get_first_child() is not None:
-            header_box.append(badges_box)
+        if hint_text:
+            hint_label = Gtk.Label(label=hint_text, xalign=0)
+            hint_label.set_css_classes(["card-hint"])
+            hint_label.set_ellipsize(Pango.EllipsizeMode.END)
+            hint_label.set_max_width_chars(26)
+            inner.append(hint_label)
 
-        main_box.append(header_box)
+        # ── Separateur fin ────────────────────────────────────────────────
+        sep = Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL)
+        sep.set_css_classes(["card-sep"])
+        inner.append(sep)
 
-        # Barre d'actions horizontale
-        actions_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
-        actions_box.set_halign(Gtk.Align.START)
+        # ── Barre d'actions + tag pills ───────────────────────────────────
+        bottom_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        bottom_row.set_hexpand(True)
+
+        # Groupe copie (gauche)
+        copy_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        copy_box.set_valign(Gtk.Align.CENTER)
+        copy_box.set_hexpand(True)
 
         if entry.username:
-            actions_box.append(
+            copy_box.append(
                 self._build_compact_action_button(
                     "avatar-default-symbolic",
-                    _("Copier le nom d'utilisateur"),
+                    _("Copier l'identifiant"),
                     lambda _btn: self._copy_to_clipboard(
-                        entry.username, _("Nom d'utilisateur copié")
+                        entry.username, _("Identifiant copié")
                     ),
                 )
             )
 
-        actions_box.append(
+        copy_box.append(
             self._build_compact_action_button(
                 "dialog-password-symbolic",
                 _("Copier le mot de passe"),
@@ -173,14 +213,7 @@ class PasswordCard(Gtk.FlowBoxChild):
         )
 
         if entry.url:
-            actions_box.append(
-                self._build_compact_action_button(
-                    "edit-copy-symbolic",
-                    _("Copier l'URL"),
-                    lambda _btn: self._copy_to_clipboard(entry.url, _("URL copiée")),
-                )
-            )
-            actions_box.append(
+            copy_box.append(
                 self._build_compact_action_button(
                     "web-browser-symbolic",
                     _("Ouvrir dans le navigateur"),
@@ -188,18 +221,37 @@ class PasswordCard(Gtk.FlowBoxChild):
                 )
             )
 
-        # Bouton supprimer (mettre à la corbeille)
-        actions_box.append(
-            self._build_compact_action_button(
-                "user-trash-symbolic",
-                _("Mettre à la corbeille"),
-                lambda _btn: self._on_delete_clicked(),
-                is_destructive=True,
-            )
+        bottom_row.append(copy_box)
+
+        # Tag pills (max 2) au centre
+        if entry.tags:
+            tags_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+            tags_box.set_valign(Gtk.Align.CENTER)
+            tags_box.set_margin_start(4)
+            tags_box.set_margin_end(4)
+            for tag in entry.tags[:2]:
+                pill = Gtk.Label(label=f"# {tag}")
+                pill.set_css_classes(["card-tag-pill"])
+                tags_box.append(pill)
+            if len(entry.tags) > 2:
+                more = Gtk.Label(label=f"+{len(entry.tags) - 2}")
+                more.set_css_classes(["card-tag-more"])
+                tags_box.append(more)
+            bottom_row.append(tags_box)
+
+        # Bouton corbeille (droite, isolé)
+        delete_btn = self._build_compact_action_button(
+            "user-trash-symbolic",
+            _("Mettre à la corbeille"),
+            lambda _btn: self._on_delete_clicked(),
+            is_destructive=True,
         )
+        delete_btn.set_css_classes(["flat", "circular", "card-delete-btn"])
+        delete_btn.set_valign(Gtk.Align.CENTER)
+        bottom_row.append(delete_btn)
 
-        main_box.append(actions_box)
-
+        inner.append(bottom_row)
+        main_box.append(inner)
         frame.set_child(main_box)
         self.set_child(frame)
 
@@ -221,7 +273,7 @@ class PasswordCard(Gtk.FlowBoxChild):
         button = Gtk.Button()
         button.set_icon_name(icon_name)
         button.set_tooltip_text(tooltip)
-        button.set_css_classes(["flat", "circular"])
+        button.set_css_classes(["flat", "circular", "card-action-btn"])
         if is_destructive:
             button.add_css_class("destructive-action")
         button.connect("clicked", callback)
@@ -280,11 +332,24 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.current_tag_filter: str | None = None
         self._clipboard_clear_source_id: int | None = None
         self._clipboard_token = 0
+        self.profile_last_login_value: Gtk.Label | None = None
+        self.metric_logins_today_value: Gtk.Label | None = None
+        self.metric_entries_value: Gtk.Label | None = None
+        self.metric_categories_value: Gtk.Label | None = None
+        self.metric_tags_value: Gtk.Label | None = None
+        self.metric_weak_value: Gtk.Label | None = None
+        self.metric_weak_badge: Gtk.Box | None = None
+        self.main_stats_label: Gtk.Label | None = None
+        self.profile_identity_avatar: Adw.Avatar | None = None
+        self.profile_identity_name_label: Gtk.Label | None = None
+        self._category_by_child: dict[Gtk.FlowBoxChild, str] = {}
+        self._tag_by_child: dict[Gtk.FlowBoxChild, str] = {}
 
         self._init_layout()
         self.load_categories()
         self.load_tags()
         self.load_entries()
+        self._refresh_sidebar_metrics()
         logger.info(
             "Fenêtre principale prête pour %s (role=%s)",
             user_info["username"],
@@ -297,7 +362,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def _init_layout(self) -> None:
         display = self.get_display()
         try:
-            if display and (monitor := display.get_monitors()[0]):
+            monitor = display.get_monitors().get_item(0) if display else None
+            if isinstance(monitor, Gdk.Monitor):
                 geometry = monitor.get_geometry()
                 width = int(geometry.width * 0.7)
                 height = int(geometry.height * 0.7)
@@ -315,30 +381,16 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         add_button.connect("clicked", self.on_add_clicked)
         header.pack_start(add_button)
 
-        welcome_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
-        user_icon = Gtk.Image.new_from_icon_name("avatar-default-symbolic")
-        welcome_box.append(user_icon)
-        welcome_label = Gtk.Label(label=_("Bonjour, %s") % self.user_info["username"])
-        welcome_label.set_css_classes(["title-4"])
-        welcome_box.append(welcome_label)
-
-        if self.user_info["role"] == "admin":
-            admin_badge = Gtk.Label(label=_("Admin"))
-            admin_badge.set_css_classes(["caption", "accent"])
-            welcome_box.append(admin_badge)
-
-        if is_dev_mode():
-            dev_badge = Gtk.Label(label=_("🔧 MODE DÉVELOPPEMENT"))
-            dev_badge.set_css_classes(["caption", "warning"])
-            welcome_box.append(dev_badge)
-
-        header.set_title_widget(welcome_box)
+        date_label = Gtk.Label(label=self._get_long_french_date(), xalign=0.5)
+        date_label.set_css_classes(["title-4", "header-date-label"])
+        date_label.set_valign(Gtk.Align.CENTER)
+        header.set_title_widget(date_label)
 
         menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic")
         menu = Gio.Menu()
         menu.append(_("Importer depuis CSV"), "app.import_csv")
         menu.append(_("Corbeille"), "app.open_trash")
-        menu.append(_("Changer mon mot de passe"), "app.change_own_password")
+        menu.append(_("Gérer mon compte"), "app.manage_account")
         if self.user_info["role"] == "admin":
             menu.append(_("Gérer les utilisateurs"), "app.manage_users")
             menu.append(_("Gérer les sauvegardes"), "app.manage_backups")
@@ -359,11 +411,26 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         sidebar = self._build_sidebar()
         paned.set_start_child(sidebar)
         paned.set_resize_start_child(False)
-        paned.set_position(int(self.window_width * 0.3))
+        paned.set_position(int(self.window_width * 0.32))
 
         main_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         main_content.set_hexpand(True)
         main_content.set_vexpand(True)
+
+        content_header = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        content_header.set_margin_start(20)
+        content_header.set_margin_end(20)
+        content_header.set_margin_top(16)
+        content_header.set_margin_bottom(0)
+
+        cards_title = Gtk.Label(label=_("Vos accès sécurisés"), xalign=0)
+        cards_title.set_css_classes(["title-3"])
+        content_header.append(cards_title)
+
+        main_stats_label = Gtk.Label(label="", xalign=0)
+        main_stats_label.set_css_classes(["caption", "dim-label"])
+        content_header.append(main_stats_label)
+        self.main_stats_label = main_stats_label
 
         self.empty_state = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         self.empty_state.set_valign(Gtk.Align.CENTER)
@@ -399,8 +466,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.flowbox.connect("child-activated", self.on_card_activated)
 
         scrolled.set_child(self.flowbox)
+        main_content.append(content_header)
         main_content.append(self.empty_state)
         main_content.append(scrolled)
+        main_content.append(self._build_dashboard_footer())
 
         paned.set_end_child(main_content)
         main_box.append(paned)
@@ -411,25 +480,58 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
     def _build_sidebar(self) -> Gtk.Widget:
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        sidebar.set_size_request(250, -1)
+        sidebar.set_size_request(320, -1)
         sidebar.set_css_classes(["background"])
 
+        sidebar_scroll = Gtk.ScrolledWindow()
+        sidebar_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        sidebar_scroll.set_vexpand(True)
+
+        sidebar_content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        sidebar_content.set_margin_start(12)
+        sidebar_content.set_margin_end(12)
+        sidebar_content.set_margin_top(12)
+        sidebar_content.set_margin_bottom(12)
+
+        branding_header = self._build_sidebar_branding_header()
+        sidebar_content.append(branding_header)
+
+        profile_card = self._build_profile_activity_card()
+        sidebar_content.append(profile_card)
+
         search_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
-        search_box.set_margin_start(12)
-        search_box.set_margin_end(12)
-        search_box.set_margin_top(12)
-        search_box.set_margin_bottom(6)
+        search_box.set_css_classes(["card", "sidebar-card"])
+        search_box.set_spacing(8)
+        search_box.set_margin_start(4)
+        search_box.set_margin_end(4)
+        search_box.set_margin_top(0)
+        search_box.set_margin_bottom(0)
+
+        search_title = Gtk.Label(label=_("Recherche"), xalign=0)
+        search_title.set_css_classes(["heading"])
+        search_title.set_margin_start(12)
+        search_title.set_margin_end(12)
+        search_title.set_margin_top(12)
+        search_box.append(search_title)
+
         search_entry = Gtk.SearchEntry()
         search_entry.set_placeholder_text(_("Rechercher..."))
         search_entry.connect("search-changed", self.on_search_changed)
+        search_entry.set_margin_start(12)
+        search_entry.set_margin_end(12)
         search_box.append(search_entry)
 
-        # Filtres de recherche horizontaux
-        filters_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        filters_box = Gtk.FlowBox()
+        filters_box.set_selection_mode(Gtk.SelectionMode.NONE)
+        filters_box.set_max_children_per_line(3)
+        filters_box.set_min_children_per_line(1)
+        filters_box.set_row_spacing(4)
+        filters_box.set_column_spacing(4)
         filters_box.set_margin_top(6)
-        filters_box.set_halign(Gtk.Align.START)
+        filters_box.set_margin_start(12)
+        filters_box.set_margin_end(12)
+        filters_box.set_margin_bottom(12)
 
-        # Checkboxes compactes
         self.search_filter_title = Gtk.CheckButton(label=_("Titre"))
         self.search_filter_title.set_active(True)
         self.search_filter_title.connect(
@@ -468,20 +570,18 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         filters_box.append(self.search_filter_tags)
 
         search_box.append(filters_box)
-        sidebar.append(search_box)
+        sidebar_content.append(search_box)
 
-        sidebar.append(Gtk.Separator())
-
-        # Section Catégories (sans scroll, toutes visibles)
         self.categories_expander = Adw.ExpanderRow()
         self.categories_expander.set_title(_("Catégories"))
         self.categories_expander.set_expanded(True)
+        self.categories_expander.set_css_classes(["card", "sidebar-expander"])
 
-        # Filtre de recherche pour les catégories
         cat_inner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         cat_inner_box.set_margin_start(12)
         cat_inner_box.set_margin_end(12)
         cat_inner_box.set_margin_top(6)
+        cat_inner_box.set_margin_bottom(8)
 
         self.category_search_entry = Gtk.SearchEntry()
         self.category_search_entry.set_placeholder_text(_("Filtrer les catégories..."))
@@ -490,7 +590,6 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         )
         cat_inner_box.append(self.category_search_entry)
 
-        # FlowBox sans scroll pour afficher toutes les catégories
         self.category_flowbox = Gtk.FlowBox()
         self.category_flowbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.category_flowbox.set_margin_start(6)
@@ -502,20 +601,18 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         cat_inner_box.append(self.category_flowbox)
 
         self.categories_expander.add_row(cat_inner_box)
-        sidebar.append(self.categories_expander)
+        sidebar_content.append(self.categories_expander)
 
-        sidebar.append(Gtk.Separator())
-
-        # Section Tags (avec scroll pour s'adapter à l'espace restant)
         self.tags_expander = Adw.ExpanderRow()
         self.tags_expander.set_title(_("Tags"))
         self.tags_expander.set_expanded(False)
+        self.tags_expander.set_css_classes(["card", "sidebar-expander"])
 
-        # Filtre de recherche pour les tags
         tags_inner_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
         tags_inner_box.set_margin_start(12)
         tags_inner_box.set_margin_end(12)
         tags_inner_box.set_margin_top(6)
+        tags_inner_box.set_margin_bottom(8)
 
         self.tag_search_entry = Gtk.SearchEntry()
         self.tag_search_entry.set_placeholder_text(_("Filtrer les tags..."))
@@ -525,6 +622,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         tag_scroll = Gtk.ScrolledWindow()
         tag_scroll.set_vexpand(True)
         tag_scroll.set_policy(Gtk.PolicyType.NEVER, Gtk.PolicyType.AUTOMATIC)
+        tag_scroll.set_min_content_height(220)
 
         self.tag_flowbox = Gtk.FlowBox()
         self.tag_flowbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -538,9 +636,356 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         tags_inner_box.append(tag_scroll)
         self.tags_expander.add_row(tags_inner_box)
-        sidebar.append(self.tags_expander)
+        sidebar_content.append(self.tags_expander)
+
+        sidebar_scroll.set_child(sidebar_content)
+        sidebar.append(sidebar_scroll)
 
         return sidebar
+
+    def _build_sidebar_branding_header(self) -> Gtk.Widget:
+        """Construit le branding premium (logo + nom produit) en haut de la sidebar."""
+        card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        card.set_css_classes(["card", "sidebar-branding"])
+        card.set_margin_start(4)
+        card.set_margin_end(4)
+
+        root_dir = Path(__file__).resolve().parents[3]
+        logo_path = root_dir / "assets" / "images" / "Logo_Heelonys_transparent.png"
+
+        if logo_path.exists():
+            logo = Gtk.Picture.new_for_filename(str(logo_path))
+            logo.set_content_fit(Gtk.ContentFit.CONTAIN)
+            logo.set_size_request(22, 22)
+            logo.set_can_shrink(True)
+            logo.set_css_classes(["sidebar-brand-logo"])
+        else:
+            logo = Gtk.Image.new_from_icon_name("security-high-symbolic")
+            logo.set_pixel_size(18)
+            logo.set_css_classes(["sidebar-brand-logo"])
+
+        card.append(logo)
+
+        title = Gtk.Label(label=__app_name__, xalign=0)
+        title.set_hexpand(True)
+        title.set_valign(Gtk.Align.CENTER)
+        title.set_css_classes(["sidebar-brand-title"])
+        card.append(title)
+
+        return card
+
+    def _build_dashboard_footer(self) -> Gtk.Widget:
+        """Construit le footer branding en bas du dashboard."""
+        footer = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
+        footer.set_css_classes(["dashboard-footer"])
+        footer.set_margin_start(20)
+        footer.set_margin_end(20)
+        footer.set_margin_top(0)
+        footer.set_margin_bottom(12)
+
+        today = datetime.now().strftime("%d/%m/%Y")
+        footer_text = f"Heelonys · {__copyright__} · v{__version__} · {today}"
+
+        label = Gtk.Label(label=footer_text, xalign=0)
+        label.set_hexpand(True)
+        label.set_css_classes(["dashboard-footer-label"])
+        footer.append(label)
+
+        return footer
+
+    def _build_profile_activity_card(self) -> Gtk.Widget:
+        """
+        Status Card horizontale compacte :
+        [Avatar | nom/rôle] │ [🔑 N / 📁 N / 🏷 N] │ [🕐 dernière connexion / 🛡 N à renforcer]
+        """
+        username = self.user_info.get("username", "?")
+        role     = self.user_info.get("role", "user")
+
+        card = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        card.set_css_classes(["card", "status-card"])
+        card.set_margin_start(4)
+        card.set_margin_end(4)
+
+        # ── IDENTITÉ (gauche) ─────────────────────────────────────────────
+        identity_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        identity_box.set_margin_start(12)
+        identity_box.set_margin_end(12)
+        identity_box.set_margin_top(10)
+        identity_box.set_margin_bottom(10)
+        identity_box.set_valign(Gtk.Align.CENTER)
+
+        profile_identity_avatar = Adw.Avatar(size=36, text=username, show_initials=True)
+        self._apply_avatar_texture(
+            profile_identity_avatar,
+            self.user_info.get("avatar_path"),
+        )
+        profile_identity_avatar.set_valign(Gtk.Align.CENTER)
+        identity_box.append(profile_identity_avatar)
+        self.profile_identity_avatar = profile_identity_avatar
+
+        texts = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=3)
+        texts.set_valign(Gtk.Align.CENTER)
+
+        profile_identity_name_label = Gtk.Label(label=username, xalign=0)
+        profile_identity_name_label.set_css_classes(["status-username"])
+        texts.append(profile_identity_name_label)
+        self.profile_identity_name_label = profile_identity_name_label
+
+        role_pill = Gtk.Label(label=role.upper(), xalign=0)
+        role_pill.set_css_classes(["status-role-pill", f"status-role-{role}"])
+        texts.append(role_pill)
+
+        identity_box.append(texts)
+        card.append(identity_box)
+
+        # ── SÉPARATEUR ────────────────────────────────────────────────────
+        card.append(self._build_vsep())
+
+        # ── STATISTIQUES (centre) ─────────────────────────────────────────
+        stats_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        stats_box.set_hexpand(True)
+        stats_box.set_halign(Gtk.Align.CENTER)
+        stats_box.set_valign(Gtk.Align.CENTER)
+        stats_box.set_margin_start(8)
+        stats_box.set_margin_end(8)
+
+        chip_pw, self.metric_entries_value = self._build_stat_chip(
+            "dialog-password-symbolic", "0", _("mots de passe")
+        )
+        chip_cat, self.metric_categories_value = self._build_stat_chip(
+            "folder-symbolic", "0", _("catégories")
+        )
+        chip_tags, self.metric_tags_value = self._build_stat_chip(
+            "tag-symbolic", "0", _("tags")
+        )
+
+        stats_box.append(chip_pw)
+        stats_box.append(self._build_inner_sep())
+        stats_box.append(chip_cat)
+        stats_box.append(self._build_inner_sep())
+        stats_box.append(chip_tags)
+        card.append(stats_box)
+
+        # ── SÉPARATEUR ────────────────────────────────────────────────────
+        card.append(self._build_vsep())
+
+        # ── ALERTES + DERNIÈRE CONNEXION (droite) ─────────────────────────
+        right_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
+        right_box.set_margin_start(12)
+        right_box.set_margin_end(12)
+        right_box.set_margin_top(8)
+        right_box.set_margin_bottom(8)
+        right_box.set_valign(Gtk.Align.CENTER)
+
+        # Dernière connexion
+        login_row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        login_row.set_valign(Gtk.Align.CENTER)
+        _login_tt = _("<b>\U0001f512 Derni\u00e8re connexion enregistr\u00e9e</b>\n"
+                      "V\u00e9rifiez que cette date correspond bien\n"
+                      "\u00e0 votre derni\u00e8re session personnelle.\n"
+                      "\n"
+                      "<i>Si ce n\u2019est pas le cas \u2014 changez imm\u00e9diatement\n"
+                      "votre mot de passe ma\u00eetre et alertez votre administrateur.</i>")
+        login_row.set_has_tooltip(True)
+        login_row.set_tooltip_markup(_login_tt)
+        login_icon = Gtk.Image.new_from_icon_name("alarm-symbolic")
+        login_icon.set_pixel_size(16)
+        login_icon.set_css_classes(["status-meta-icon"])
+        login_icon.set_tooltip_markup(_login_tt)
+        login_row.append(login_icon)
+        profile_last_login_value = Gtk.Label(label="\u2014", xalign=0)
+        profile_last_login_value.set_css_classes(["status-last-login"])
+        profile_last_login_value.set_tooltip_markup(_login_tt)
+        login_row.append(profile_last_login_value)
+        self.profile_last_login_value = profile_last_login_value
+        right_box.append(login_row)
+
+        # Badge « À renforcer »
+        metric_weak_badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=5)
+        metric_weak_badge.set_css_classes(["status-weak-badge", "status-weak-ok"])
+        metric_weak_badge.set_valign(Gtk.Align.CENTER)
+        _weak_tt = _("<b>\U0001f6e1 Mots de passe \u00e0 renforcer</b>\n"
+                     "Ces entr\u00e9es ont un score de force <i>faible</i> ou <i>moyen</i>.\n"
+                     "\n"
+                     "Un mot de passe robuste doit contenir :\n"
+                     "  \u2022 Au moins <b>12 caract\u00e8res</b>\n"
+                     "  \u2022 Majuscules, minuscules, chiffres <b>et</b> symboles\n"
+                     "\n"
+                     "<i>Cliquez sur la carte concern\u00e9e pour "
+                     "\u00e9diter l\u2019entr\u00e9e.</i>")
+        metric_weak_badge.set_has_tooltip(True)
+        metric_weak_badge.set_tooltip_markup(_weak_tt)
+        weak_icon = Gtk.Image.new_from_icon_name("security-high-symbolic")
+        weak_icon.set_pixel_size(16)
+        weak_icon.set_tooltip_markup(_weak_tt)
+        metric_weak_badge.append(weak_icon)
+        metric_weak_value = Gtk.Label(label=_("0 \u00e0 renforcer"), xalign=0)
+        metric_weak_value.set_css_classes(["status-weak-label"])
+        metric_weak_value.set_tooltip_markup(_weak_tt)
+        metric_weak_badge.append(metric_weak_value)
+        right_box.append(metric_weak_badge)
+        self.metric_weak_badge = metric_weak_badge
+        self.metric_weak_value = metric_weak_value
+
+        card.append(right_box)
+
+        # Garder la ref logins_today à None (non affiché dans ce design)
+        self.metric_logins_today_value = None
+
+        return card
+
+    # ── Helpers minimalistes pour la Status Card ──────────────────────────
+    def _build_vsep(self) -> Gtk.Separator:
+        sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        sep.set_css_classes(["status-vsep"])
+        sep.set_margin_top(10)
+        sep.set_margin_bottom(10)
+        return sep
+
+    def _build_inner_sep(self) -> Gtk.Separator:
+        sep = Gtk.Separator(orientation=Gtk.Orientation.VERTICAL)
+        sep.set_css_classes(["status-vsep"])
+        sep.set_margin_top(14)
+        sep.set_margin_bottom(14)
+        return sep
+
+    def _build_stat_chip(
+        self, icon_name: str, initial_value: str, sub_label: str
+    ) -> tuple[Gtk.Box, Gtk.Label]:
+        chip = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
+        chip.set_css_classes(["status-stat-chip"])
+        chip.set_valign(Gtk.Align.CENTER)
+        chip.set_margin_start(8)
+        chip.set_margin_end(8)
+
+        top = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        top.set_halign(Gtk.Align.CENTER)
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.set_pixel_size(15)
+        icon.set_css_classes(["status-stat-icon"])
+        top.append(icon)
+        value_lbl = Gtk.Label(label=initial_value)
+        value_lbl.set_css_classes(["status-stat-value"])
+        top.append(value_lbl)
+        chip.append(top)
+
+        sub = Gtk.Label(label=sub_label)
+        sub.set_css_classes(["status-stat-sub"])
+        chip.append(sub)
+
+        return chip, value_lbl
+
+    # Conserver pour compatibilité (non utilisé mais référencé nulle part désormais)
+    def _create_metric_tile(self, title: str, initial_value: str) -> tuple[Gtk.Box, Gtk.Label]:
+        return self._build_stat_chip("dialog-password-symbolic", initial_value, title)
+
+    def _format_login_timestamp(self, value: str | None) -> str:
+        if not value:
+            return _("Première connexion")
+        try:
+            parsed = datetime.fromisoformat(str(value).replace(" ", "T", 1))
+            return parsed.strftime("%d/%m/%Y • %H:%M")
+        except ValueError:
+            return str(value)
+
+    def _get_long_french_date(self) -> str:
+        """Retourne la date du jour en format long FR (ex: Mardi 3 mars 2026)."""
+        days = [
+            "Lundi",
+            "Mardi",
+            "Mercredi",
+            "Jeudi",
+            "Vendredi",
+            "Samedi",
+            "Dimanche",
+        ]
+        months = [
+            "janvier",
+            "février",
+            "mars",
+            "avril",
+            "mai",
+            "juin",
+            "juillet",
+            "août",
+            "septembre",
+            "octobre",
+            "novembre",
+            "décembre",
+        ]
+        now = datetime.now()
+        return f"{days[now.weekday()]} {now.day} {months[now.month - 1]} {now.year}"
+
+    def _apply_avatar_texture(self, avatar: Adw.Avatar, avatar_path: str | None) -> None:
+        """Applique une image d'avatar personnalisée si disponible."""
+        if not avatar_path:
+            avatar.set_custom_image(None)
+            return
+
+        try:
+            texture = Gdk.Texture.new_from_filename(str(avatar_path))
+            avatar.set_custom_image(texture)
+        except Exception:
+            avatar.set_custom_image(None)
+
+    def refresh_account_profile(self, user_info: dict) -> None:
+        """Rafraîchit les éléments d'UI qui affichent le profil connecté."""
+        self.user_info = user_info
+        username = self.user_info.get("username", "?")
+        avatar_path = self.user_info.get("avatar_path")
+
+        if self.profile_identity_name_label:
+            self.profile_identity_name_label.set_label(username)
+
+        if self.profile_identity_avatar:
+            self.profile_identity_avatar.set_text(username)
+            self._apply_avatar_texture(self.profile_identity_avatar, avatar_path)
+
+    def _refresh_sidebar_metrics(self) -> None:
+        entries = self.password_service.list_entries()
+        categories = self.password_service.list_categories()
+        tags = self.password_service.list_tags()
+
+        weak_passwords = sum(
+            1 for entry in entries if analyze_password_strength(entry.password)[0] <= 2
+        )
+
+        if self.profile_last_login_value:
+            self.profile_last_login_value.set_label(
+                self._format_login_timestamp(
+                    self.user_info.get("last_login_previous") or self.user_info.get("last_login")
+                )
+            )
+        if self.metric_logins_today_value:
+            self.metric_logins_today_value.set_label(
+                str(int(self.user_info.get("login_count_today", 1)))
+            )
+        if self.metric_entries_value:
+            self.metric_entries_value.set_label(str(len(entries)))
+        if self.metric_categories_value:
+            self.metric_categories_value.set_label(str(len(categories)))
+        if self.metric_tags_value:
+            self.metric_tags_value.set_label(str(len(tags)))
+        if self.metric_weak_value:
+            weak_text = (
+                _("0 à renforcer")
+                if weak_passwords == 0
+                else _("%s à renforcer") % weak_passwords
+            )
+            self.metric_weak_value.set_label(weak_text)
+            if self.metric_weak_badge:
+                if weak_passwords > 0:
+                    self.metric_weak_badge.set_css_classes(
+                        ["status-weak-badge", "status-weak-warn"]
+                    )
+                    self.metric_weak_value.set_css_classes(
+                        ["status-weak-label", "status-weak-label-warn"]
+                    )
+                else:
+                    self.metric_weak_badge.set_css_classes(
+                        ["status-weak-badge", "status-weak-ok"]
+                    )
+                    self.metric_weak_value.set_css_classes(["status-weak-label"])
 
     # ------------------------------------------------------------------
     # Chargement des données
@@ -548,6 +993,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def load_categories(self) -> None:
         while (child := self.category_flowbox.get_first_child()) is not None:
             self.category_flowbox.remove(child)
+        self._category_by_child.clear()
 
         # Ajouter l'option "Toutes"
         all_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL)
@@ -561,8 +1007,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         all_box.append(all_label)
         all_child = Gtk.FlowBoxChild()
         all_child.set_child(all_box)
-        all_child.category_name = "Toutes"
         self.category_flowbox.append(all_child)
+        self._category_by_child[all_child] = "Toutes"
 
         # Ajouter les catégories
         categories = self.password_service.list_categories()
@@ -578,8 +1024,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             cat_box.append(label)
             child = Gtk.FlowBoxChild()
             child.set_child(cat_box)
-            child.category_name = category.name
             self.category_flowbox.append(child)
+            self._category_by_child[child] = category.name
 
         # Mettre à jour le compteur dans le titre
         self.categories_expander.set_subtitle(f"{len(categories)} catégorie(s)")
@@ -587,6 +1033,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def load_tags(self) -> None:
         while (child := self.tag_flowbox.get_first_child()) is not None:
             self.tag_flowbox.remove(child)
+        self._tag_by_child.clear()
 
         tags = self.password_service.list_tags()
         for tag in tags:
@@ -601,8 +1048,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             tag_box.append(label)
             child = Gtk.FlowBoxChild()
             child.set_child(tag_box)
-            child.tag_name = tag
             self.tag_flowbox.append(child)
+            self._tag_by_child[child] = tag
 
         # Mettre à jour le compteur dans le titre
         self.tags_expander.set_subtitle(f"{len(tags)} tag(s)")
@@ -620,6 +1067,12 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         if not entries:
             self.empty_state.set_visible(True)
             self.flowbox.set_visible(False)
+            if self.main_stats_label:
+                if self.current_category_filter != "Toutes" or self.current_tag_filter:
+                    self.main_stats_label.set_label(_("Aucun résultat pour les filtres actifs"))
+                else:
+                    self.main_stats_label.set_label(_("Votre coffre est vide pour le moment"))
+            self._refresh_sidebar_metrics()
             return
 
         self.empty_state.set_visible(False)
@@ -636,6 +1089,19 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             )
             self.flowbox.append(card)
 
+        if self.main_stats_label:
+            if self.current_category_filter != "Toutes" or self.current_tag_filter:
+                self.main_stats_label.set_label(
+                    _("%s résultat(s) affiché(s) • %s entrée(s) au total")
+                    % (len(entries), len(self.password_service.list_entries()))
+                )
+            else:
+                self.main_stats_label.set_label(
+                    _("%s entrée(s) dans votre coffre") % len(entries)
+                )
+
+        self._refresh_sidebar_metrics()
+
     # ------------------------------------------------------------------
     # Interactions utilisateur
     # ------------------------------------------------------------------
@@ -643,15 +1109,13 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         """Filtre les catégories affichées dans la sidebar"""
         search_text = search_entry.get_text().lower()
 
-        # Filtrer les enfants du flowbox
-        for child in self.category_flowbox:
-            if hasattr(child, "category_name"):
-                category_name = child.category_name.lower()
-                child.set_visible(search_text in category_name)
+        for child, category_name in self._category_by_child.items():
+            child.set_visible(search_text in category_name.lower())
 
     def on_category_selected(self, _flowbox, child):
-        if child and hasattr(child, "category_name"):
-            self.current_category_filter = child.category_name
+        category_name = self._category_by_child.get(child)
+        if category_name:
+            self.current_category_filter = category_name
             self.current_tag_filter = None
             self.tag_flowbox.unselect_all()
             self.load_entries()
@@ -660,15 +1124,13 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         """Filtre les tags affichés dans la sidebar"""
         search_text = search_entry.get_text().lower()
 
-        # Filtrer les enfants du flowbox
-        for child in self.tag_flowbox:
-            if hasattr(child, "tag_name"):
-                tag_name = child.tag_name.lower()
-                child.set_visible(search_text in tag_name)
+        for child, tag_name in self._tag_by_child.items():
+            child.set_visible(search_text in tag_name.lower())
 
     def on_tag_selected(self, _flowbox, child):
-        if child and hasattr(child, "tag_name"):
-            self.current_tag_filter = child.tag_name
+        tag_name = self._tag_by_child.get(child)
+        if tag_name:
+            self.current_tag_filter = tag_name
             self.current_category_filter = "Toutes"
             # S\u00e9lectionner "Toutes" (premier enfant) dans les cat\u00e9gories
             first_child = self.category_flowbox.get_child_at_index(0)

@@ -7,13 +7,14 @@ Ce module fournit une interface pour :
 """
 
 import logging
+import time
 
 import gi
 
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
 from src.version import __app_name__  # noqa: E402
 
@@ -44,9 +45,16 @@ class EmailLoginDialog(Adw.Window):
         self.user_info = None
         self.master_password = None
         self.authenticated = False
+        self._blocked_until: float | None = None
+        self._cooldown_source_id: int | None = None
 
         # Construction de l'UI
         self._build_ui()
+
+        # Soumission clavier (Entrée)
+        key_controller = Gtk.EventControllerKey()
+        key_controller.connect("key-pressed", self._on_key_pressed)
+        self.add_controller(key_controller)
 
     def _build_ui(self):
         """Construit l'interface utilisateur."""
@@ -133,6 +141,7 @@ class EmailLoginDialog(Adw.Window):
         self.login_button.set_sensitive(False)
         self.login_button.connect("clicked", self._on_login_clicked)
         button_box.append(self.login_button)
+        self.set_default_widget(self.login_button)
 
         # Info sécurité
         security_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
@@ -149,10 +158,24 @@ class EmailLoginDialog(Adw.Window):
         # Focus sur l'email au démarrage
         self.email_entry.grab_focus()
 
-    def _on_input_changed(self, widget):
+    def _on_key_pressed(self, _controller, keyval, _keycode, _state):
+        """Déclenche la connexion avec Entrée/KP_Enter."""
+        if keyval not in (Gdk.KEY_Return, Gdk.KEY_KP_Enter):
+            return False
+
+        if self.login_button.get_sensitive():
+            self._on_login_clicked(None)
+            return True
+
+        return False
+
+    def _on_input_changed(self, _widget):
         """Appelé quand les champs changent."""
         email = self.email_entry.get_text().strip()
         password = self.password_entry.get_text().strip()
+
+        if self._is_currently_blocked():
+            return
 
         # Activer le bouton si les deux champs sont remplis
         can_login = len(email) > 0 and len(password) > 0
@@ -161,7 +184,7 @@ class EmailLoginDialog(Adw.Window):
         # Effacer le statut
         self.status_label.set_text("")
 
-    def _on_login_clicked(self, button):
+    def _on_login_clicked(self, _button):
         """Tente la connexion."""
         email = self.email_entry.get_text().strip()
         password = self.password_entry.get_text().strip()
@@ -176,17 +199,7 @@ class EmailLoginDialog(Adw.Window):
         # Vérifier le rate limiting
         can_attempt, wait_time = self.login_tracker.check_can_attempt(email_hash)
         if not can_attempt:
-            if wait_time >= 3600:
-                minutes = wait_time // 60
-                self._show_status(
-                    f"🔒 Trop de tentatives. Veuillez réessayer dans {minutes} minutes.",
-                    "error"
-                )
-            else:
-                self._show_status(
-                    f"⏳ Veuillez attendre {wait_time} seconde(s) avant de réessayer.",
-                    "warning"
-                )
+            self._start_cooldown(wait_time or 1)
             return
 
         # Désactiver les contrôles pendant l'authentification
@@ -217,7 +230,7 @@ class EmailLoginDialog(Adw.Window):
                 self.login_tracker.record_successful_attempt(email_hash)
                 self._show_status("✅ Authentification réussie !", "success")
 
-                logger.info(f"Authentification réussie pour {email}")
+                logger.info("Authentification réussie pour %s", email)
 
                 # Fermer après un court délai
                 GLib.timeout_add(500, lambda: self.close())
@@ -235,6 +248,52 @@ class EmailLoginDialog(Adw.Window):
             self._set_loading(False)
 
         return False  # Ne pas répéter le timeout
+
+    def _is_currently_blocked(self) -> bool:
+        """Retourne True si une période de blocage est active."""
+        return self._blocked_until is not None and time.time() < self._blocked_until
+
+    def _start_cooldown(self, wait_seconds: int):
+        """Désactive la connexion pendant un délai anti-brute-force."""
+        self._blocked_until = time.time() + max(1, wait_seconds)
+        self.email_entry.set_sensitive(True)
+        self.password_entry.set_sensitive(True)
+        self.login_button.set_sensitive(False)
+        self._update_cooldown_status()
+
+        if self._cooldown_source_id is not None:
+            GLib.source_remove(self._cooldown_source_id)
+        self._cooldown_source_id = GLib.timeout_add(1000, self._tick_cooldown)
+
+    def _tick_cooldown(self):
+        """Met à jour le compte à rebours de blocage."""
+        if not self._is_currently_blocked():
+            self._blocked_until = None
+            self._cooldown_source_id = None
+            self._show_status("", "info")
+            self._on_input_changed(None)
+            return False
+
+        self._update_cooldown_status()
+        return True
+
+    def _update_cooldown_status(self):
+        """Affiche le statut de blocage avec le temps restant."""
+        if self._blocked_until is None:
+            return
+
+        remaining = max(1, int(self._blocked_until - time.time()))
+        if remaining >= 3600:
+            minutes = remaining // 60
+            self._show_status(
+                f"🔒 Trop de tentatives. Veuillez réessayer dans {minutes} minutes.",
+                "error"
+            )
+        else:
+            self._show_status(
+                f"⏳ Veuillez attendre {remaining} seconde(s) avant de réessayer.",
+                "warning"
+            )
 
     def _set_loading(self, loading: bool):
         """Active/désactive l'état de chargement.

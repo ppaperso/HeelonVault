@@ -28,7 +28,15 @@ class Setup2FADialog(Adw.Window):
     4. Confirmation finale
     """
 
-    def __init__(self, parent, totp_service, auth_service, user_info, **kwargs):
+    def __init__(
+        self,
+        parent,
+        totp_service,
+        auth_service,
+        user_info,
+        reconfiguration: bool = False,
+        **kwargs,
+    ):
         """Initialise le dialog de configuration 2FA.
 
         Args:
@@ -36,12 +44,17 @@ class Setup2FADialog(Adw.Window):
             totp_service: Service TOTP
             auth_service: Service d'authentification
             user_info: Informations de l'utilisateur (dict)
+            reconfiguration: True pour relier un nouvel appareil TOTP
         """
         super().__init__(**kwargs)
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(600, 700)
-        self.set_title("Configuration 2FA Obligatoire")
+        self.reconfiguration = reconfiguration
+        if self.reconfiguration:
+            self.set_title("Reconfiguration de la double authentification")
+        else:
+            self.set_title("Configuration 2FA Obligatoire")
 
         self.totp_service = totp_service
         self.auth_service = auth_service
@@ -85,17 +98,28 @@ class Setup2FADialog(Adw.Window):
 
         # === ÉTAPE 1 : Introduction ===
         intro_group = Adw.PreferencesGroup()
-        intro_group.set_title("🔒 Double Authentification Obligatoire")
-        intro_group.set_description(
-            "Pour votre sécurité, la double authentification (2FA) est maintenant "
-            "obligatoire. Vous aurez besoin d'une application d'authentification "
-            "(Google Authenticator, Authy, etc.)."
-        )
+        if self.reconfiguration:
+            intro_group.set_title("🔐 Relier un nouvel appareil 2FA")
+            intro_group.set_description(
+                "Utilisez cette procédure pour relier un nouvel appareil "
+                "d'authentification (Google Authenticator, Authy, etc.). "
+                "Les anciens codes TOTP seront remplacés."
+            )
+        else:
+            intro_group.set_title("🔒 Double Authentification Obligatoire")
+            intro_group.set_description(
+                "Pour votre sécurité, la double authentification (2FA) est maintenant "
+                "obligatoire. Vous aurez besoin d'une application d'authentification "
+                "(Google Authenticator, Authy, etc.)."
+            )
         content_box.append(intro_group)
 
         # === ÉTAPE 2 : QR Code ===
         qr_group = Adw.PreferencesGroup()
-        qr_group.set_title("📱 Étape 1 : Scannez le QR Code")
+        if self.reconfiguration:
+            qr_group.set_title("📱 Étape 1 : Scannez le nouveau QR Code")
+        else:
+            qr_group.set_title("📱 Étape 1 : Scannez le QR Code")
         qr_group.set_description(
             "Ouvrez votre application d'authentification et scannez ce QR code."
         )
@@ -216,6 +240,8 @@ class Setup2FADialog(Adw.Window):
             loader.write(qr_bytes)
             loader.close()
             pixbuf = loader.get_pixbuf()
+            if pixbuf is None:
+                raise ValueError("QR code invalide: pixbuf non généré")
 
             # Redimensionner si nécessaire
             if pixbuf.get_width() > 300:
@@ -238,7 +264,7 @@ class Setup2FADialog(Adw.Window):
         # Activer le bouton si c'est 6 chiffres
         self.verify_button.set_sensitive(len(code) == 6 and code.isdigit())
 
-    def _on_verify_clicked(self, button):
+    def _on_verify_clicked(self, _button):
         """Vérifie le code TOTP saisi."""
         code = self.code_entry.get_text().strip()
 
@@ -288,7 +314,7 @@ class Setup2FADialog(Adw.Window):
         self.codes_confirmed = check_button.get_active()
         self.finish_button.set_sensitive(self.codes_confirmed)
 
-    def _on_finish_clicked(self, button):
+    def _on_finish_clicked(self, _button):
         """Finalise la configuration 2FA."""
         if not self.totp_verified or not self.codes_confirmed:
             self._show_error("Veuillez vérifier le code et confirmer les codes de secours.")
@@ -311,7 +337,10 @@ class Setup2FADialog(Adw.Window):
             if success:
                 # Confirmer le 2FA
                 self.auth_service.confirm_2fa(self.user_info['id'])
-                logger.info("Configuration 2FA terminée avec succès")
+                if self.reconfiguration:
+                    logger.info("Reconfiguration 2FA terminée avec succès")
+                else:
+                    logger.info("Configuration 2FA terminée avec succès")
                 self.close()
             else:
                 self._show_error("Erreur lors de la sauvegarde de la configuration 2FA.")
