@@ -40,7 +40,7 @@ def init_i18n(
     try:
         locale.setlocale(locale.LC_ALL, "")
     except Exception as exc:
-        logger.debug("Impossible de définir la locale système: %s", exc)
+        logger.debug("Unable to set system locale: %s", exc)
 
     locales_dir = localedir or DEFAULT_LOCALES_DIR
 
@@ -48,7 +48,10 @@ def init_i18n(
         _translation = gettext.translation(domain, localedir=str(locales_dir), fallback=True)
     except Exception as exc:
         logger.debug(
-            "Chargement gettext impossible (domain=%s, dir=%s): %s", domain, locales_dir, exc
+            "Unable to load gettext catalog (domain=%s, dir=%s): %s",
+            domain,
+            locales_dir,
+            exc,
         )
         _translation = gettext.NullTranslations()
 

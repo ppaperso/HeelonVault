@@ -77,12 +77,12 @@ class EntryDetailsDialog(Adw.Window):
 
         if entry.username:
             username_box = self._create_field_box(
-                _("👤 Nom d'utilisateur"), entry.username, copyable=True
+                _("👤 Username"), entry.username, copyable=True
             )
             content.append(username_box)
 
         password_box = self._create_field_box(
-            _("🔑 Mot de passe"), entry.password, copyable=True, is_password=True
+            _("🔑 Password"), entry.password, copyable=True, is_password=True
         )
         content.append(password_box)
 
@@ -115,12 +115,12 @@ class EntryDetailsDialog(Adw.Window):
         action_box.set_halign(Gtk.Align.CENTER)
         action_box.set_margin_top(10)
 
-        edit_btn = Gtk.Button(label=_("✏️  Modifier"))
+        edit_btn = Gtk.Button(label=_("✏️  Edit"))
         edit_btn.set_css_classes(['suggested-action'])
         edit_btn.connect("clicked", lambda x: self._on_edit())
         action_box.append(edit_btn)
 
-        delete_btn = Gtk.Button(label=_("🗑️  Supprimer"))
+        delete_btn = Gtk.Button(label=_("🗑️  Delete"))
         delete_btn.set_css_classes(['destructive-action'])
         delete_btn.connect("clicked", lambda x: self._on_delete())
         action_box.append(delete_btn)
@@ -150,7 +150,7 @@ class EntryDetailsDialog(Adw.Window):
 
         if is_password:
             show_btn = Gtk.Button(icon_name="view-reveal-symbolic")
-            show_btn.set_tooltip_text(_("Afficher/masquer"))
+            show_btn.set_tooltip_text(_("Show/hide"))
             show_btn.connect(
                 "clicked",
                 lambda x: value_entry.set_visibility(not value_entry.get_visibility()),
@@ -159,23 +159,23 @@ class EntryDetailsDialog(Adw.Window):
 
         if copyable:
             copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-            copy_btn.set_tooltip_text(_("Copier"))
+            copy_btn.set_tooltip_text(_("Copy"))
             copy_btn.connect(
                 "clicked",
-                lambda x, label=label_text: self._copy_to_clipboard(value, _("%s copié") % label)
+                lambda x, label=label_text: self._copy_to_clipboard(value, _("%s copied") % label)
             )
             value_box.append(copy_btn)
 
         if is_url and value:
             open_btn = Gtk.Button(icon_name="web-browser-symbolic")
-            open_btn.set_tooltip_text(_("Ouvrir dans le navigateur"))
+            open_btn.set_tooltip_text(_("Open in browser"))
             open_btn.connect("clicked", lambda x: self._open_url(value))
             value_box.append(open_btn)
 
         box.append(value_box)
         return box
 
-    def _copy_to_clipboard(self, text, message: str = "Copié dans le presse-papiers"):
+    def _copy_to_clipboard(self, text, message: str = "Copied to clipboard"):
         if self.parent_window and hasattr(self.parent_window, "copy_to_clipboard"):
             self.parent_window.copy_to_clipboard(text, _(message))
             return
@@ -189,7 +189,7 @@ class EntryDetailsDialog(Adw.Window):
                 clipboard.set_content(provider)
                 clipboard.store_async(None, self._on_clipboard_store_finished, None)
             except Exception:
-                logger.exception("Impossible de copier dans le presse-papiers")
+                logger.exception("Unable to copy to clipboard")
                 if not show_toast(self.parent_window or self, _(message)):
                     show_error(self.parent_window or self, _(message))
 
@@ -197,7 +197,7 @@ class EntryDetailsDialog(Adw.Window):
         try:
             clipboard.store_finish(result)
         except Exception as e:
-            logger.debug("Erreur lors du stockage dans le presse-papiers : %s", e)
+            logger.debug("Error while storing clipboard content: %s", e)
 
     def _open_url(self, url):
         import subprocess
@@ -212,11 +212,11 @@ class EntryDetailsDialog(Adw.Window):
                 target = "https://" + target
             subprocess.Popen(['xdg-open', target])  # noqa: S603, S607
         except Exception as e:
-            logger.exception("Erreur lors de l'ouverture de l'URL")
+            logger.exception("Error while opening URL")
             show_error(
                 self.parent_window or self,
-                _("Impossible d'ouvrir l'URL :\n%s") % str(e),
-                heading=_("Erreur"),
+                _("Unable to open URL:\n%s") % str(e),
+                heading=_("Error"),
             )
 
     def _on_edit(self):
@@ -227,16 +227,16 @@ class EntryDetailsDialog(Adw.Window):
     def _on_delete(self):
         """Demander confirmation avant de supprimer"""
         dialog = Adw.MessageDialog.new(self)
-        dialog.set_heading(_("Confirmer la suppression"))
+        dialog.set_heading(_("Confirm deletion"))
         dialog.set_body(
             _(
-                "Êtes-vous sûr de vouloir supprimer l'entrée '%s' ?\n\n"
-                "Cette action est irréversible."
+                "Are you sure you want to delete entry '%s'?\n\n"
+                "This action is irreversible."
             )
             % self.entry.title
         )
-        dialog.add_response("cancel", _("Annuler"))
-        dialog.add_response("delete", _("Supprimer"))
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("delete", _("Delete"))
         dialog.set_response_appearance("delete", Adw.ResponseAppearance.DESTRUCTIVE)
         dialog.set_default_response("cancel")
         dialog.set_close_response("cancel")

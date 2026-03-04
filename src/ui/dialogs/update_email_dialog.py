@@ -10,6 +10,8 @@ import logging
 import gi
 import validators
 
+from src.i18n import _
+
 gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
@@ -34,7 +36,7 @@ class UpdateEmailDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(550, 400)
-        self.set_title("Mise à jour de l'email")
+        self.set_title(_("Email update"))
 
         self.auth_service = auth_service
         self.user_info = user_info
@@ -79,11 +81,11 @@ class UpdateEmailDialog(Adw.Window):
         title_label = Gtk.Label()
         if self.migration_required:
             title_label.set_markup(
-                "<span size='large' weight='bold'>Mise à jour de l'email requise</span>"
+                _("<span size='large' weight='bold'>Email update required</span>")
             )
         else:
             title_label.set_markup(
-                "<span size='large' weight='bold'>Modifier votre adresse email</span>"
+                _("<span size='large' weight='bold'>Change your email address</span>")
             )
         icon_box.append(title_label)
 
@@ -95,14 +97,18 @@ class UpdateEmailDialog(Adw.Window):
         info_label = Gtk.Label()
         if self.migration_required:
             info_label.set_markup(
-                "Suite à la migration vers le nouveau système d'authentification, "
-                "vous devez fournir votre adresse email réelle.\n\n"
-                "Cette adresse sera utilisée comme identifiant de connexion."
+                _(
+                    "Following migration to the new authentication system, "
+                    "you must provide your real email address.\n\n"
+                    "This address will be used as your login identifier."
+                )
             )
         else:
             info_label.set_markup(
-                "Cette adresse sera utilisée comme identifiant de connexion.\n\n"
-                "Assurez-vous d'utiliser une adresse que vous contrôlez."
+                _(
+                    "This address will be used as your login identifier.\n\n"
+                    "Make sure you use an address you control."
+                )
             )
         info_label.set_wrap(True)
         info_label.set_justify(Gtk.Justification.CENTER)
@@ -115,17 +121,17 @@ class UpdateEmailDialog(Adw.Window):
 
         # Row pour l'email actuel
         current_row = Adw.ActionRow()
-        current_row.set_title("Email actuel (temporaire)")
-        current_row.set_subtitle(self.user_info.get('email', 'unknown'))
+        current_row.set_title(_("Current email (temporary)"))
+        current_row.set_subtitle(self.user_info.get('email', _('unknown')))
         input_group.add(current_row)
 
         # Row pour le nouvel email
         email_row = Adw.ActionRow()
-        email_row.set_title("Nouvel email")
+        email_row.set_title(_("New email"))
         input_group.add(email_row)
 
         self.email_entry = Gtk.Entry()
-        self.email_entry.set_placeholder_text("votre.email@example.com")
+        self.email_entry.set_placeholder_text(_("your.email@example.com"))
         self.email_entry.set_hexpand(True)
         self.email_entry.set_input_purpose(Gtk.InputPurpose.EMAIL)
         self.email_entry.connect("changed", self._on_email_changed)
@@ -151,9 +157,11 @@ class UpdateEmailDialog(Adw.Window):
 
             warning_label = Gtk.Label()
             warning_label.set_markup(
-                "<span size='small'><b>Important :</b> "
-                "Vous ne pourrez plus utiliser votre ancien identifiant. "
-                "Utilisez une adresse email que vous contrôlez.</span>"
+                _(
+                    "<span size='small'><b>Important:</b> "
+                    "You will no longer be able to use your old identifier. "
+                    "Use an email address you control.</span>"
+                )
             )
             warning_label.set_wrap(True)
             warning_label.set_hexpand(True)
@@ -165,7 +173,7 @@ class UpdateEmailDialog(Adw.Window):
         action_box.set_margin_top(20)
         main_box.append(action_box)
 
-        self.update_button = Gtk.Button(label="Mettre à jour")
+        self.update_button = Gtk.Button(label=_("Update"))
         self.update_button.add_css_class("suggested-action")
         self.update_button.set_sensitive(False)
         self.update_button.connect("clicked", self._on_update_clicked)
@@ -188,13 +196,13 @@ class UpdateEmailDialog(Adw.Window):
 
         # Validation
         if not validators.email(new_email):
-            self._show_status("❌ Adresse email invalide.", "error")
+            self._show_status(_("❌ Invalid email address."), "error")
             self.email_entry.grab_focus()
             return
 
         # Vérifier que l'email n'est pas déjà utilisé
         if self.auth_service.email_exists(new_email):
-            self._show_status("❌ Cette adresse email est déjà utilisée.", "error")
+            self._show_status(_("❌ This email address is already in use."), "error")
             self.email_entry.select_region(0, -1)
             return
 
@@ -208,18 +216,18 @@ class UpdateEmailDialog(Adw.Window):
             if success:
                 self.new_email = new_email
                 self.updated = True
-                self._show_status("✅ Email mis à jour avec succès !", "success")
-                logger.info("Email mis à jour pour user_id=%s", self.user_info["id"])
+                self._show_status(_("✅ Email updated successfully!"), "success")
+                logger.info("Email updated for user_id=%s", self.user_info["id"])
 
                 # Fermer après un court délai
                 from gi.repository import GLib
                 GLib.timeout_add(1000, lambda: self.close())
             else:
-                self._show_status("❌ Erreur lors de la mise à jour.", "error")
+                self._show_status(_("❌ Error during update."), "error")
 
         except Exception as e:
-            logger.exception("Erreur mise à jour email")
-            self._show_status(f"❌ Erreur : {e}", "error")
+            logger.exception("Error while updating email")
+            self._show_status(_("❌ Error: %(error)s") % {"error": e}, "error")
 
     def _show_status(self, message: str, status_type: str = "info"):
         """Affiche un message de statut.

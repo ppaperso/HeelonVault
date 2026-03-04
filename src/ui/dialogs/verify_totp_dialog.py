@@ -1,7 +1,7 @@
 """Dialog de vérification du code TOTP lors de la connexion.
 
 Ce module fournit une interface pour :
-- Saisir le code TOTP à 6 chiffres
+ Saisir le code TOTP à 6 chiffres
 - Vérifier le code avec le secret stocké
 - Permettre l'utilisation d'un code de secours
 """
@@ -14,6 +14,8 @@ gi.require_version('Gtk', '4.0')
 gi.require_version('Adw', '1')
 
 from gi.repository import Adw, Gtk  # noqa: E402
+
+from src.i18n import _  # noqa: E402
 
 logger = logging.getLogger(__name__)
 
@@ -34,7 +36,7 @@ class VerifyTOTPDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(500, 400)
-        self.set_title("Double Authentification")
+        self.set_title(_("Two-factor authentication"))
 
         self.totp_service = totp_service
         self.auth_service = auth_service
@@ -77,7 +79,9 @@ class VerifyTOTPDialog(Adw.Window):
         icon_box.append(icon_label)
 
         title_label = Gtk.Label()
-        title_label.set_markup("<span size='large' weight='bold'>Double Authentification</span>")
+        title_label.set_markup(
+            "<span size='large' weight='bold'>" + _("Two-factor authentication") + "</span>"
+        )
         icon_box.append(title_label)
 
         # Stack pour changer entre code normal et code de secours
@@ -95,7 +99,7 @@ class VerifyTOTPDialog(Adw.Window):
 
         # Lien pour passer aux codes de secours
         self.switch_link = Gtk.LinkButton()
-        self.switch_link.set_label("Utiliser un code de secours")
+        self.switch_link.set_label(_("Use a backup code"))
         self.switch_link.set_halign(Gtk.Align.CENTER)
         self.switch_link.connect("activate-link", self._on_switch_mode)
         content_box.append(self.switch_link)
@@ -106,11 +110,11 @@ class VerifyTOTPDialog(Adw.Window):
         action_box.set_margin_top(20)
         main_box.append(action_box)
 
-        cancel_button = Gtk.Button(label="Annuler")
+        cancel_button = Gtk.Button(label=_("Cancel"))
         cancel_button.connect("clicked", lambda b: self.close())
         action_box.append(cancel_button)
 
-        self.verify_button = Gtk.Button(label="Vérifier")
+        self.verify_button = Gtk.Button(label=_("Verify"))
         self.verify_button.add_css_class("suggested-action")
         self.verify_button.set_sensitive(False)
         self.verify_button.connect("clicked", self._on_verify_clicked)
@@ -124,8 +128,7 @@ class VerifyTOTPDialog(Adw.Window):
         # Description
         desc = Gtk.Label()
         desc.set_text(
-            "Entrez le code à 6 chiffres affiché dans votre application "
-            "d'authentification."
+            _("Enter the 6-digit code shown in your authenticator app.")
         )
         desc.set_wrap(True)
         desc.set_justify(Gtk.Justification.CENTER)
@@ -157,7 +160,7 @@ class VerifyTOTPDialog(Adw.Window):
 
         # Description
         desc = Gtk.Label()
-        desc.set_text("Entrez l'un de vos codes de secours (format: XXXX-XXXX-XX).")
+        desc.set_text(_("Enter one of your backup codes (format: XXXX-XXXX-XX)."))
         desc.set_wrap(True)
         desc.set_justify(Gtk.Justification.CENTER)
         box.append(desc)
@@ -175,8 +178,9 @@ class VerifyTOTPDialog(Adw.Window):
         # Avertissement
         warning = Gtk.Label()
         warning.set_markup(
-            "<span size='small'>⚠️  Chaque code de secours ne peut être "
-            "utilisé qu'une seule fois.</span>"
+            "<span size='small'>"
+            + _("⚠️  Each backup code can only be used once.")
+            + "</span>"
         )
         warning.add_css_class("dim-label")
         box.append(warning)
@@ -194,12 +198,12 @@ class VerifyTOTPDialog(Adw.Window):
 
         if current_page == "totp":
             self.stack.set_visible_child_name("backup")
-            self.switch_link.set_label("Utiliser le code TOTP")
+            self.switch_link.set_label(_("Use TOTP code"))
             self.use_backup_code = True
             self.backup_entry.grab_focus()
         else:
             self.stack.set_visible_child_name("totp")
-            self.switch_link.set_label("Utiliser un code de secours")
+            self.switch_link.set_label(_("Use a backup code"))
             self.use_backup_code = False
             self.totp_entry.grab_focus()
 
@@ -224,7 +228,7 @@ class VerifyTOTPDialog(Adw.Window):
             # Récupérer le secret TOTP chiffré
             secret_encrypted = self.auth_service.get_2fa_secret(self.user_info['id'])
             if not secret_encrypted:
-                self._show_error("Erreur : secret 2FA introuvable.")
+                self._show_error(_("Error: 2FA secret not found."))
                 return
 
             # Déchiffrer le secret
@@ -237,7 +241,7 @@ class VerifyTOTPDialog(Adw.Window):
                 # Récupérer les codes de secours
                 backup_codes_encrypted = self.auth_service.get_backup_codes(self.user_info['id'])
                 if not backup_codes_encrypted:
-                    self._show_status("❌ Aucun code de secours disponible.", "error", backup=True)
+                    self._show_status(_("❌ No backup code available."), "error", backup=True)
                     return
 
                 backup_codes_hashed = self.totp_service.decrypt_backup_codes(
@@ -256,13 +260,13 @@ class VerifyTOTPDialog(Adw.Window):
                     self.auth_service.update_backup_codes(self.user_info['id'], updated_codes)
 
                     self.verified = True
-                    self._show_status("✅ Code de secours valide !", "success", backup=True)
+                    self._show_status(_("✅ Backup code is valid!"), "success", backup=True)
 
                     # Fermer après un court délai
                     from gi.repository import GLib
-                    GLib.timeout_add(500, lambda: self.close())
+                    GLib.timeout_add(500, self._close_safely)
                 else:
-                    self._show_status("❌ Code de secours invalide.", "error", backup=True)
+                    self._show_status(_("❌ Invalid backup code."), "error", backup=True)
             else:
                 # Vérifier le code TOTP
                 code = self.totp_entry.get_text().strip()
@@ -270,17 +274,21 @@ class VerifyTOTPDialog(Adw.Window):
 
                 if is_valid:
                     self.verified = True
-                    self._show_status("✅ Code valide !", "success", backup=False)
+                    self._show_status(_("✅ Valid code!"), "success", backup=False)
 
                     # Fermer après un court délai
                     from gi.repository import GLib
-                    GLib.timeout_add(500, lambda: self.close())
+                    GLib.timeout_add(500, self._close_safely)
                 else:
-                    self._show_status("❌ Code incorrect. Réessayez.", "error", backup=False)
+                    self._show_status(
+                        _("❌ Invalid code. Please try again."),
+                        "error",
+                        backup=False,
+                    )
 
         except Exception as e:
-            logger.exception("Erreur vérification TOTP")
-            self._show_error(f"Erreur : {e}")
+            logger.exception("TOTP verification error")
+            self._show_error(_("Error: %s") % e)
 
     def _show_status(self, message: str, status_type: str = "info", backup: bool = False):
         """Affiche un message de statut.
@@ -308,10 +316,19 @@ class VerifyTOTPDialog(Adw.Window):
 
     def _show_error(self, message: str):
         """Affiche une erreur dans un dialog."""
-        dialog = Adw.MessageDialog.new(self, "Erreur", message)
-        dialog.add_response("ok", "OK")
+        dialog = Adw.MessageDialog.new(self, _("Error"), message)
+        dialog.add_response("ok", _("OK"))
         dialog.present()
 
     def get_verified(self) -> bool:
         """Retourne True si le code a été vérifié avec succès."""
         return self.verified
+
+    def _close_safely(self):
+        """Ferme le dialogue en nettoyant le focus pour éviter les warnings GTK."""
+        try:
+            self.set_focus(None)
+        except Exception as e:
+            logger.debug("Failed to set focus to None: %s", e)
+        self.close()
+        return False

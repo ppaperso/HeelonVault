@@ -16,13 +16,17 @@ import logging
 import secrets
 import sqlite3
 import time
+import uuid
 from datetime import datetime
 from pathlib import Path
+from typing import cast
 
 import validators
 from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
+
+from src.models.user_info import UserInfo
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +42,22 @@ class AuthService:
     ITERATIONS = 600_000
     KEY_LENGTH = 32
     AUTH_FAILURE_DELAY = 1.5  # Secondes
+    DEFAULT_ADMIN_EMAIL = "admin@local.heelonvault"
+
+    _USER_COLUMNS: dict[str, str] = {
+        "email": "TEXT",
+        "email_hash": "TEXT",
+        "workspace_uuid": "TEXT",
+        "secret_2fa": "TEXT",
+        "totp_enabled": "INTEGER DEFAULT 0",
+        "totp_confirmed": "INTEGER DEFAULT 0",
+        "backup_codes": "TEXT",
+        "last_password_change": "TIMESTAMP",
+        "failed_login_attempts": "INTEGER DEFAULT 0",
+        "last_failed_attempt": "TIMESTAMP",
+        "account_locked_until": "TIMESTAMP",
+        "avatar_path": "TEXT",
+    }
 
     def __init__(self, users_db_path: Path, totp_service=None):
         """Initialise le service d'authentification.
@@ -66,12 +86,12 @@ class AuthService:
 
         if pepper_file.exists():
             pepper = pepper_file.read_bytes()
-            logger.debug("Pepper email existant chargé")
+            logger.debug("Existing email pepper loaded")
         else:
             pepper = secrets.token_bytes(32)
             pepper_file.write_bytes(pepper)
             pepper_file.chmod(0o600)
-            logger.info("Pepper email créé avec permissions 600")
+            logger.info("Email pepper created with 600 permissions")
 
         return pepper
 
@@ -100,15 +120,35 @@ class AuthService:
             CREATE TABLE IF NOT EXISTS users (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 username TEXT UNIQUE NOT NULL,
+                email TEXT,
+                email_hash TEXT,
                 password_hash TEXT NOT NULL,
                 salt TEXT NOT NULL,
                 role TEXT DEFAULT 'user',
+                workspace_uuid TEXT,
+                secret_2fa TEXT,
+                totp_enabled INTEGER DEFAULT 0,
+                totp_confirmed INTEGER DEFAULT 0,
+                backup_codes TEXT,
+                last_password_change TIMESTAMP,
+                failed_login_attempts INTEGER DEFAULT 0,
+                last_failed_attempt TIMESTAMP,
+                account_locked_until TIMESTAMP,
+                avatar_path TEXT,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
         ''')
 
         self._ensure_user_profile_columns(cursor)
+
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_email_hash ON users(email_hash)"
+        )
+        cursor.execute(
+            "CREATE UNIQUE INDEX IF NOT EXISTS idx_users_workspace_uuid ON users(workspace_uuid)"
+        )
+        cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email)")
 
         cursor.execute('''
             CREATE TABLE IF NOT EXISTS login_events (
@@ -120,25 +160,82 @@ class AuthService:
         ''')
         self.conn.commit()
 
+        self._backfill_legacy_users(cursor)
+        self.conn.commit()
+
         # Créer un utilisateur admin par défaut si aucun utilisateur n'existe
         cursor.execute('SELECT COUNT(*) FROM users')
         if cursor.fetchone()[0] == 0:
-            self.create_user('admin', 'admin', role='admin')
+            self.create_user_with_email(
+                self.DEFAULT_ADMIN_EMAIL,
+                'admin',
+                username='admin',
+                role='admin',
+            )
         cursor.execute('SELECT COUNT(*) FROM users')
         total_users = cursor.fetchone()[0]
-        logger.info("AuthService: %d comptes utilisateurs disponibles", total_users)
+        logger.info("AuthService: %d user accounts available", total_users)
 
     def _ensure_user_profile_columns(self, cursor) -> None:
         """Ajoute les colonnes de profil manquantes sur les bases existantes."""
         cursor.execute("PRAGMA table_info(users)")
         existing_columns = {row[1] for row in cursor.fetchall()}
 
-        if "avatar_path" not in existing_columns:
-            cursor.execute("ALTER TABLE users ADD COLUMN avatar_path TEXT")
+        for column_name, column_type in self._USER_COLUMNS.items():
+            if column_name not in existing_columns:
+                cursor.execute(f"ALTER TABLE users ADD COLUMN {column_name} {column_type}")
 
         self.conn.commit()
 
-    def _hash_password(self, password: str, salt: bytes = None) -> tuple:
+    def _backfill_legacy_users(self, cursor) -> None:
+        """Complète email/email_hash/workspace_uuid pour les comptes legacy."""
+        cursor.execute(
+            '''
+            SELECT id, username, email, email_hash, workspace_uuid
+            FROM users
+            '''
+        )
+        rows = cursor.fetchall()
+
+        for user_id, username, email, email_hash, workspace_uuid in rows:
+            update_values: dict[str, str] = {}
+
+            resolved_email = (email or "").strip()
+            if not resolved_email:
+                resolved_email = f"{username}@migration.local"
+                update_values["email"] = resolved_email
+
+            if not email_hash:
+                update_values["email_hash"] = self.hash_email(resolved_email)
+
+            if not workspace_uuid:
+                update_values["workspace_uuid"] = str(uuid.uuid4())
+
+            if not update_values:
+                continue
+
+            if "email" in update_values:
+                cursor.execute(
+                    "UPDATE users SET email = ? WHERE id = ?",
+                    (update_values["email"], user_id),
+                )
+            if "email_hash" in update_values:
+                cursor.execute(
+                    "UPDATE users SET email_hash = ? WHERE id = ?",
+                    (update_values["email_hash"], user_id),
+                )
+            if "workspace_uuid" in update_values:
+                cursor.execute(
+                    "UPDATE users SET workspace_uuid = ? WHERE id = ?",
+                    (update_values["workspace_uuid"], user_id),
+                )
+            logger.info(
+                "AuthService: profile migration applied for %s (id=%d)",
+                username,
+                user_id,
+            )
+
+    def _hash_password(self, password: str, salt: bytes | None=None) -> tuple:
         """Hache un mot de passe avec PBKDF2HMAC.
 
         Args:
@@ -173,20 +270,33 @@ class AuthService:
             True si création réussie, False si l'utilisateur existe déjà
         """
         try:
+            migration_email = f"{username}@migration.local"
+            if self.email_exists(migration_email):
+                logger.warning(
+                    "AuthService: migration email already exists for %s",
+                    username,
+                )
+                return False
+
+            workspace_uuid = str(uuid.uuid4())
+            email_hash = self.hash_email(migration_email)
             password_hash, salt = self._hash_password(password)
             cursor = self.conn.cursor()
             cursor.execute('''
-                INSERT INTO users (username, password_hash, salt, role)
-                VALUES (?, ?, ?, ?)
-            ''', (username, password_hash, salt, role))
+                INSERT INTO users (
+                    username, email, email_hash, password_hash, salt,
+                    role, workspace_uuid, totp_enabled, totp_confirmed
+                )
+                VALUES (?, ?, ?, ?, ?, ?, ?, 0, 0)
+            ''', (username, migration_email, email_hash, password_hash, salt, role, workspace_uuid))
             self.conn.commit()
-            logger.info("AuthService: utilisateur cree %s (role=%s)", username, role)
+            logger.info("AuthService: user created %s (role=%s)", username, role)
             return True
         except sqlite3.IntegrityError:
-            logger.warning("AuthService: utilisateur deja existant %s", username)
+            logger.warning("AuthService: user already exists %s", username)
             return False
 
-    def authenticate(self, username: str, password: str) -> dict | None:
+    def authenticate(self, username: str, password: str) -> UserInfo | None:
         """Authentifie un utilisateur.
 
         Args:
@@ -206,7 +316,7 @@ class AuthService:
 
         if not row:
             logger.warning(
-                "AuthService: authentification echouee, utilisateur inconnu %s", username
+                "AuthService: authentication failed, unknown user %s", username
             )
             return None
 
@@ -225,18 +335,19 @@ class AuthService:
                 (user_id,),
             )
             self.conn.commit()
-            logger.info("AuthService: authentification reussie %s (role=%s)", username, role)
+            logger.info("AuthService: authentication succeeded %s (role=%s)", username, role)
 
-            return {
+            return cast(UserInfo, {
                 'id': user_id,
                 'username': username,
                 'role': role,
                 'salt': salt,
                 'last_login_previous': previous_last_login,
                 'login_count_today': self._get_login_count_today(user_id),
-            }
+            })
         logger.warning(
-            "AuthService: authentification echouee, mauvais mot de passe pour %s", username
+            "AuthService: authentication failed, invalid password for %s",
+            username,
         )
         return None
 
@@ -258,14 +369,14 @@ class AuthService:
         row = cursor.fetchone()
 
         if not row:
-            logger.debug("AuthService: verification echouee, utilisateur inconnu %s", username)
+            logger.debug("AuthService: verification failed, unknown user %s", username)
             return False
 
         stored_hash, salt_b64 = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
         result = password_hash == stored_hash
-        logger.debug("AuthService: verification %s -> %s", username, result)
+        logger.debug("AuthService: verification result %s -> %s", username, result)
         return result
 
     def change_user_password(self, username: str, old_password: str, new_password: str) -> bool:
@@ -281,7 +392,7 @@ class AuthService:
         """
         # Vérifier l'ancien mot de passe
         if not self.verify_user(username, old_password):
-            logger.warning("AuthService: ancien mot de passe incorrect pour %s", username)
+            logger.warning("AuthService: invalid current password for %s", username)
             return False
 
         try:
@@ -295,11 +406,12 @@ class AuthService:
             ''', (password_hash, salt, username))
             self.conn.commit()
             success = cursor.rowcount > 0
-            logger.info("AuthService: mot de passe change pour %s", username)
+            logger.info("AuthService: password changed for %s", username)
             return success
-        except Exception:
+        except sqlite3.Error:
             logger.exception(
-                "AuthService: erreur lors du changement de mot de passe pour %s", username
+                "AuthService: error while changing password for %s",
+                username,
             )
             return False
 
@@ -323,10 +435,10 @@ class AuthService:
             ''', (password_hash, salt, username))
             self.conn.commit()
             success = cursor.rowcount > 0
-            logger.info("AuthService: mot de passe reinitialise pour %s", username)
+            logger.info("AuthService: password reset for %s", username)
             return success
-        except Exception:
-            logger.exception("AuthService: erreur lors de la reinitialisation pour %s", username)
+        except sqlite3.Error:
+            logger.exception("AuthService: error while resetting password for %s", username)
             return False
 
     def delete_user(self, username: str) -> bool:
@@ -343,10 +455,10 @@ class AuthService:
             cursor.execute('DELETE FROM users WHERE username = ?', (username,))
             self.conn.commit()
             success = cursor.rowcount > 0
-            logger.info("AuthService: utilisateur supprime %s", username)
+            logger.info("AuthService: user deleted %s", username)
             return success
-        except Exception:
-            logger.exception("AuthService: erreur lors de la suppression de %s", username)
+        except sqlite3.Error:
+            logger.exception("AuthService: error while deleting %s", username)
             return False
 
     def get_all_users(self) -> list:
@@ -362,7 +474,7 @@ class AuthService:
             ORDER BY username
         ''')
         users = cursor.fetchall()
-        logger.debug("AuthService: %d utilisateurs recus", len(users))
+        logger.debug("AuthService: %d users fetched", len(users))
         return users
 
     def user_exists(self, username: str) -> bool:
@@ -377,7 +489,7 @@ class AuthService:
         cursor = self.conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE username = ?', (username,))
         exists = cursor.fetchone()[0] > 0
-        logger.debug("AuthService: utilisateur %s existe=%s", username, exists)
+        logger.debug("AuthService: user %s exists=%s", username, exists)
         return exists
 
     # ========== NOUVELLES MÉTHODES POUR EMAIL + TOTP ==========
@@ -406,10 +518,10 @@ class AuthService:
         cursor = self.conn.cursor()
         cursor.execute('SELECT COUNT(*) FROM users WHERE email_hash = ?', (email_hash,))
         exists = cursor.fetchone()[0] > 0
-        logger.debug("AuthService: email existe=%s", exists)
+        logger.debug("AuthService: email exists=%s", exists)
         return exists
 
-    def get_user_by_email(self, email: str) -> dict | None:
+    def get_user_by_email(self, email: str) -> UserInfo | None:
         """Récupère les informations d'un utilisateur par email.
 
         Args:
@@ -431,7 +543,7 @@ class AuthService:
         if not row:
             return None
 
-        return {
+        return cast(UserInfo, {
             'id': row[0],
             'username': row[1],
             'email': row[2],
@@ -442,11 +554,11 @@ class AuthService:
             'created_at': row[7],
             'last_login': row[8],
             'avatar_path': row[9],
-        }
+        })
 
     def authenticate_by_email(
         self, email: str, password: str, enforce_delay: bool = True
-    ) -> dict | None:
+    ) -> UserInfo | None:
         """Authentifie un utilisateur par email (première étape avant TOTP).
 
         Args:
@@ -458,7 +570,8 @@ class AuthService:
             Dictionnaire avec les infos utilisateur si succès, None sinon
             {'id', 'username', 'email', 'role', 'workspace_uuid', 'totp_enabled', 'salt'}
         """
-        email_hash = self.hash_email(email)
+        normalized_input = email.strip().lower()
+        email_hash = self.hash_email(normalized_input)
         cursor = self.conn.cursor()
         cursor.execute('''
              SELECT id, username, email, password_hash, salt, role, workspace_uuid,
@@ -468,8 +581,21 @@ class AuthService:
         ''', (email_hash,))
         row = cursor.fetchone()
 
+        # Rétrocompatibilité : autoriser aussi la connexion par username
+        if not row and '@' not in normalized_input:
+            cursor.execute(
+                '''
+                SELECT id, username, email, password_hash, salt, role, workspace_uuid,
+                       totp_enabled, totp_confirmed, last_login, avatar_path
+                FROM users
+                WHERE lower(username) = ?
+                ''',
+                (normalized_input,),
+            )
+            row = cursor.fetchone()
+
         if not row:
-            logger.warning("AuthService: authentification echouee, email inconnu")
+            logger.warning("AuthService: authentication failed, unknown email")
             if enforce_delay:
                 time.sleep(self.AUTH_FAILURE_DELAY)
             return None
@@ -501,9 +627,13 @@ class AuthService:
                 (user_id,),
             )
             self.conn.commit()
-            logger.info("AuthService: authentification reussie pour %s (role=%s)", email, role)
+            logger.info(
+                "AuthService: authentication succeeded for %s (role=%s)",
+                normalized_input,
+                role,
+            )
 
-            return {
+            return cast( UserInfo, {
                 'id': user_id,
                 'username': username,
                 'email': email_stored,
@@ -516,9 +646,12 @@ class AuthService:
                 'last_login': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'login_count_today': self._get_login_count_today(user_id),
                 'avatar_path': avatar_path,
-            }
+            })
 
-        logger.warning("AuthService: authentification echouee, mauvais mot de passe pour %s", email)
+        logger.warning(
+            "AuthService: authentication failed, invalid password for %s",
+            normalized_input,
+        )
         if enforce_delay:
             time.sleep(self.AUTH_FAILURE_DELAY)
         return None
@@ -550,7 +683,7 @@ class AuthService:
         """
         # Valider l'email
         if not validators.email(new_email):
-            logger.warning("AuthService: email invalide : %s", new_email)
+            logger.warning("AuthService: invalid email: %s", new_email)
             return False
 
         # Hasher le nouvel email
@@ -561,7 +694,7 @@ class AuthService:
         cursor.execute('SELECT COUNT(*) FROM users WHERE email_hash = ? AND id != ?',
                       (new_email_hash, user_id))
         if cursor.fetchone()[0] > 0:
-            logger.warning("AuthService: email deja utilise : %s", new_email)
+            logger.warning("AuthService: email already used: %s", new_email)
             return False
 
         # Mettre à jour
@@ -572,17 +705,17 @@ class AuthService:
                 WHERE id = ?
             ''', (new_email, new_email_hash, user_id))
             self.conn.commit()
-            logger.info("AuthService: email mis a jour pour user_id=%d", user_id)
+            logger.info("AuthService: email updated for user_id=%d", user_id)
             return True
-        except Exception:
-            logger.exception("AuthService: erreur lors de la mise a jour email")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while updating email")
             return False
 
     def update_username(self, user_id: int, new_username: str) -> bool:
         """Met à jour le nom affiché/utilisateur d'un compte."""
         cleaned = new_username.strip()
         if len(cleaned) < 3:
-            logger.warning("AuthService: username trop court")
+            logger.warning("AuthService: username too short")
             return False
 
         cursor = self.conn.cursor()
@@ -591,7 +724,7 @@ class AuthService:
             (cleaned, user_id),
         )
         if cursor.fetchone()[0] > 0:
-            logger.warning("AuthService: username deja utilise: %s", cleaned)
+            logger.warning("AuthService: username already used: %s", cleaned)
             return False
 
         try:
@@ -601,8 +734,8 @@ class AuthService:
             )
             self.conn.commit()
             return cursor.rowcount > 0
-        except Exception:
-            logger.exception("AuthService: erreur lors de la mise a jour username")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while updating username")
             return False
 
     def update_avatar_path(self, user_id: int, avatar_path: str | None) -> bool:
@@ -615,8 +748,8 @@ class AuthService:
             )
             self.conn.commit()
             return cursor.rowcount > 0
-        except Exception:
-            logger.exception("AuthService: erreur lors de la mise a jour avatar")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while updating avatar")
             return False
 
     def setup_2fa(self, user_id: int, secret_encrypted: str, backup_codes_encrypted: str) -> bool:
@@ -641,10 +774,10 @@ class AuthService:
                 WHERE id = ?
             ''', (secret_encrypted, backup_codes_encrypted, user_id))
             self.conn.commit()
-            logger.info("AuthService: 2FA configure pour user_id=%d", user_id)
+            logger.info("AuthService: 2FA configured for user_id=%d", user_id)
             return True
-        except Exception:
-            logger.exception("AuthService: erreur lors de la configuration 2FA")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while configuring 2FA")
             return False
 
     def confirm_2fa(self, user_id: int) -> bool:
@@ -664,10 +797,10 @@ class AuthService:
                 WHERE id = ?
             ''', (user_id,))
             self.conn.commit()
-            logger.info("AuthService: 2FA confirme pour user_id=%d", user_id)
+            logger.info("AuthService: 2FA confirmed for user_id=%d", user_id)
             return True
-        except Exception:
-            logger.exception("AuthService: erreur lors de la confirmation 2FA")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while confirming 2FA")
             return False
 
     def get_2fa_secret(self, user_id: int) -> str | None:
@@ -722,13 +855,13 @@ class AuthService:
                 WHERE id = ?
             ''', (backup_codes_encrypted, user_id))
             self.conn.commit()
-            logger.info("AuthService: codes de secours mis a jour pour user_id=%d", user_id)
+            logger.info("AuthService: backup codes updated for user_id=%d", user_id)
             return True
-        except Exception:
-            logger.exception("AuthService: erreur lors de la mise a jour des codes de secours")
+        except sqlite3.Error:
+            logger.exception("AuthService: error while updating backup codes")
             return False
 
-    def create_user_with_email(self, email: str, password: str, username: str = None,
+    def create_user_with_email(self, email: str, password: str, username: str | None=None,
                                 role: str = 'user') -> int | None:
         """Crée un nouvel utilisateur avec email (nouveau système).
 
@@ -745,12 +878,12 @@ class AuthService:
 
         # Valider l'email
         if not validators.email(email):
-            logger.warning("AuthService: email invalide : %s", email)
+            logger.warning("AuthService: invalid email: %s", email)
             return None
 
         # Vérifier que l'email n'existe pas déjà
         if self.email_exists(email):
-            logger.warning("AuthService: email deja existant : %s", email)
+            logger.warning("AuthService: email already exists: %s", email)
             return None
 
         # Générer un username si non fourni
@@ -779,16 +912,21 @@ class AuthService:
             ''', (username, email, email_hash, password_hash, salt, role, workspace_uuid))
             self.conn.commit()
             user_id = cursor.lastrowid
-            logger.info("AuthService: utilisateur cree %s (%s) - role=%s", username, email, role)
+            logger.info(
+                "AuthService: user created %s (%s) - role=%s",
+                username,
+                email,
+                role,
+            )
             return user_id
         except sqlite3.IntegrityError:
-            logger.warning("AuthService: erreur creation utilisateur (contrainte unique)")
+            logger.warning("AuthService: user creation error (unique constraint)")
             return None
-        except Exception:
-            logger.exception("AuthService: erreur creation utilisateur")
+        except sqlite3.Error:
+            logger.exception("AuthService: user creation error")
             return None
 
     def close(self):
         """Ferme la connexion à la base de données."""
         self.conn.close()
-        logger.debug("AuthService: connexion aux utilisateurs fermee")
+        logger.debug("AuthService: user database connection closed")

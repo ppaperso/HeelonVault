@@ -1,17 +1,21 @@
-"""
-Utilitaire de validation de la force des mots de passe maîtres.
+"""Validation équilibrée des mots de passe maîtres.
 
-Implémente les recommandations NIST SP 800-63B et OWASP.
+Politique orientée usage humain, alignée avec les bonnes pratiques CNIL/NIST:
+- recommandé: 12+ caractères (phrase de passe)
+- minimum accepté: 10 caractères avec 4 classes (maj/min/chiffre/symbole)
 """
 
 import re
 
+from src.i18n import _
+
 
 class MasterPasswordValidator:
-    """Validateur de mot de passe maître avec règles de sécurité strictes."""
+    """Validateur de mot de passe maître avec règles pragmatiques."""
 
     # Configuration
-    MIN_LENGTH = 12
+    MIN_LENGTH = 10
+    RECOMMENDED_LENGTH = 12
     MIN_LENGTH_STRONG = 16
 
     # Liste des 100 mots de passe les plus communs (à étendre)
@@ -90,82 +94,91 @@ class MasterPasswordValidator:
                 - error_messages: Liste des problèmes détectés
                 - strength_score: Score de 0 à 100
         """
-        errors = []
+        errors: list[str] = []
         score = 0
+        length = len(password)
 
-        # 1. Vérification de la longueur
-        if len(password) < cls.MIN_LENGTH:
-            errors.append(
-                f"Minimum {cls.MIN_LENGTH} caractères requis (actuel : {len(password)})"
-            )
-        else:
+        has_lower = any(c.islower() for c in password)
+        has_upper = any(c.isupper() for c in password)
+        has_digit = any(c.isdigit() for c in password)
+        has_special = any(not c.isalnum() and not c.isspace() for c in password)
+        complexity = sum([has_lower, has_upper, has_digit, has_special])
+
+        # 1) Score longueur
+        if length >= cls.MIN_LENGTH_STRONG:
+            score += 35
+        elif length >= cls.RECOMMENDED_LENGTH:
+            score += 30
+        elif length >= cls.MIN_LENGTH:
             score += 20
-            if len(password) >= cls.MIN_LENGTH_STRONG:
-                score += 10
-            if len(password) >= 20:
-                score += 10
-
-        # 2. Présence de majuscules
-        if not any(c.isupper() for c in password):
-            errors.append("Au moins une majuscule (A-Z) requise")
-        else:
+        elif length >= 8:
             score += 10
 
-        # 3. Présence de minuscules
-        if not any(c.islower() for c in password):
-            errors.append("Au moins une minuscule (a-z) requise")
-        else:
-            score += 10
+        # 2) Score diversité
+        score += complexity * 10
 
-        # 4. Présence de chiffres
-        if not any(c.isdigit() for c in password):
-            errors.append("Au moins un chiffre (0-9) requis")
-        else:
-            score += 10
-
-        # 5. Présence de symboles
-        symbols = "!@#$%^&*()_+-=[]{}|;:,.<>?"
-        if not any(c in symbols for c in password):
-            errors.append("Au moins un symbole (!@#$%...) requis")
-        else:
-            score += 10
-
-        # 6. Vérification contre les mots de passe communs
-        password_lower = password.lower()
-        for common in cls.COMMON_PASSWORDS:
-            if common.lower() in password_lower or password_lower in common.lower():
-                errors.append(
-                    "Ce mot de passe (ou une variante) est trop commun et facile à deviner"
+        # 3) Politique d'acceptation minimale
+        meets_length_only = length >= cls.RECOMMENDED_LENGTH
+        meets_len10_complex = (
+            length >= cls.MIN_LENGTH
+            and has_lower
+            and has_upper
+            and has_digit
+            and has_special
+        )
+        if not (meets_length_only or meets_len10_complex):
+            errors.append(
+                _(
+                    "Minimum requirement: 12+ characters, or 10+ with at least "
+                    "1 uppercase, 1 lowercase, 1 digit, and 1 symbol"
                 )
-                score = max(0, score - 30)
-                break
+            )
 
-        # 7. Détection de patterns simples
+        # 4) Vérification contre mots de passe trop communs
+        if cls._is_too_common(password):
+            errors.append(_("This password is too common and easy to guess"))
+            score = max(0, score - 40)
+
+        # 5) Détection de patterns simples (impacte surtout le score)
         if cls._has_simple_patterns(password):
-            errors.append("Évitez les patterns simples (123, abc, qwerty, etc.)")
-            score = max(0, score - 20)
-
-        # 8. Détection de répétitions
-        if cls._has_repetitions(password):
-            errors.append("Évitez les répétitions excessives (aaa, 111, etc.)")
             score = max(0, score - 10)
 
-        # 9. Bonus pour diversité de caractères
+        # 6) Détection de répétitions (impacte le score)
+        if cls._has_repetitions(password):
+            score = max(0, score - 10)
+
+        # 7) Bonus diversité
         unique_chars = len(set(password))
-        if unique_chars >= len(password) * 0.7:  # 70% de caractères uniques
+        if length > 0 and unique_chars >= length * 0.7:
             score += 10
 
-        # 10. Bonus pour complexité
-        if len(password) >= 16 and score >= 60:
+        # 8) Bonus longueur + complexité
+        if length >= cls.MIN_LENGTH_STRONG and complexity >= 3:
             score += 10
 
         # Score final normalisé
         score = min(100, score)
 
-        # Le mot de passe est valide s'il n'y a aucune erreur critique
+        # Valide si aucune erreur bloquante
         is_valid = len(errors) == 0
 
         return is_valid, errors, score
+
+    @classmethod
+    def _is_too_common(cls, password: str) -> bool:
+        """Vérifie si le mot de passe correspond à un secret très courant.
+
+        On compare en égalité (pas en sous-chaîne) pour éviter les faux positifs
+        sur des mots de passe longs contenant, par exemple, "test".
+        """
+        normalized = "".join(ch.lower() for ch in password if ch.isalnum())
+        if not normalized:
+            return True
+        common_normalized = {
+            "".join(ch.lower() for ch in common if ch.isalnum())
+            for common in cls.COMMON_PASSWORDS
+        }
+        return normalized in common_normalized
 
     @staticmethod
     def _has_simple_patterns(password: str) -> bool:
@@ -222,18 +235,7 @@ class MasterPasswordValidator:
     @staticmethod
     def _has_repetitions(password: str) -> bool:
         """Détecte les répétitions excessives de caractères."""
-        # Cherche 3 caractères identiques consécutifs ou plus
-        if re.search(r"(.)\1{2,}", password):
-            return True
-
-        # Cherche des répétitions de séquences (aba, 121, etc.)
-        if re.search(r"(..).*\1", password):
-            # Vérifie si c'est une répétition courte
-            matches = re.findall(r"(..).*\1", password)
-            if len(matches) >= 2:
-                return True
-
-        return False
+        return bool(re.search(r"(.)\1{3,}", password))
 
     @classmethod
     def get_strength_description(cls, score: int) -> str:
@@ -246,15 +248,15 @@ class MasterPasswordValidator:
             str: Description de la force
         """
         if score >= 80:
-            return "Très fort 💪"
+            return _("Very strong 💪")
         elif score >= 60:
-            return "Fort 👍"
+            return _("Strong 👍")
         elif score >= 40:
-            return "Moyen ⚠️"
+            return _("Medium ⚠️")
         elif score >= 20:
-            return "Faible 😟"
+            return _("Weak 😟")
         else:
-            return "Très faible ❌"
+            return _("Very weak ❌")
 
     @classmethod
     def suggest_improvements(cls, password: str) -> list[str]:
@@ -268,29 +270,39 @@ class MasterPasswordValidator:
         """
         suggestions = []
 
+        if len(password) < cls.RECOMMENDED_LENGTH:
+            suggestions.append(
+                _("Aim for at least %(count)s characters (recommended)")
+                % {"count": cls.RECOMMENDED_LENGTH}
+            )
+
         if len(password) < cls.MIN_LENGTH_STRONG:
             suggestions.append(
-                f"Augmentez la longueur à au moins {cls.MIN_LENGTH_STRONG} caractères"
+                _("Increase length to at least %(count)s characters")
+                % {"count": cls.MIN_LENGTH_STRONG}
             )
 
         if not any(c in "!@#$%^&*()_+-=[]{}|;:,.<>?" for c in password):
-            suggestions.append("Ajoutez des symboles spéciaux (!@#$%...)")
+            suggestions.append(_("Add special symbols (!@#$%...)"))
 
         has_lower = any(c.islower() for c in password)
         has_upper = any(c.isupper() for c in password)
         has_digit = any(c.isdigit() for c in password)
 
         if not (has_lower and has_upper and has_digit):
-            suggestions.append("Mélangez majuscules, minuscules et chiffres")
+            suggestions.append(_("Mix uppercase, lowercase, and digits"))
 
         if cls._has_simple_patterns(password):
-            suggestions.append("Évitez les séquences simples (123, abc, etc.)")
+            suggestions.append(_("Avoid simple sequences (123, abc, etc.)"))
 
         if cls._has_repetitions(password):
-            suggestions.append("Évitez les répétitions de caractères")
+            suggestions.append(_("Avoid repeated characters"))
+
+        if cls._is_too_common(password):
+            suggestions.append(_("Choose a less common password"))
 
         if not suggestions:
-            suggestions.append("Votre mot de passe est solide ! ✅")
+            suggestions.append(_("Your password is solid! ✅"))
 
         return suggestions
 

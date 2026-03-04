@@ -1,4 +1,4 @@
-"""Dialogue d'ajout ou de modification d'une entrée."""
+"""Add/edit entry dialog."""
 
 
 import gi  # type: ignore[import]
@@ -6,6 +6,7 @@ import gi  # type: ignore[import]
 from src.i18n import _
 from src.models.password_entry import PasswordEntry
 from src.services.password_service import PasswordService
+from src.ui.password_strength import evaluate_password_strength
 
 from .helpers import present_alert
 from .password_generator_dialog import PasswordGeneratorDialog
@@ -20,7 +21,7 @@ def split_tags(text: str) -> list[str]:
 
 
 class AddEditDialog(Adw.Window):
-    """Dialogue d'ajout/édition d'entrée"""
+    """Add/edit entry dialog."""
 
     def __init__(
         self, parent, password_service: PasswordService, entry: PasswordEntry | None = None
@@ -32,7 +33,7 @@ class AddEditDialog(Adw.Window):
         self.password_service = password_service
         self.entry = entry
         self.parent_window = parent
-        self.set_title(_("Modifier l'entrée") if entry else _("Nouvelle entrée"))
+        self.set_title(_("Edit entry") if entry else _("New entry"))
 
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
         header = Adw.HeaderBar()
@@ -49,11 +50,11 @@ class AddEditDialog(Adw.Window):
         content.set_margin_bottom(20)
 
         title_value = entry.title if entry else ""
-        title_row, self.title_entry = self.create_entry_row(_("Titre *"), title_value)
+        title_row, self.title_entry = self.create_entry_row(_("Title *"), title_value)
         content.append(title_row)
 
         cat_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        cat_label = Gtk.Label(label=_("Catégorie"), xalign=0)
+        cat_label = Gtk.Label(label=_("Category"), xalign=0)
         cat_box.append(cat_label)
 
         self.category_dropdown = Gtk.DropDown()
@@ -75,7 +76,7 @@ class AddEditDialog(Adw.Window):
         content.append(cat_box)
 
         tags_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        tags_label = Gtk.Label(label=_("Tags (séparés par des virgules)"), xalign=0)
+        tags_label = Gtk.Label(label=_("Tags (comma-separated)"), xalign=0)
         tags_box.append(tags_label)
 
         self.tags_entry = Gtk.Entry()
@@ -85,24 +86,24 @@ class AddEditDialog(Adw.Window):
         content.append(tags_box)
 
         username_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        username_label = Gtk.Label(label=_("👤 Nom d'utilisateur / Login (optionnel)"), xalign=0)
+        username_label = Gtk.Label(label=_("👤 Username / Login (optional)"), xalign=0)
         username_box.append(username_label)
 
         self.username_entry = Gtk.Entry()
         username_value = entry.username if entry and entry.username else ""
         self.username_entry.set_text(username_value)
-        self.username_entry.set_placeholder_text(_("Ex: user@exemple.com ou mon_login"))
+        self.username_entry.set_placeholder_text(_("Ex: user@example.com or my_login"))
         username_box.append(self.username_entry)
 
         username_hint = Gtk.Label(
-            label=_("Pour les sites web, entrez votre identifiant de connexion"), xalign=0
+            label=_("For websites, enter your login identifier"), xalign=0
         )
         username_hint.set_css_classes(['caption', 'dim-label'])
         username_box.append(username_hint)
         content.append(username_box)
 
         pass_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
-        pass_label = Gtk.Label(label=_("Mot de passe *"), xalign=0)
+        pass_label = Gtk.Label(label=_("Password *"), xalign=0)
         pass_box.append(pass_label)
 
         pass_input_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
@@ -111,13 +112,19 @@ class AddEditDialog(Adw.Window):
             self.password_entry.set_text(entry.password)
         self.password_entry.set_show_peek_icon(True)
         self.password_entry.set_hexpand(True)
+        self.password_entry.connect("changed", self._on_password_changed)
         pass_input_box.append(self.password_entry)
 
-        gen_btn = Gtk.Button(label=_("Générer"))
+        gen_btn = Gtk.Button(label=_("Generate"))
         gen_btn.connect("clicked", self.on_generate_clicked)
         pass_input_box.append(gen_btn)
 
         pass_box.append(pass_input_box)
+
+        self.password_strength_label = Gtk.Label(label="", xalign=0)
+        self.password_strength_label.set_css_classes(['caption'])
+        pass_box.append(self.password_strength_label)
+
         content.append(pass_box)
 
         url_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
@@ -127,7 +134,7 @@ class AddEditDialog(Adw.Window):
         self.url_entry = Gtk.Entry()
         if entry and entry.url:
             self.url_entry.set_text(entry.url)
-        self.url_entry.set_placeholder_text(_("https://exemple.com"))
+        self.url_entry.set_placeholder_text(_("https://example.com"))
         url_box.append(self.url_entry)
         content.append(url_box)
 
@@ -156,14 +163,53 @@ class AddEditDialog(Adw.Window):
         notes_box.append(notes_scrolled)
         content.append(notes_box)
 
+        validity_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        validity_label = Gtk.Label(label=_("⏳ Password validity"), xalign=0)
+        validity_box.append(validity_label)
+
+        self.validity_infinite_check = Gtk.CheckButton(label=_("Unlimited validity period"))
+        self.validity_infinite_check.connect("toggled", self._on_validity_toggled)
+        validity_box.append(self.validity_infinite_check)
+
+        validity_days_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        validity_days_label = Gtk.Label(label=_("Duration (days)"), xalign=0)
+        validity_days_box.append(validity_days_label)
+
+        validity_adjustment = Gtk.Adjustment(
+            value=90,
+            lower=1,
+            upper=3650,
+            step_increment=1,
+            page_increment=30,
+            page_size=0,
+        )
+        self.validity_days_spin = Gtk.SpinButton(
+            adjustment=validity_adjustment,
+            climb_rate=1,
+            digits=0,
+        )
+        self.validity_days_spin.set_numeric(True)
+        validity_days_box.append(self.validity_days_spin)
+        validity_box.append(validity_days_box)
+
+        current_validity = entry.password_validity_days if entry else 90
+        if current_validity is None:
+            self.validity_infinite_check.set_active(True)
+            self.validity_days_spin.set_value(90)
+        else:
+            self.validity_infinite_check.set_active(False)
+            self.validity_days_spin.set_value(int(current_validity))
+        self._on_validity_toggled(self.validity_infinite_check)
+        content.append(validity_box)
+
         action_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
         action_box.set_halign(Gtk.Align.END)
 
-        cancel_btn = Gtk.Button(label=_("Annuler"))
+        cancel_btn = Gtk.Button(label=_("Cancel"))
         cancel_btn.connect("clicked", lambda b: self.close())
         action_box.append(cancel_btn)
 
-        save_btn = Gtk.Button(label=_("Valider"))
+        save_btn = Gtk.Button(label=_("Save"))
         save_btn.set_css_classes(['suggested-action'])
         save_btn.connect("clicked", self.on_save_clicked)
         action_box.append(save_btn)
@@ -173,6 +219,7 @@ class AddEditDialog(Adw.Window):
         scrolled.set_child(content)
         box.append(scrolled)
         self.set_content(box)
+        self._on_password_changed(self.password_entry)
 
     def create_entry_row(self, label_text, value):
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=5)
@@ -191,6 +238,19 @@ class AddEditDialog(Adw.Window):
 
     def set_generated_password(self, password: str):
         self.password_entry.set_text(password)
+
+    def _on_password_changed(self, entry):
+        password = entry.get_text()
+        score, label, css = evaluate_password_strength(password)
+        if score == 0:
+            self.password_strength_label.set_text("")
+            self.password_strength_label.set_css_classes(['caption'])
+            return
+        self.password_strength_label.set_text(_("Strength: %s") % label)
+        self.password_strength_label.set_css_classes(['caption', css])
+
+    def _on_validity_toggled(self, _button):
+        self.validity_days_spin.set_sensitive(not self.validity_infinite_check.get_active())
 
     def on_save_clicked(self, _button):
         title = self.title_entry.get_text()
@@ -213,11 +273,17 @@ class AddEditDialog(Adw.Window):
             notes_buffer.get_start_iter(), notes_buffer.get_end_iter(), False
         )
 
+        password_validity_days = (
+            None
+            if self.validity_infinite_check.get_active()
+            else int(self.validity_days_spin.get_value())
+        )
+
         if not title or not password:
             present_alert(
                 self,
-                _("Champs requis"),
-                _("Le titre et le mot de passe sont obligatoires."),
+                _("Required fields"),
+                _("Title and password are required."),
                 [("ok", _("OK"))],
                 default="ok",
             )
@@ -233,6 +299,7 @@ class AddEditDialog(Adw.Window):
                 notes=notes,
                 category=category,
                 tags=tags,
+                password_validity_days=password_validity_days,
             )
             self.password_service.update_entry(updated_entry)
         else:
@@ -244,6 +311,7 @@ class AddEditDialog(Adw.Window):
                 notes=notes,
                 category=category,
                 tags=tags,
+                password_validity_days=password_validity_days,
             )
             self.password_service.create_entry(new_entry)
 

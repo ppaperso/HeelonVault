@@ -83,7 +83,7 @@ def configure_logging() -> None:
         file_handler.setFormatter(formatter)
         root_logger.addHandler(file_handler)
     except OSError:
-        root_logger.warning("Impossible d'ouvrir le fichier de log %s", log_filename)
+        root_logger.warning("Unable to open log file %s", log_filename)
 
     removed_logs = _rotate_logs(log_dir, KEEP_LOG_FILES)
 
@@ -95,10 +95,10 @@ def configure_logging() -> None:
 
     if fallback_reason:
         root_logger.warning(
-            "Repertoire de log par defaut indisponible (%s), redirige vers %s",
+            "Default log directory unavailable (%s), redirected to %s",
             fallback_reason,
             log_dir,
         )
 
     if removed_logs:
-        root_logger.debug("Anciennes traces supprimées : %s", ", ".join(removed_logs))
+        root_logger.debug("Old log files removed: %s", ", ".join(removed_logs))

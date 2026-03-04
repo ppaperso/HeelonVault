@@ -32,11 +32,11 @@ def toast(parent, message: str, *, timeout: int = 3) -> bool:
         try:
             toast_obj.set_timeout(timeout)
         except Exception as e:
-            logger.debug("Impossible de définir le timeout du toast : %s", e)
+            logger.debug("Unable to set toast timeout: %s", e)
         overlay.add_toast(toast_obj)
         return True
     except Exception as exc:
-        logger.debug("Impossible d'afficher un toast: %s", exc)
+        logger.debug("Unable to display toast: %s", exc)
         return False
 
 
@@ -51,7 +51,7 @@ def message_dialog(parent, *, heading: str, body: str, ok_label: str | None = No
 def error(parent, body: str, *, heading: str | None = None) -> None:
     """Erreur critique: affiche un dialog."""
 
-    message_dialog(parent, heading=heading or _("Erreur"), body=body)
+    message_dialog(parent, heading=heading or _("Error"), body=body)
 
 
 def info(parent, body: str, *, heading: str | None = None) -> None:

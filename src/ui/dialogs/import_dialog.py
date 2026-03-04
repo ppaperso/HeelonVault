@@ -25,7 +25,7 @@ class ImportCSVDialog(Adw.Window):
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_title(_("Importer depuis CSV"))
+        self.set_title(_("Import from CSV"))
         self.set_default_size(600, 500)
 
         self.parent_window = parent
@@ -49,15 +49,15 @@ class ImportCSVDialog(Adw.Window):
         content.set_margin_end(20)
 
         # Titre et description
-        title_label = Gtk.Label(label=_("Importer des mots de passe"))
+        title_label = Gtk.Label(label=_("Import passwords"))
         title_label.set_css_classes(['title-2'])
         title_label.set_xalign(0)
         content.append(title_label)
 
         desc_label = Gtk.Label(
             label=_(
-                "Importez vos mots de passe depuis un export CSV de LastPass ou "
-                "d'un autre gestionnaire."
+                "Import your passwords from a LastPass CSV export or "
+                "another password manager."
             )
         )
         desc_label.set_wrap(True)
@@ -67,19 +67,19 @@ class ImportCSVDialog(Adw.Window):
 
         # Groupe de sélection de fichier
         file_group = Adw.PreferencesGroup()
-        file_group.set_title(_("Fichier CSV"))
+        file_group.set_title(_("CSV file"))
 
         # Ligne de sélection de fichier
         file_row = Adw.ActionRow()
-        file_row.set_title(_("Fichier"))
-        file_row.set_subtitle(_("Sélectionnez votre fichier d'export CSV"))
+        file_row.set_title(_("File"))
+        file_row.set_subtitle(_("Select your CSV export file"))
 
-        select_button = Gtk.Button(label=_("Choisir un fichier"))
+        select_button = Gtk.Button(label=_("Choose file"))
         select_button.set_valign(Gtk.Align.CENTER)
         select_button.connect("clicked", self.on_select_file_clicked)
         file_row.add_suffix(select_button)
 
-        self.file_label = Gtk.Label(label=_("Aucun fichier sélectionné"))
+        self.file_label = Gtk.Label(label=_("No file selected"))
         self.file_label.set_css_classes(['caption', 'dim-label'])
         self.file_label.set_xalign(0)
         self.file_label.set_margin_top(5)
@@ -93,12 +93,12 @@ class ImportCSVDialog(Adw.Window):
 
         # Groupe d'options
         options_group = Adw.PreferencesGroup()
-        options_group.set_title(_("Options d'import"))
+        options_group.set_title(_("Import options"))
 
         # Format
         format_row = Adw.ComboRow()
-        format_row.set_title(_("Format du fichier"))
-        format_row.set_subtitle(_("Sélectionnez le format de votre export"))
+        format_row.set_title(_("File format"))
+        format_row.set_subtitle(_("Select your export format"))
 
         format_model = Gtk.StringList()
         formats = self.csv_importer.get_supported_formats()
@@ -119,8 +119,8 @@ class ImportCSVDialog(Adw.Window):
 
         # En-tête
         header_row = Adw.SwitchRow()
-        header_row.set_title(_("Première ligne = en-tête"))
-        header_row.set_subtitle(_("Activer si la première ligne contient les noms de colonnes"))
+        header_row.set_title(_("First row = header"))
+        header_row.set_subtitle(_("Enable if the first row contains column names"))
         header_row.set_active(False)
         self.header_switch = header_row
 
@@ -130,7 +130,7 @@ class ImportCSVDialog(Adw.Window):
 
         # Zone d'aperçu/résultats
         preview_group = Adw.PreferencesGroup()
-        preview_group.set_title(_("Aperçu"))
+        preview_group.set_title(_("Preview"))
 
         preview_scroll = Gtk.ScrolledWindow()
         preview_scroll.set_min_content_height(150)
@@ -146,7 +146,7 @@ class ImportCSVDialog(Adw.Window):
         self.preview_text.set_margin_bottom(10)
 
         buffer = self.preview_text.get_buffer()
-        buffer.set_text(_("Sélectionnez un fichier pour voir un aperçu..."))
+        buffer.set_text(_("Select a file to preview..."))
 
         preview_scroll.set_child(self.preview_text)
         preview_group.add(preview_scroll)
@@ -158,11 +158,11 @@ class ImportCSVDialog(Adw.Window):
         button_box.set_halign(Gtk.Align.END)
         button_box.set_margin_top(10)
 
-        cancel_button = Gtk.Button(label=_("Annuler"))
+        cancel_button = Gtk.Button(label=_("Cancel"))
         cancel_button.connect("clicked", lambda b: self.close())
         button_box.append(cancel_button)
 
-        self.import_button = Gtk.Button(label=_("Importer"))
+        self.import_button = Gtk.Button(label=_("Import"))
         self.import_button.set_css_classes(['suggested-action'])
         self.import_button.set_sensitive(False)
         self.import_button.connect("clicked", self.on_import_clicked)
@@ -176,15 +176,15 @@ class ImportCSVDialog(Adw.Window):
     def on_select_file_clicked(self, _button):
         """Ouvre le sélecteur de fichier"""
         file_dialog = Gtk.FileDialog()
-        file_dialog.set_title(_("Sélectionner un fichier CSV"))
+        file_dialog.set_title(_("Select a CSV file"))
 
         # Filtre pour CSV
         csv_filter = Gtk.FileFilter()
-        csv_filter.set_name(_("Fichiers CSV"))
+        csv_filter.set_name(_("CSV files"))
         csv_filter.add_pattern("*.csv")
 
         all_filter = Gtk.FileFilter()
-        all_filter.set_name(_("Tous les fichiers"))
+        all_filter.set_name(_("All files"))
         all_filter.add_pattern("*")
 
         filter_list = Gio.ListStore.new(Gtk.FileFilter)
@@ -208,7 +208,7 @@ class ImportCSVDialog(Adw.Window):
                 # Afficher un aperçu
                 self.show_preview()
         except Exception as e:
-            logger.error("Erreur lors de la sélection du fichier: %s", e)
+            logger.error("Error selecting file: %s", e)
 
     def show_preview(self):
         """Affiche un aperçu du fichier"""
@@ -224,18 +224,18 @@ class ImportCSVDialog(Adw.Window):
                         break
                     lines.append(line.strip())
 
-                preview_text = _("Aperçu des premières lignes:\n\n")
+                preview_text = _("Preview of first lines:\n\n")
                 preview_text += "\n".join(f"{i+1}. {line}" for i, line in enumerate(lines))
 
                 if len(lines) == 10:
-                    preview_text += _("\n\n... (fichier tronqué pour l'aperçu)")
+                    preview_text += _("\n\n... (file truncated for preview)")
 
                 buffer = self.preview_text.get_buffer()
                 buffer.set_text(preview_text)
 
         except Exception as e:
             buffer = self.preview_text.get_buffer()
-            buffer.set_text(_("Erreur lors de la lecture du fichier:\n%s") % str(e))
+            buffer.set_text(_("Error while reading file:\n%s") % str(e))
 
     def on_import_clicked(self, button):
         """Lance l'importation"""
@@ -244,7 +244,7 @@ class ImportCSVDialog(Adw.Window):
 
         # Désactiver le bouton pendant l'import
         self.import_button.set_sensitive(False)
-        button.set_label(_("Importation en cours..."))
+        button.set_label(_("Importing..."))
 
         # Récupérer les options
         format_index = self.format_row.get_selected()
@@ -258,7 +258,7 @@ class ImportCSVDialog(Adw.Window):
             has_header=has_header
         )
         logger.info(
-            "Import CSV lance pour %s (format=%s, header=%s)",
+            "CSV import started for %s (format=%s, header=%s)",
             self.selected_file,
             format_name,
             has_header
@@ -286,7 +286,7 @@ class ImportCSVDialog(Adw.Window):
                     saved_count += 1
                 except Exception as e:
                     logger.error(
-                        "Erreur lors de la sauvegarde de l'entrée %s: %s",
+                        "Error while saving entry %s: %s",
                         entry["name"],
                         e,
                     )
@@ -294,7 +294,7 @@ class ImportCSVDialog(Adw.Window):
 
             # Afficher le résumé
             logger.info(
-                "Import CSV termine: %d enregistres, %d echecs, %d avertissements",
+                "CSV import finished: %d saved, %d failed, %d warnings",
                 saved_count,
                 failed_count,
                 len(result.get('warnings', []))
@@ -306,29 +306,29 @@ class ImportCSVDialog(Adw.Window):
 
         # Réactiver le bouton
         self.import_button.set_sensitive(True)
-        button.set_label(_("Importer"))
+        button.set_label(_("Import"))
 
     def show_import_summary(self, saved_count, failed_count, result):
         """Affiche un résumé de l'importation"""
-        summary = _("✅ Importation terminée\n\n")
-        summary += _("Entrées importées avec succès: %s\n") % saved_count
+        summary = _("✅ Import completed\n\n")
+        summary += _("Entries imported successfully: %s\n") % saved_count
 
         if failed_count > 0:
-            summary += _("Entrées échouées: %s\n") % failed_count
+            summary += _("Failed entries: %s\n") % failed_count
 
         if result.get('warnings'):
-            summary += _("\n⚠️  Avertissements (%s):\n") % len(result['warnings'])
+            summary += _("\n⚠️  Warnings (%s):\n") % len(result['warnings'])
             for warning in result['warnings'][:5]:  # Limiter à 5
                 summary += f"  • {warning}\n"
             if len(result['warnings']) > 5:
-                summary += _("  ... et %s autres\n") % (len(result['warnings']) - 5)
+                summary += _("  ... and %s more\n") % (len(result['warnings']) - 5)
 
         if result.get('errors'):
-            summary += _("\n❌ Erreurs (%s):\n") % len(result['errors'])
+            summary += _("\n❌ Errors (%s):\n") % len(result['errors'])
             for error in result['errors'][:5]:  # Limiter à 5
                 summary += f"  • {error}\n"
             if len(result['errors']) > 5:
-                summary += _("  ... et %s autres\n") % (len(result['errors']) - 5)
+                summary += _("  ... and %s more\n") % (len(result['errors']) - 5)
 
         buffer = self.preview_text.get_buffer()
         buffer.set_text(summary)
@@ -336,8 +336,8 @@ class ImportCSVDialog(Adw.Window):
         # Afficher une notification
         present_alert(
             self,
-            _("Import terminé"),
-            _("%s mots de passe ont été importés avec succès.") % saved_count,
+            _("Import completed"),
+            _("%s passwords were imported successfully.") % saved_count,
             [("ok", _("OK"))],
             default="ok",
             on_response=lambda response: self.on_import_complete(),
@@ -356,10 +356,10 @@ class ImportCSVDialog(Adw.Window):
 
     def show_import_errors(self, result):
         """Affiche les erreurs d'importation"""
-        error_text = _("❌ Échec de l'importation\n\n")
+        error_text = _("❌ Import failed\n\n")
 
         if result.get('errors'):
-            error_text += _("Erreurs:\n")
+            error_text += _("Errors:\n")
             for error in result['errors']:
                 error_text += f"  • {error}\n"
 
@@ -369,8 +369,8 @@ class ImportCSVDialog(Adw.Window):
         # Afficher un dialogue d'erreur
         present_alert(
             self,
-            _("Erreur d'import"),
-            _("L'importation a échoué. Vérifiez le format du fichier."),
+            _("Import error"),
+            _("Import failed. Check the file format."),
             [("ok", _("OK"))],
             default="ok",
         )

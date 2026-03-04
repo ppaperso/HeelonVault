@@ -29,7 +29,7 @@ class TrashDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(800, 600)
-        self.set_title(_("Corbeille"))
+        self.set_title(_("Trash"))
 
         self.password_service = password_service
         self.on_change_callback = on_change_callback
@@ -43,7 +43,7 @@ class TrashDialog(Adw.Window):
         header.set_show_end_title_buttons(True)
 
         # Bouton vider la corbeille
-        empty_button = Gtk.Button(label=_("Vider la corbeille"))
+        empty_button = Gtk.Button(label=_("Empty trash"))
         empty_button.set_css_classes(["destructive-action"])
         empty_button.connect("clicked", self.on_empty_trash_clicked)
         header.pack_end(empty_button)
@@ -81,8 +81,8 @@ class TrashDialog(Adw.Window):
             # Afficher un message si la corbeille est vide
             empty_status = Adw.StatusPage()
             empty_status.set_icon_name("user-trash-symbolic")
-            empty_status.set_title(_("Corbeille vide"))
-            empty_status.set_description(_("Les entrées supprimées apparaîtront ici"))
+            empty_status.set_title(_("Trash is empty"))
+            empty_status.set_description(_("Deleted entries will appear here"))
             self.scrolled.set_child(empty_status)
             return
 
@@ -99,7 +99,7 @@ class TrashDialog(Adw.Window):
 
         # Vérifier que l'ID existe
         if entry.id is None:
-            logger.warning("Entrée sans ID trouvée dans la corbeille")
+            logger.warning("Entry without ID found in trash")
             return row
 
         hbox = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=12)
@@ -138,13 +138,13 @@ class TrashDialog(Adw.Window):
         entry_id = entry.id  # Capturer l'ID pour éviter les problèmes de type
 
         # Bouton restaurer
-        restore_button = Gtk.Button(label=_("Restaurer"))
+        restore_button = Gtk.Button(label=_("Restore"))
         restore_button.set_css_classes(["suggested-action"])
         restore_button.connect("clicked", lambda _, eid=entry_id: self.on_restore_clicked(eid))  # type: ignore
         button_box.append(restore_button)
 
         # Bouton supprimer définitivement
-        delete_button = Gtk.Button(label=_("Supprimer définitivement"))
+        delete_button = Gtk.Button(label=_("Delete permanently"))
         delete_button.set_css_classes(["destructive-action"])
         delete_button.connect(
             "clicked", lambda _, eid=entry_id: self.on_delete_permanently_clicked(eid)  # type: ignore
@@ -162,10 +162,10 @@ class TrashDialog(Adw.Window):
             self.password_service.restore_entry(entry_id)
             self.load_trash_entries()
             self.on_change_callback()
-            self._show_toast(_("Entrée restaurée"))
+            self._show_toast(_("Entry restored"))
         except Exception as e:
-            logger.exception("Erreur lors de la restauration")
-            self._show_error(_("Erreur lors de la restauration"), str(e))
+            logger.exception("Error while restoring entry")
+            self._show_error(_("Error while restoring entry"), str(e))
 
     def on_delete_permanently_clicked(self, entry_id: int):
         """Supprime définitivement une entrée."""
@@ -173,9 +173,9 @@ class TrashDialog(Adw.Window):
 
         present_alert(
             self,
-            _("Supprimer définitivement ?"),
-            _("Cette action est irréversible. L'entrée sera supprimée définitivement."),
-            [("cancel", _("Annuler")), ("delete", _("Supprimer définitivement"))],
+            _("Delete permanently?"),
+            _("This action is irreversible. The entry will be permanently deleted."),
+            [("cancel", _("Cancel")), ("delete", _("Delete permanently"))],
             default="cancel",
             close="cancel",
             destructive="delete",
@@ -191,10 +191,10 @@ class TrashDialog(Adw.Window):
                 self.password_service.delete_entry_permanently(entry_id)
                 self.load_trash_entries()
                 self.on_change_callback()
-                self._show_toast(_("Entrée supprimée définitivement"))
+                self._show_toast(_("Entry permanently deleted"))
             except Exception as e:
-                logger.exception("Erreur lors de la suppression définitive")
-                self._show_error(_("Erreur lors de la suppression"), str(e))
+                logger.exception("Error while permanently deleting entry")
+                self._show_error(_("Error while deleting entry"), str(e))
 
     def on_empty_trash_clicked(self, _button):
         """Vide complètement la corbeille."""
@@ -202,17 +202,17 @@ class TrashDialog(Adw.Window):
 
         entries = self.password_service.list_trash()
         if not entries:
-            self._show_toast(_("La corbeille est déjà vide"))
+            self._show_toast(_("Trash is already empty"))
             return
 
         present_alert(
             self,
-            _("Vider la corbeille ?"),
+            _("Empty trash?"),
             _(
-                "Toutes les entrées seront supprimées définitivement. "
-                "Cette action est irréversible."
+                "All entries will be permanently deleted. "
+                "This action is irreversible."
             ),
-            [("cancel", _("Annuler")), ("delete", _("Vider la corbeille"))],
+            [("cancel", _("Cancel")), ("delete", _("Empty trash"))],
             default="cancel",
             close="cancel",
             destructive="delete",
@@ -227,11 +227,11 @@ class TrashDialog(Adw.Window):
                 self.load_trash_entries()
                 self.on_change_callback()
                 self._show_toast(
-                    _("Corbeille vidée ({} entrée(s) supprimée(s))").format(count)
+                    _("Trash emptied ({} entry/entries deleted)").format(count)
                 )
             except Exception as e:
-                logger.exception("Erreur lors du vidage de la corbeille")
-                self._show_error(_("Erreur lors du vidage de la corbeille"), str(e))
+                logger.exception("Error while emptying trash")
+                self._show_error(_("Error while emptying trash"), str(e))
 
     def _show_toast(self, message: str):
         """Affiche un toast sur la fenêtre parente."""

@@ -6,6 +6,7 @@ import secrets
 import string
 
 from src.data.french_wordlist_extended import FRENCH_WORDS_EXTENDED
+from src.i18n import _
 
 logger = logging.getLogger(__name__)
 
@@ -64,7 +65,7 @@ class PasswordGenerator:
 
         # Génération cryptographiquement sécurisée
         password = "".join(secrets.choice(charset) for _ in range(length))
-        logger.debug("PasswordGenerator: mot de passe genere (longueur=%d)", length)
+        logger.debug("PasswordGenerator: password generated (length=%d)", length)
         return password
 
     @classmethod
@@ -96,7 +97,7 @@ class PasswordGenerator:
 
         # Ajouter un chiffre à la fin
         result = separator.join(chosen_words) + str(secrets.randbelow(100))
-        logger.debug("PasswordGenerator: phrase de passe generee (mots=%d)", word_count)
+        logger.debug("PasswordGenerator: passphrase generated (words=%d)", word_count)
         return result
 
     @staticmethod
@@ -134,11 +135,11 @@ class PasswordGenerator:
         score = min(score, 4)
 
         descriptions = {
-            0: "Très faible",
-            1: "Faible",
-            2: "Moyen",
-            3: "Fort",
-            4: "Très fort"
+            0: _("Very weak"),
+            1: _("Weak"),
+            2: _("Medium"),
+            3: _("Strong"),
+            4: _("Very strong"),
         }
 
         return {

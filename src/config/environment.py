@@ -26,10 +26,10 @@ def get_data_directory() -> Path:
     if is_dev_mode():
         dev_dir = Path(__file__).resolve().parent.parent / 'data'
         dev_dir.mkdir(parents=True, exist_ok=True)
-        logger.info('Mode DEVELOPPEMENT - Donnees dans %s', dev_dir)
+        logger.info('DEVELOPMENT mode - Data directory: %s', dev_dir)
         return dev_dir
 
     prod_dir = Path('/var/lib/heelonvault-shared')
     prod_dir.mkdir(parents=True, exist_ok=True)
-    logger.info('Mode PRODUCTION - Donnees dans %s', prod_dir)
+    logger.info('PRODUCTION mode - Data directory: %s', prod_dir)
     return prod_dir

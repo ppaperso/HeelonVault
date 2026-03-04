@@ -16,6 +16,8 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
+from src.i18n import _  # noqa: E402
+from src.ui.password_strength import evaluate_password_strength  # noqa: E402
 from src.version import __app_name__  # noqa: E402
 
 logger = logging.getLogger(__name__)
@@ -36,7 +38,7 @@ class EmailLoginDialog(Adw.Window):
         self.set_transient_for(parent)
         self.set_modal(True)
         self.set_default_size(500, 500)
-        self.set_title("Connexion")
+        self.set_title(_("Sign in"))
 
         self.auth_service = auth_service
         self.login_tracker = login_tracker
@@ -92,7 +94,9 @@ class EmailLoginDialog(Adw.Window):
         header_box.append(title_label)
 
         subtitle_label = Gtk.Label()
-        subtitle_label.set_markup("<span size='small'>Authentification sécurisée avec 2FA</span>")
+        subtitle_label.set_markup(
+            "<span size='small'>" + _("Secure authentication with 2FA") + "</span>"
+        )
         subtitle_label.add_css_class("dim-label")
         header_box.append(subtitle_label)
 
@@ -103,11 +107,11 @@ class EmailLoginDialog(Adw.Window):
 
         # Row pour l'email
         email_row = Adw.ActionRow()
-        email_row.set_title("📧 Adresse email")
+        email_row.set_title(_("📧 Email address or username"))
         input_group.add(email_row)
 
         self.email_entry = Gtk.Entry()
-        self.email_entry.set_placeholder_text("votre.email@example.com")
+        self.email_entry.set_placeholder_text(_("your.email@example.com or username"))
         self.email_entry.set_hexpand(True)
         self.email_entry.set_input_purpose(Gtk.InputPurpose.EMAIL)
         self.email_entry.connect("changed", self._on_input_changed)
@@ -116,11 +120,15 @@ class EmailLoginDialog(Adw.Window):
 
         # Row pour le mot de passe
         password_row = Adw.PasswordEntryRow()
-        password_row.set_title("🔑 Mot de passe maître")
+        password_row.set_title(_("🔑 Master password"))
         self.password_entry = password_row
         password_row.connect("changed", self._on_input_changed)
         password_row.connect("activate", lambda e: self._on_login_clicked(None))
         input_group.add(password_row)
+
+        self.password_strength_label = Gtk.Label(label="", xalign=0)
+        self.password_strength_label.set_css_classes(["caption", "dim-label"])
+        content_box.append(self.password_strength_label)
 
         # Message de statut
         self.status_label = Gtk.Label()
@@ -134,7 +142,7 @@ class EmailLoginDialog(Adw.Window):
         button_box.set_margin_top(20)
         content_box.append(button_box)
 
-        self.login_button = Gtk.Button(label="Se connecter")
+        self.login_button = Gtk.Button(label=_("Sign in"))
         self.login_button.add_css_class("suggested-action")
         self.login_button.add_css_class("pill")
         self.login_button.set_size_request(200, 50)
@@ -150,7 +158,7 @@ class EmailLoginDialog(Adw.Window):
 
         security_label = Gtk.Label()
         security_label.set_markup(
-            "<span size='small'>🔒 Chiffrement AES-256-GCM • 2FA Obligatoire</span>"
+            "<span size='small'>" + _("🔒 AES-256-GCM encryption • Mandatory 2FA") + "</span>"
         )
         security_label.add_css_class("dim-label")
         security_box.append(security_label)
@@ -184,13 +192,22 @@ class EmailLoginDialog(Adw.Window):
         # Effacer le statut
         self.status_label.set_text("")
 
+        score, strength_label, strength_css = evaluate_password_strength(password)
+        if score == 0:
+            self.password_strength_label.set_text("")
+            self.password_strength_label.set_css_classes(["caption", "dim-label"])
+            return
+
+        self.password_strength_label.set_text(_("Robustesse : %s") % strength_label)
+        self.password_strength_label.set_css_classes(["caption", strength_css])
+
     def _on_login_clicked(self, _button):
         """Tente la connexion."""
         email = self.email_entry.get_text().strip()
         password = self.password_entry.get_text().strip()
 
         if not email or not password:
-            self._show_status("❌ Veuillez remplir tous les champs.", "error")
+            self._show_status(_("❌ Please fill in all fields."), "error")
             return
 
         # Hasher l'email pour le tracker
@@ -204,7 +221,7 @@ class EmailLoginDialog(Adw.Window):
 
         # Désactiver les contrôles pendant l'authentification
         self._set_loading(True)
-        self._show_status("🔄 Authentification en cours...", "info")
+        self._show_status(_("🔄 Authentication in progress..."), "info")
 
         # Utiliser un timeout pour ne pas bloquer l'UI
         GLib.timeout_add(100, lambda: self._authenticate(email, password, email_hash))
@@ -228,26 +245,35 @@ class EmailLoginDialog(Adw.Window):
                 self.authenticated = True
 
                 self.login_tracker.record_successful_attempt(email_hash)
-                self._show_status("✅ Authentification réussie !", "success")
+                self._show_status(_("✅ Authentication successful!"), "success")
 
-                logger.info("Authentification réussie pour %s", email)
+                logger.info("Authentication successful for %s", email)
 
                 # Fermer après un court délai
-                GLib.timeout_add(500, lambda: self.close())
+                GLib.timeout_add(500, self._close_safely)
             else:
                 # Échec
                 self.login_tracker.record_failed_attempt(email_hash)
-                self._show_status("❌ Email ou mot de passe incorrect.", "error")
+                self._show_status(_("❌ Invalid username/email or password."), "error")
                 self.password_entry.set_text("")
                 self.password_entry.grab_focus()
                 self._set_loading(False)
 
         except Exception as e:
-            logger.exception("Erreur lors de l'authentification")
-            self._show_status(f"❌ Erreur : {e}", "error")
+            logger.exception("Authentication error")
+            self._show_status(_("❌ Error: %s") % e, "error")
             self._set_loading(False)
 
         return False  # Ne pas répéter le timeout
+
+    def _close_safely(self):
+        """Ferme le dialogue en nettoyant le focus pour éviter les warnings GTK."""
+        try:
+            self.set_focus(None)
+        except Exception as e:
+            logger.debug("Error setting focus to None: %s", e)
+        self.close()
+        return False
 
     def _is_currently_blocked(self) -> bool:
         """Retourne True si une période de blocage est active."""
@@ -286,12 +312,12 @@ class EmailLoginDialog(Adw.Window):
         if remaining >= 3600:
             minutes = remaining // 60
             self._show_status(
-                f"🔒 Trop de tentatives. Veuillez réessayer dans {minutes} minutes.",
+                _("🔒 Too many attempts. Please try again in %d minutes.") % minutes,
                 "error"
             )
         else:
             self._show_status(
-                f"⏳ Veuillez attendre {remaining} seconde(s) avant de réessayer.",
+                _("⏳ Please wait %d second(s) before trying again.") % remaining,
                 "warning"
             )
 
@@ -306,9 +332,9 @@ class EmailLoginDialog(Adw.Window):
         self.login_button.set_sensitive(not loading)
 
         if loading:
-            self.login_button.set_label("Connexion...")
+            self.login_button.set_label(_("Signing in..."))
         else:
-            self.login_button.set_label("Se connecter")
+            self.login_button.set_label(_("Sign in"))
 
     def _show_status(self, message: str, status_type: str = "info"):
         """Affiche un message de statut.

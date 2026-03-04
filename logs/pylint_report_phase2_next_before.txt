@@ -1,0 +1,26 @@
+************* Module src.services.backup_service
+src/services/backup_service.py:73:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/backup_service.py:157:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/backup_service.py:137:17: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+src/services/backup_service.py:185:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/backup_service.py:235:19: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/backup_service.py:224:21: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+src/services/backup_service.py:273:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/backup_service.py:340:15: W0718: Catching too general exception Exception (broad-exception-caught)
+************* Module src.repositories.password_repository
+src/repositories/password_repository.py:34:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/repositories/password_repository.py:158:19: W0718: Catching too general exception Exception (broad-exception-caught)
+src/repositories/password_repository.py:408:19: W0718: Catching too general exception Exception (broad-exception-caught)
+src/repositories/password_repository.py:414:19: W0718: Catching too general exception Exception (broad-exception-caught)
+src/repositories/password_repository.py:439:15: W0718: Catching too general exception Exception (broad-exception-caught)
+************* Module src.services.totp_service
+src/services/totp_service.py:76:23: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/totp_service.py:72:33: W1514: Using open without explicitly specifying an encoding (unspecified-encoding)
+src/services/totp_service.py:81:8: R1705: Unnecessary "else" after "return", remove the "else" and de-indent the code inside it (no-else-return)
+src/services/totp_service.py:253:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/totp_service.py:340:15: W0718: Catching too general exception Exception (broad-exception-caught)
+src/services/totp_service.py:363:15: W0718: Catching too general exception Exception (broad-exception-caught)
+
+-----------------------------------
+Your code has been rated at 9.62/10
+

@@ -8,8 +8,8 @@ Ce service gère :
 - Rate limiting global pour éviter l'énumération d'emails
 """
 
-import logging
 import json
+import logging
 import time
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -64,7 +64,7 @@ class LoginAttemptTracker:
         self._global_tracker = GlobalAttemptTracker()
         self._state_file = state_file
         self._load_state()
-        logger.info("Service de protection anti-brute force initialisé (avec rate limiting global)")
+        logger.info("Brute-force protection service initialized (with global rate limiting)")
 
     def _load_state(self):
         """Charge l'état persistant des tentatives depuis le disque."""
@@ -105,8 +105,8 @@ class LoginAttemptTracker:
             for identifier in expired:
                 del self._attempts[identifier]
 
-        except Exception as exc:
-            logger.warning("Impossible de charger l'état anti-brute force: %s", exc)
+        except (json.JSONDecodeError, OSError, ValueError, TypeError) as exc:
+            logger.warning("Unable to load brute-force protection state: %s", exc)
 
     def _save_state(self):
         """Sauvegarde l'état persistant des tentatives sur le disque."""
@@ -134,8 +134,8 @@ class LoginAttemptTracker:
                 encoding="utf-8",
             )
             self._state_file.chmod(0o600)
-        except Exception as exc:
-            logger.warning("Impossible de sauvegarder l'état anti-brute force: %s", exc)
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning("Unable to save brute-force protection state: %s", exc)
 
     def _clean_old_global_attempts(self, current_time: float):
         """Nettoie les anciennes tentatives globales.
@@ -171,7 +171,7 @@ class LoginAttemptTracker:
         # Vérifier la limite par minute
         if len(self._global_tracker.attempts_minute) >= self.GLOBAL_MAX_ATTEMPTS_PER_MINUTE:
             logger.warning(
-                "⚠️  Rate limiting global: trop de tentatives par minute "
+                "⚠️  Global rate limiting: too many attempts per minute "
                 "(%d/%d)",
                 len(self._global_tracker.attempts_minute),
                 self.GLOBAL_MAX_ATTEMPTS_PER_MINUTE,
@@ -181,7 +181,7 @@ class LoginAttemptTracker:
         # Vérifier la limite par heure
         if len(self._global_tracker.attempts_hour) >= self.GLOBAL_MAX_ATTEMPTS_PER_HOUR:
             logger.warning(
-                "🔒 Rate limiting global: trop de tentatives par heure (%d/%d)",
+                "🔒 Global rate limiting: too many attempts per hour (%d/%d)",
                 len(self._global_tracker.attempts_hour),
                 self.GLOBAL_MAX_ATTEMPTS_PER_HOUR,
             )
@@ -223,7 +223,7 @@ class LoginAttemptTracker:
         if info.lockout_until and current_time < info.lockout_until:
             remaining = int(info.lockout_until - current_time)
             logger.warning(
-                "Tentative de connexion bloquée pour '%s...' (%ss restantes)",
+                "Login attempt blocked for '%s...' (%ss remaining)",
                 identifier[:16],
                 remaining,
             )
@@ -231,7 +231,7 @@ class LoginAttemptTracker:
 
         # Si le verrouillage est expiré, réinitialiser
         if info.lockout_until and current_time >= info.lockout_until:
-            logger.info("Fin du verrouillage pour '%s...'", identifier[:16])
+            logger.info("Lockout ended for '%s...'", identifier[:16])
             self._reset_attempts(identifier)
             return (True, None)
 
@@ -243,7 +243,7 @@ class LoginAttemptTracker:
             if time_since_last < delay:
                 remaining = int(delay - time_since_last)
                 logger.debug(
-                    "Délai anti-brute force actif pour '%s...' (%ss restantes)",
+                    "Brute-force delay active for '%s...' (%ss remaining)",
                     identifier[:16],
                     remaining,
                 )
@@ -272,7 +272,7 @@ class LoginAttemptTracker:
         # Journalisation (masquer une partie de l'identifiant pour privacy)
         masked_id = identifier[:16] + "..." if len(identifier) > 16 else identifier
         logger.warning(
-            "Tentative de connexion échouée pour '%s' (tentative %d/%d)",
+            "Failed login attempt for '%s' (attempt %d/%d)",
             masked_id,
             info.failed_attempts,
             self.MAX_ATTEMPTS_BEFORE_LOCKOUT,
@@ -282,8 +282,8 @@ class LoginAttemptTracker:
         if info.failed_attempts >= self.MAX_ATTEMPTS_BEFORE_LOCKOUT:
             info.lockout_until = current_time + self.LOCKOUT_DURATION_SECONDS
             logger.error(
-                "🔒 VERROUILLAGE: Compte '%s' verrouillé pendant %d minutes "
-                "(trop de tentatives échouées)",
+                "🔒 LOCKOUT: Account '%s' locked for %d minutes "
+                "(too many failed attempts)",
                 masked_id,
                 self.LOCKOUT_DURATION_SECONDS // 60,
             )
@@ -303,13 +303,13 @@ class LoginAttemptTracker:
             masked_id = identifier[:16] + "..." if len(identifier) > 16 else identifier
             if attempts > 0:
                 logger.info(
-                    "✅ Connexion réussie pour '%s' (après %d tentative(s) échouée(s))",
+                    "✅ Successful login for '%s' (after %d failed attempt(s))",
                     masked_id,
                     attempts,
                 )
             self._reset_attempts(identifier)
         else:
-            logger.info("✅ Connexion réussie")
+            logger.info("✅ Successful login")
         self._save_state()
 
     def _calculate_delay(self, failed_attempts: int) -> float:
@@ -334,7 +334,7 @@ class LoginAttemptTracker:
         """
         if identifier in self._attempts:
             del self._attempts[identifier]
-            logger.debug("Compteur de tentatives réinitialisé")
+            logger.debug("Attempt counter reset")
             self._save_state()
 
     def get_attempt_info(self, identifier: str) -> LoginAttemptInfo | None:
@@ -354,7 +354,7 @@ class LoginAttemptTracker:
         self._attempts.clear()
         self._global_tracker = GlobalAttemptTracker()
         logger.info(
-            "Tous les compteurs de tentatives réinitialisés (%d utilisateurs)",
+            "All attempt counters reset (%d users)",
             count,
         )
         self._save_state()

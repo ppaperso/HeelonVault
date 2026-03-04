@@ -7,6 +7,8 @@ import csv
 import logging
 from pathlib import Path
 
+from src.i18n import _
+
 logger = logging.getLogger(__name__)
 
 
@@ -59,8 +61,8 @@ class CSVImporter:
                 elif comma_count >= 3:
                     return 'generic_comma'
 
-        except Exception as e:
-            logger.error("Erreur lors de la détection du format: %s", e)
+        except (OSError, UnicodeDecodeError, csv.Error) as e:
+            logger.error("Error while detecting CSV format: %s", e)
 
         return None
 
@@ -87,7 +89,7 @@ class CSVImporter:
                 return {
                     'success': False,
                     'entries': [],
-                    'errors': ['Format CSV non reconnu'],
+                    'errors': [_('Unknown CSV format')],
                     'warnings': []
                 }
 
@@ -95,7 +97,7 @@ class CSVImporter:
             return {
                 'success': False,
                 'entries': [],
-                'errors': [f'Format "{format_name}" non supporté'],
+                'errors': [_('Unsupported format "%(format)s"') % {'format': format_name}],
                 'warnings': []
             }
 
@@ -116,11 +118,14 @@ class CSVImporter:
                         entry = self._parse_row(row, expected_columns, line_num)
                         if entry:
                             self.entries.append(entry)
-                    except Exception as e:
-                        self.errors.append(f"Ligne {line_num}: {str(e)}")
+                    except (ValueError, TypeError, IndexError, AttributeError) as e:
+                        self.errors.append(
+                            _("Line %(line)d: %(error)s")
+                            % {'line': line_num, 'error': str(e)}
+                        )
 
             logger.info(
-                "Import CSV: %d entrées importées, %d erreurs, %d avertissements",
+                "CSV import: %d entries imported, %d errors, %d warnings",
                 len(self.entries),
                 len(self.errors),
                 len(self.warnings),
@@ -133,12 +138,14 @@ class CSVImporter:
                 'warnings': self.warnings
             }
 
-        except Exception as e:
-            logger.error("Erreur lors de l'import CSV: %s", e)
+        except (OSError, UnicodeDecodeError, csv.Error) as e:
+            logger.error("Error while importing CSV: %s", e)
             return {
                 'success': False,
                 'entries': [],
-                'errors': [f"Erreur lors de la lecture du fichier: {str(e)}"],
+                'errors': [
+                    _("Error while reading file: %(error)s") % {'error': str(e)}
+                ],
                 'warnings': []
             }
 
@@ -157,14 +164,24 @@ class CSVImporter:
         # Vérifier le nombre de colonnes
         if len(row) < len(expected_columns):
             self.warnings.append(
-                f"Ligne {line_num}: nombre de colonnes insuffisant "
-                f"({len(row)} au lieu de {len(expected_columns)})"
+                _(
+                    "Line %(line)d: insufficient column count "
+                    "(%(actual)d instead of %(expected)d)"
+                )
+                % {
+                    'line': line_num,
+                    'actual': len(row),
+                    'expected': len(expected_columns),
+                }
             )
             # Compléter avec des valeurs vides
             row.extend([''] * (len(expected_columns) - len(row)))
         elif len(row) > len(expected_columns):
             self.warnings.append(
-                f"Ligne {line_num}: trop de colonnes, les colonnes supplémentaires seront ignorées"
+                _(
+                    "Line %(line)d: too many columns, extra columns will be ignored"
+                )
+                % {'line': line_num}
             )
 
         # Créer le dictionnaire d'entrée
@@ -183,9 +200,9 @@ class CSVImporter:
                 entry['name'] = value
 
         # Log pour debug
-        pwd_preview = entry.get('password')[:3] if entry.get('password') else 'VIDE'
+        pwd_preview = entry.get('password')[:3] if entry.get('password') else 'EMPTY'
         logger.debug(
-            "Ligne %d: name='%s', password='%s...'",
+            "Line %d: name='%s', password='%s...'",
             line_num,
             entry.get("name"),
             pwd_preview,
@@ -194,17 +211,18 @@ class CSVImporter:
         # Validation minimale
         if not entry.get('name') or not entry.get('name').strip():
             self.warnings.append(
-                f"Ligne {line_num}: nom d'entrée vide, utilisation d'un nom par défaut"
+                _("Line %(line)d: empty entry name, using a default name")
+                % {'line': line_num}
             )
-            entry['name'] = f"Entrée importée {line_num}"
+            entry['name'] = _("Imported entry %(line)d") % {'line': line_num}
 
         if not entry.get('password') or not entry.get('password').strip():
-            self.warnings.append(f"Ligne {line_num}: mot de passe vide")
+            self.warnings.append(_("Line %(line)d: empty password") % {'line': line_num})
 
         # Valeurs par défaut (sans forcer de catégorie/tags)
         entry.setdefault('url', '')
         entry.setdefault('username', '')
-        entry.setdefault('notes', f'Importé depuis CSV (ligne {line_num})')
+        entry.setdefault('notes', _("Imported from CSV (line %(line)d)") % {'line': line_num})
         entry.setdefault('category', '')  # Pas de catégorie par défaut
         entry.setdefault('tags', [])  # Pas de tags par défaut
 

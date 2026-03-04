@@ -6,6 +6,9 @@ import hashlib
 import logging
 from datetime import datetime
 
+from cryptography.exceptions import InvalidTag
+
+from src.i18n import _
 from src.models.category import Category
 from src.models.password_entry import PasswordEntry, PasswordRecord
 from src.repositories.password_repository import PasswordRepository
@@ -50,37 +53,37 @@ class PasswordService:
     def create_entry(self, entry: PasswordEntry) -> int:
         record = self._encrypt_entry(entry)
         entry_id = self.repository.insert_entry(record)
-        logger.info("PasswordService: entrée créée (%s)", entry_id)
+        logger.info("PasswordService: entry created (%s)", entry_id)
         return entry_id
 
     def update_entry(self, entry: PasswordEntry) -> None:
         if entry.id is None:
-            raise ValueError("update_entry nécessite un identifiant")
+            raise ValueError(_("update_entry requires an identifier"))
 
         current = self.repository.get_entry(entry.id)
         if not current:
-            raise ValueError(f"Entrée {entry.id} introuvable")
+            raise ValueError(_("Entry %(id)s not found") % {"id": entry.id})
 
         password_changed = self._has_password_changed(current, entry.password)
         record = self._encrypt_entry(entry)
         record.id = entry.id
         self.repository.update_entry(record, password_changed=password_changed)
-        logger.info("PasswordService: entrée %s mise à jour", entry.id)
+        logger.info("PasswordService: entry %s updated", entry.id)
 
     def delete_entry(self, entry_id: int) -> None:
         """Déplace une entrée vers la corbeille."""
         self.repository.delete_entry(entry_id)
-        logger.info("PasswordService: entrée %s déplacée vers la corbeille", entry_id)
+        logger.info("PasswordService: entry %s moved to trash", entry_id)
 
     def restore_entry(self, entry_id: int) -> None:
         """Restaure une entrée de la corbeille."""
         self.repository.restore_entry(entry_id)
-        logger.info("PasswordService: entrée %s restaurée", entry_id)
+        logger.info("PasswordService: entry %s restored", entry_id)
 
     def delete_entry_permanently(self, entry_id: int) -> None:
         """Supprime définitivement une entrée."""
         self.repository.delete_entry_permanently(entry_id)
-        logger.info("PasswordService: entrée %s supprimée définitivement", entry_id)
+        logger.info("PasswordService: entry %s permanently deleted", entry_id)
 
     def list_trash(self) -> list[PasswordEntry]:
         """Liste les entrées dans la corbeille."""
@@ -90,7 +93,7 @@ class PasswordService:
     def empty_trash(self) -> int:
         """Vide complètement la corbeille. Retourne le nombre d'entrées supprimées."""
         count = self.repository.empty_trash()
-        logger.info("PasswordService: corbeille vidée (%d entrées)", count)
+        logger.info("PasswordService: trash emptied (%d entries)", count)
         return count
 
     # ------------------------------------------------------------------
@@ -114,9 +117,9 @@ class PasswordService:
         for record in self.repository.list_entries_for_duplicates():
             try:
                 password = self.crypto.decrypt(record.password_data)
-            except Exception as e:
+            except (InvalidTag, KeyError, ValueError, TypeError) as e:
                 logger.debug(
-                    "Impossible de déchiffrer l'entrée %s : %s",
+                    "Unable to decrypt entry %s: %s",
                     record.id,
                     e,
                 )
@@ -156,14 +159,14 @@ class PasswordService:
     def _record_to_entry(self, record: PasswordRecord) -> PasswordEntry:
         try:
             password = self.crypto.decrypt(record.password_data)
-        except Exception:
+        except (InvalidTag, KeyError, ValueError, TypeError):
             password = ""
 
         notes = ""
         if record.notes_data:
             try:
                 notes = self.crypto.decrypt(record.notes_data)
-            except Exception:
+            except (InvalidTag, KeyError, ValueError, TypeError):
                 notes = ""
 
         return PasswordEntry(
@@ -175,6 +178,7 @@ class PasswordService:
             notes=notes,
             category=record.category,
             tags=record.tags,
+            password_validity_days=record.password_validity_days,
             created_at=record.created_at,
             modified_at=record.modified_at,
         )
@@ -191,11 +195,12 @@ class PasswordService:
             notes_data=notes_data,
             category=entry.category,
             tags=entry.tags,
+            password_validity_days=entry.password_validity_days,
         )
 
     def _has_password_changed(self, record: PasswordRecord, new_password: str) -> bool:
         try:
             current_password = self.crypto.decrypt(record.password_data)
-        except Exception:
+        except (InvalidTag, KeyError, ValueError, TypeError):
             return True
         return current_password != new_password

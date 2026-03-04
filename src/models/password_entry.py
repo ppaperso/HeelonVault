@@ -29,6 +29,7 @@ class PasswordEntry:
     notes: str = ""
     category: str = ""
     tags: list[str] = field(default_factory=list)
+    password_validity_days: int | None = 90
     created_at: datetime | None = None
     modified_at: datetime | None = None
 
@@ -87,6 +88,7 @@ class PasswordRecord:
     notes_data: dict[str, str] | None = None
     category: str = ""
     tags: list[str] = field(default_factory=list)
+    password_validity_days: int | None = 90
     created_at: datetime | None = None
     modified_at: datetime | None = None
     last_changed: datetime | None = None

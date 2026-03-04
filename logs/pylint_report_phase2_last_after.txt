@@ -1,0 +1,6 @@
+************* Module src.services.csv_importer
+src/services/csv_importer.py:57:16: R1705: Unnecessary "elif" after "return", remove the leading "el" from "elif" (no-else-return)
+
+------------------------------------------------------------------
+Your code has been rated at 9.95/10 (previous run: 9.59/10, +0.36)
+

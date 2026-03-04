@@ -1,230 +1,118 @@
-"""Dialogue de connexion pour un utilisateur."""
+"""Dialogue de connexion."""
+
+from collections.abc import Callable
 
 import gi  # type: ignore[import]
 
-from src.config.environment import is_dev_mode
 from src.i18n import _
-from src.services.login_attempt_tracker import LoginAttemptTracker
+from src.models.user_info import UserInfo
+from src.services.auth_service import AuthService
+from src.ui.password_strength import evaluate_password_strength
+from src.version import get_version
 
-gi.require_version('Gtk', '4.0')
-gi.require_version('Adw', '1')
-from gi.repository import Adw, GLib, Gtk  # noqa: E402
+gi.require_version("Gtk", "4.0")
+gi.require_version("Adw", "1")
+from gi.repository import Adw, Gtk  # noqa: E402
 
 
 class LoginDialog(Adw.Window):
-    """Dialogue de connexion pour un utilisateur spécifique.
+    """Dialogue de connexion."""
 
-    Demande le mot de passe maître de l'utilisateur.
-    Protégé contre les attaques par force brute.
-    """
-
-    # Instance partagée du tracker (singleton)
-    _tracker = LoginAttemptTracker()
-
-    def __init__(self, parent, user_manager, username: str, callback):
-        """Initialise le dialogue de connexion.
-
-        Args:
-            parent: Fenêtre parente
-            user_manager: Service d'authentification
-            username: Nom de l'utilisateur à authentifier
-            callback: Fonction appelée après authentification réussie
-        """
+    def __init__(
+        self,
+        parent: Gtk.Window,
+        auth_service: AuthService,
+        username: str,
+        callback: Callable[[UserInfo, str], None],
+    ) -> None:
         super().__init__()
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(400, 300)
-        self.set_title(_("Connexion - %s") % username)
-        self.user_manager = user_manager
+        self.set_default_size(400, 250)
+        self.set_title(_("Login"))
+        self.auth_service = auth_service
         self.username = username
         self.callback = callback
-        self.login_btn = None  # Référence au bouton de connexion
 
-        self._build_ui()
-        self._check_lockout_status()
-
-    def _build_ui(self):
-        """Construit l'interface utilisateur."""
         box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=20)
         box.set_margin_start(40)
         box.set_margin_end(40)
         box.set_margin_top(40)
         box.set_margin_bottom(40)
+        box.set_valign(Gtk.Align.CENTER)
 
-        # Icône utilisateur
         icon = Gtk.Image.new_from_icon_name("avatar-default-symbolic")
         icon.set_pixel_size(64)
         box.append(icon)
 
-        # Nom d'utilisateur
-        username_label = Gtk.Label(label=self.username)
-        username_label.set_css_classes(['title-2'])
-        box.append(username_label)
+        title = Gtk.Label(label=_("Hello, %s") % username)
+        title.set_css_classes(["title-2"])
+        box.append(title)
 
-        if is_dev_mode():
-            dev_badge = Gtk.Label(label=_("🔧 MODE DÉVELOPPEMENT"))
-            dev_badge.set_css_classes(['caption', 'warning'])
-            dev_badge.set_margin_top(6)
-            dev_badge.set_margin_bottom(6)
-            dev_badge.set_halign(Gtk.Align.CENTER)
-            box.append(dev_badge)
+        subtitle = Gtk.Label(label=_("Enter your master password"))
+        box.append(subtitle)
 
-        # Champ mot de passe
-        password_label = Gtk.Label(label=_("Mot de passe maître"), xalign=0)
-        box.append(password_label)
+        version_label = Gtk.Label(label=_("v%s") % get_version())
+        version_label.set_css_classes(["caption", "dim-label"])
+        version_label.set_margin_top(10)
 
         self.password_entry = Gtk.PasswordEntry()
         self.password_entry.set_show_peek_icon(True)
-        self.password_entry.connect("activate", lambda e: self.on_login_clicked(None))
+        self.password_entry.connect("changed", self._on_password_changed)
+        self.password_entry.connect("activate", lambda _x: self.on_login())
         box.append(self.password_entry)
 
-        # Message d'erreur
+        self.strength_label = Gtk.Label(label="", xalign=0)
+        self.strength_label.set_css_classes(["caption", "dim-label"])
+        box.append(self.strength_label)
+
         self.error_label = Gtk.Label(label="")
-        self.error_label.set_css_classes(['error'])
+        self.error_label.set_css_classes(["error"])
         self.error_label.set_visible(False)
         box.append(self.error_label)
 
-        # Boutons
         button_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
-        button_box.set_halign(Gtk.Align.END)
+        button_box.set_halign(Gtk.Align.CENTER)
 
-        cancel_btn = Gtk.Button(label=_("Retour"))
-        cancel_btn.connect("clicked", lambda x: self.close())
+        cancel_btn = Gtk.Button(label=_("Back"))
+        cancel_btn.connect("clicked", lambda _x: self.close())
         button_box.append(cancel_btn)
 
-        self.login_btn = Gtk.Button(label=_("Se connecter"))
-        self.login_btn.set_css_classes(['suggested-action'])
-        self.login_btn.connect("clicked", self.on_login_clicked)
-        button_box.append(self.login_btn)
+        login_btn = Gtk.Button(label=_("Sign in"))
+        login_btn.set_css_classes(["suggested-action"])
+        login_btn.connect("clicked", lambda _x: self.on_login())
+        button_box.append(login_btn)
 
         box.append(button_box)
-
+        box.append(version_label)
         self.set_content(box)
-        # Focus sur le champ mot de passe (après affichage complet)
-        def set_focus():
-            if self.password_entry.get_root():
-                self.password_entry.grab_focus()
-                return False
-            return True
-        GLib.idle_add(set_focus)
+        self.password_entry.grab_focus()
 
-    def _check_lockout_status(self):
-        """Vérifie l'état de verrouillage au démarrage."""
-        can_attempt, remaining = self._tracker.check_can_attempt(self.username)
-
-        if not can_attempt:
-            self._disable_login(remaining)
-
-    def _disable_login(self, remaining_seconds: int):
-        """Désactive la connexion temporairement.
-
-        Args:
-            remaining_seconds: Nombre de secondes restantes
-        """
-        self.login_btn.set_sensitive(False)
-        self.password_entry.set_sensitive(False)
-
-        if remaining_seconds >= 60:
-            minutes = remaining_seconds // 60
-            self.show_error(
-                _("🔒 Trop de tentatives échouées. Veuillez patienter %s min") % minutes
-            )
-        else:
-            self.show_error(_("⏳ Veuillez patienter %ss avant de réessayer") % remaining_seconds)
-
-        # Démarrer un timer pour réactiver
-        GLib.timeout_add_seconds(1, self._update_lockout_timer)
-
-    def _update_lockout_timer(self):
-        """Met à jour le timer de verrouillage."""
-        can_attempt, remaining = self._tracker.check_can_attempt(self.username)
-
-        if can_attempt:
-            # Réactiver la connexion
-            self.login_btn.set_sensitive(True)
-            self.password_entry.set_sensitive(True)
-            self.error_label.set_visible(False)
-            return False  # Arrêter le timer
-        else:
-            # Mettre à jour le message
-            if remaining >= 60:
-                minutes = remaining // 60
-                self.show_error(
-                    _("🔒 Trop de tentatives échouées. Veuillez patienter %s min") % minutes
-                )
-            else:
-                self.show_error(_("⏳ Veuillez patienter %ss avant de réessayer") % remaining)
-            return True  # Continuer le timer
-
-    def on_login_clicked(self, _button):
-        """Callback du bouton de connexion.
-
-        Authentifie l'utilisateur et appelle le callback si succès.
-        Protégé contre les attaques par force brute.
-
-        Args:
-            button: Bouton cliqué (peut être None si Enter pressé)
-        """
-        # Vérifier si la tentative est autorisée
-        can_attempt, remaining = self._tracker.check_can_attempt(self.username)
-
-        if not can_attempt:
-            self._disable_login(remaining)
+    def _on_password_changed(self, entry: Gtk.PasswordEntry) -> None:
+        password = entry.get_text()
+        score, label, css = evaluate_password_strength(password)
+        if score == 0:
+            self.strength_label.set_text("")
+            self.strength_label.set_css_classes(["caption", "dim-label"])
             return
+        self.strength_label.set_text(_("Strength: %s") % label)
+        self.strength_label.set_css_classes(["caption", css])
 
+    def on_login(self) -> None:
         password = self.password_entry.get_text()
-
         if not password:
-            self.show_error(_("Le mot de passe est requis"))
+            self.show_error(_("Please enter your password"))
             return
-
-        user_info = self.user_manager.authenticate(self.username, password)
-
-        if user_info:
-            # Succès : réinitialiser le compteur
-            self._tracker.record_successful_attempt(self.username)
+        user_info_dict = self.auth_service.authenticate(self.username, password)
+        if user_info_dict:
+            user_info = UserInfo(**user_info_dict)
             self.callback(user_info, password)
-
-            # Fermer les fenêtres de connexion
-            parent = self.get_transient_for()
             self.close()
-            if parent:
-                parent.close()
         else:
-            # Échec : enregistrer la tentative
-            self._tracker.record_failed_attempt(self.username)
-
-            # Vérifier si un verrouillage est maintenant actif
-            can_attempt, remaining = self._tracker.check_can_attempt(self.username)
-
-            if not can_attempt:
-                self._disable_login(remaining)
-            else:
-                # Calculer le délai progressif
-                info = self._tracker.get_attempt_info(self.username)
-                if info and info.failed_attempts > 0:
-                    delay = self._tracker._calculate_delay(info.failed_attempts)
-                    self.show_error(
-                        _("❌ Mot de passe incorrect (prochaine tentative dans %ss)")
-                        % int(delay)
-                    )
-                else:
-                    self.show_error(_("❌ Mot de passe incorrect"))
-
+            self.show_error(_("Incorrect password"))
             self.password_entry.set_text("")
-            # Reporter le focus après l'affichage de l'erreur
-            def set_focus():
-                if self.password_entry.get_root():
-                    self.password_entry.grab_focus()
-                    return False
-                return True
-            GLib.idle_add(set_focus)
+            self.password_entry.grab_focus()
 
-    def show_error(self, message: str):
-        """Affiche un message d'erreur.
-
-        Args:
-            message: Message à afficher
-        """
+    def show_error(self, message: str) -> None:
         self.error_label.set_text(message)
         self.error_label.set_visible(True)

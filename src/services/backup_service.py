@@ -20,7 +20,7 @@ class BackupService:
         self.data_dir = data_dir
         self.backup_dir = data_dir / "backups"
         self.backup_dir.mkdir(exist_ok=True, parents=True)
-        logger.debug("BackupService initialisé avec data_dir=%s", data_dir)
+        logger.debug("BackupService initialized with data_dir=%s", data_dir)
 
     def create_backup(self, db_path: Path, username: str) -> Path | None:
         """Crée une sauvegarde horodatée d'une base de données.
@@ -33,7 +33,7 @@ class BackupService:
             Path: Chemin vers le fichier de sauvegarde créé, ou None si erreur
         """
         if not db_path.exists():
-            logger.warning("Base de données inexistante: %s", db_path)
+            logger.warning("Database does not exist: %s", db_path)
             return None
 
         try:
@@ -48,7 +48,7 @@ class BackupService:
                 time_diff = mtime - latest_mtime
 
                 if time_diff < 60:  # Moins d'une minute de différence
-                    logger.debug("Sauvegarde récente déjà existante pour %s, skip", username)
+                    logger.debug("Recent backup already exists for %s, skipping", username)
                     return latest_backup
 
             # Créer le nom de fichier avec horodatage
@@ -62,7 +62,7 @@ class BackupService:
             # Définir les permissions appropriées (lecture/écriture propriétaire uniquement)
             backup_path.chmod(0o600)
 
-            logger.info("Sauvegarde créée: %s (taille=%d bytes)",
+            logger.info("Backup created: %s (size=%d bytes)",
                        backup_path.name, backup_path.stat().st_size)
 
             # Nettoyer les anciennes sauvegardes (garder les 7 dernières)
@@ -70,8 +70,8 @@ class BackupService:
 
             return backup_path
 
-        except Exception as e:
-            logger.exception("Erreur lors de la création de la sauvegarde pour %s: %s",
+        except (OSError, shutil.Error, ValueError) as e:
+            logger.exception("Error creating backup for %s: %s",
                            username, e)
             return None
 
@@ -114,7 +114,7 @@ class BackupService:
                 shutil.copy2(users_db, dest)
                 dest.chmod(0o600)
                 files_backed_up.append("users.db")
-                logger.debug("Sauvegardé: users.db")
+                logger.debug("Backed up: users.db")
 
             # Sauvegarder toutes les bases de données passwords_*.db
             for db_file in self.data_dir.glob("passwords_*.db"):
@@ -122,7 +122,7 @@ class BackupService:
                 shutil.copy2(db_file, dest)
                 dest.chmod(0o600)
                 files_backed_up.append(db_file.name)
-                logger.debug("Sauvegardé: %s", db_file.name)
+                logger.debug("Backed up: %s", db_file.name)
 
             # Sauvegarder tous les fichiers salt_*.bin
             for salt_file in self.data_dir.glob("salt_*.bin"):
@@ -130,7 +130,7 @@ class BackupService:
                 shutil.copy2(salt_file, dest)
                 dest.chmod(0o600)
                 files_backed_up.append(salt_file.name)
-                logger.debug("Sauvegardé: %s", salt_file.name)
+                logger.debug("Backed up: %s", salt_file.name)
 
             # Créer un fichier manifest avec les détails
             manifest_path = backup_folder / "MANIFEST.txt"
@@ -146,7 +146,7 @@ class BackupService:
             # Sécuriser les permissions du dossier
             backup_folder.chmod(0o700)
 
-            logger.info("Sauvegarde système complète créée: %s (%d fichiers)",
+            logger.info("Full system backup created: %s (%d files)",
                        backup_folder_name, len(files_backed_up))
 
             # Nettoyer les anciennes sauvegardes système (garder les 7 dernières)
@@ -154,8 +154,8 @@ class BackupService:
 
             return backup_folder
 
-        except Exception as e:
-            logger.exception("Erreur lors de la création de la sauvegarde système: %s", e)
+        except (OSError, shutil.Error, ValueError) as e:
+            logger.exception("Error creating full system backup: %s", e)
             return None
 
     def _cleanup_old_system_backups(self, keep: int = 7):
@@ -176,14 +176,14 @@ class BackupService:
             for backup in old_backups:
                 if backup.is_dir():
                     shutil.rmtree(backup)
-                    logger.debug("Ancienne sauvegarde système supprimée: %s", backup.name)
+                    logger.debug("Old system backup deleted: %s", backup.name)
 
             if old_backups:
-                logger.info("Nettoyage: %d anciennes sauvegardes système supprimées",
+                logger.info("Cleanup: %d old system backups deleted",
                           len(old_backups))
 
-        except Exception as e:
-            logger.exception("Erreur lors du nettoyage des sauvegardes système: %s", e)
+        except (OSError, shutil.Error, ValueError) as e:
+            logger.exception("Error while cleaning system backups: %s", e)
 
     def list_system_backups(self) -> list[Path]:
         """Liste toutes les sauvegardes système.
@@ -232,8 +232,8 @@ class BackupService:
                             .split("\n")
                             if line.strip().startswith("-")
                         ]
-            except Exception as e:
-                logger.debug("Impossible de lire la liste des fichiers : %s", e)
+            except (OSError, UnicodeDecodeError, ValueError, TypeError, IndexError) as e:
+                logger.debug("Unable to read file list: %s", e)
 
         return {
             'name': backup_folder.name,
@@ -264,14 +264,14 @@ class BackupService:
 
             for backup in old_backups:
                 backup.unlink()
-                logger.debug("Ancienne sauvegarde supprimée: %s", backup.name)
+                logger.debug("Old backup deleted: %s", backup.name)
 
             if old_backups:
-                logger.info("Nettoyage effectué: %d anciennes sauvegardes supprimées pour %s",
+                logger.info("Cleanup completed: %d old backups deleted for %s",
                           len(old_backups), username)
 
-        except Exception as e:
-            logger.exception("Erreur lors du nettoyage des sauvegardes pour %s: %s",
+        except OSError as e:
+            logger.exception("Error while cleaning backups for %s: %s",
                            username, e)
 
     def list_backups(self, username: str) -> list[Path]:
@@ -320,24 +320,24 @@ class BackupService:
         """
         try:
             if not backup_path.exists():
-                logger.error("Fichier de sauvegarde inexistant: %s", backup_path)
+                logger.error("Backup file does not exist: %s", backup_path)
                 return False
 
             # Créer une sauvegarde de sécurité avant de restaurer
             if target_path.exists():
                 safety_backup = target_path.with_suffix('.db.before_restore')
                 shutil.copy2(target_path, safety_backup)
-                logger.info("Sauvegarde de sécurité créée: %s", safety_backup.name)
+                logger.info("Safety backup created: %s", safety_backup.name)
 
             # Restaurer
             shutil.copy2(backup_path, target_path)
             target_path.chmod(0o600)
 
-            logger.info("Sauvegarde restaurée: %s → %s",
+            logger.info("Backup restored: %s -> %s",
                        backup_path.name, target_path.name)
             return True
 
-        except Exception as e:
-            logger.exception("Erreur lors de la restauration de %s: %s",
+        except (OSError, shutil.Error) as e:
+            logger.exception("Error restoring %s: %s",
                            backup_path, e)
             return False

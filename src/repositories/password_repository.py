@@ -31,10 +31,10 @@ class PasswordRepository:
 
         try:
             db_path.chmod(0o600)
-        except Exception:
-            logger.debug("Impossible de définir les permissions sur %s", db_path)
+        except OSError:
+            logger.debug("Unable to set permissions on %s", db_path)
 
-        logger.debug("PasswordRepository initialisé sur %s", db_path)
+        logger.debug("PasswordRepository initialized on %s", db_path)
 
     # ------------------------------------------------------------------
     # Initialisation & fermeture
@@ -52,6 +52,7 @@ class PasswordRepository:
                 notes TEXT,
                 category TEXT,
                 tags TEXT,
+                password_validity_days INTEGER DEFAULT 90,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_changed TIMESTAMP,
@@ -99,26 +100,38 @@ class PasswordRepository:
                 # Extraire le username du nom de fichier (passwords_username.db)
                 username = self.db_path.stem.replace("passwords_", "")
                 logger.info(
-                    "Migration détectée: création d'un backup automatique pour %s",
+                    "Migration detected: creating automatic backup for %s",
                     username,
                 )
                 backup_path = self.backup_service.create_backup(self.db_path, username)
                 if backup_path:
-                    logger.info("✅ Backup pré-migration créé: %s", backup_path.name)
+                    logger.info("✅ Pre-migration backup created: %s", backup_path.name)
                 else:
                     logger.warning(
-                        "⚠️  Impossible de créer le backup pré-migration, la migration continue"
+                        "⚠️  Unable to create pre-migration backup, migration continues"
                     )
 
-            logger.info("Migration: Ajout de la colonne deleted_at")
+            logger.info("Migration: adding deleted_at column")
             cursor.execute("ALTER TABLE passwords ADD COLUMN deleted_at TIMESTAMP NULL")
 
+        validity_migration_needed = False
+        try:
+            cursor.execute("SELECT password_validity_days FROM passwords LIMIT 1")
+        except sqlite3.OperationalError:
+            validity_migration_needed = True
+
+        if validity_migration_needed:
+            logger.info("Migration: adding password_validity_days column")
+            cursor.execute(
+                "ALTER TABLE passwords ADD COLUMN password_validity_days INTEGER DEFAULT 90"
+            )
+
         self.conn.commit()
-        logger.debug("Schéma SQLite vérifié pour %s", self.db_path)
+        logger.debug("SQLite schema verified for %s", self.db_path)
 
     def close(self) -> None:
         self.conn.close()
-        logger.debug("PasswordRepository: connexion fermée pour %s", self.db_path)
+        logger.debug("PasswordRepository: connection closed for %s", self.db_path)
 
     # ------------------------------------------------------------------
     # Catégories & tags
@@ -155,8 +168,8 @@ class PasswordRepository:
             try:
                 tags = json.loads(tags_json)
                 tag_set.update(tags)
-            except Exception:
-                logger.debug("Tags invalides ignorés: %s", tags_json)
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Ignored invalid tags: %s", tags_json)
         return sorted(tag_set)
 
     # ------------------------------------------------------------------
@@ -167,8 +180,9 @@ class PasswordRepository:
         cursor.execute(
             """
             INSERT INTO passwords (
-                title, username, password_data, url, notes, category, tags, last_changed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                title, username, password_data, url, notes, category, tags,
+                password_validity_days, last_changed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 record.title,
@@ -178,6 +192,7 @@ class PasswordRepository:
                 json.dumps(record.notes_data) if record.notes_data else None,
                 record.category,
                 json.dumps(record.tags if record.tags else []),
+                record.password_validity_days,
             ),
         )
         self.conn.commit()
@@ -185,14 +200,14 @@ class PasswordRepository:
         entry_id = cursor.lastrowid
         if entry_id is None:
             raise RuntimeError(
-                "Impossible de récupérer l'identifiant de l'entrée insérée"
+                "Unable to retrieve inserted entry identifier"
             )
-        logger.debug("Entrée %s ajoutée", entry_id)
+        logger.debug("Entry %s inserted", entry_id)
         return int(entry_id)
 
     def update_entry(self, record: PasswordRecord, *, password_changed: bool) -> None:
         if record.id is None:
-            raise ValueError("update_entry nécessite un identifiant")
+            raise ValueError("update_entry requires an identifier")
 
         cursor = self.conn.cursor()
         if password_changed:
@@ -200,6 +215,7 @@ class PasswordRepository:
                 """
                 UPDATE passwords
                 SET title=?, username=?, password_data=?, url=?, notes=?, category=?, tags=?,
+                    password_validity_days=?,
                     modified_at=CURRENT_TIMESTAMP,
                     last_changed=CURRENT_TIMESTAMP
                 WHERE id=?
@@ -212,6 +228,7 @@ class PasswordRepository:
                     json.dumps(record.notes_data) if record.notes_data else None,
                     record.category,
                     json.dumps(record.tags if record.tags else []),
+                    record.password_validity_days,
                     record.id,
                 ),
             )
@@ -220,6 +237,7 @@ class PasswordRepository:
                 """
                 UPDATE passwords
                 SET title=?, username=?, password_data=?, url=?, notes=?, category=?, tags=?,
+                    password_validity_days=?,
                     modified_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -231,13 +249,14 @@ class PasswordRepository:
                     json.dumps(record.notes_data) if record.notes_data else None,
                     record.category,
                     json.dumps(record.tags if record.tags else []),
+                    record.password_validity_days,
                     record.id,
                 ),
             )
         self.conn.commit()
         self._has_changes = True
         logger.debug(
-            "Entrée %s mise à jour (mdp changé=%s)", record.id, password_changed
+            "Entry %s updated (password changed=%s)", record.id, password_changed
         )
 
     def update_encrypted_payload(
@@ -271,7 +290,7 @@ class PasswordRepository:
         )
         self.conn.commit()
         self._has_changes = True
-        logger.debug("Éntrée %s déplacée vers la corbeille", entry_id)
+        logger.debug("Entry %s moved to trash", entry_id)
 
     def restore_entry(self, entry_id: int) -> None:
         """Restaure une entrée de la corbeille."""
@@ -279,7 +298,7 @@ class PasswordRepository:
         cursor.execute("UPDATE passwords SET deleted_at = NULL WHERE id=?", (entry_id,))
         self.conn.commit()
         self._has_changes = True
-        logger.debug("Éntrée %s restaurée de la corbeille", entry_id)
+        logger.debug("Entry %s restored from trash", entry_id)
 
     def delete_entry_permanently(self, entry_id: int) -> None:
         """Supprime définitivement une entrée (ne peut pas être restaurée)."""
@@ -287,7 +306,7 @@ class PasswordRepository:
         cursor.execute("DELETE FROM passwords WHERE id=?", (entry_id,))
         self.conn.commit()
         self._has_changes = True
-        logger.debug("Éntrée %s supprimée définitivement", entry_id)
+        logger.debug("Entry %s permanently deleted", entry_id)
 
     def list_trash(self) -> list[PasswordRecord]:
         """Liste toutes les entrées dans la corbeille."""
@@ -295,7 +314,7 @@ class PasswordRepository:
         cursor.execute(
             """
             SELECT id, title, username, password_data, url, notes, category, tags,
-                   created_at, modified_at, last_changed
+                     password_validity_days, created_at, modified_at, last_changed
             FROM passwords WHERE deleted_at IS NOT NULL
             ORDER BY deleted_at DESC
             """
@@ -315,7 +334,7 @@ class PasswordRepository:
         cursor.execute("DELETE FROM passwords WHERE deleted_at IS NOT NULL")
         self.conn.commit()
         self._has_changes = True
-        logger.debug("%d entrée(s) supprimée(s) définitivement de la corbeille", count)
+        logger.debug("%d entry/entries permanently deleted from trash", count)
         return count
 
     # ------------------------------------------------------------------
@@ -327,7 +346,7 @@ class PasswordRepository:
         cursor = self.conn.cursor()
         query = """
             SELECT id, title, username, password_data, url, notes, category, tags,
-                   created_at, modified_at, last_changed
+                   password_validity_days, created_at, modified_at, last_changed
             FROM passwords WHERE id=?
         """
         if not include_deleted:
@@ -348,7 +367,8 @@ class PasswordRepository:
     ) -> list[PasswordRecord]:
         query = [
             "SELECT id, title, username, password_data, url, notes, category, tags,",
-            "created_at, modified_at, last_changed FROM passwords WHERE 1 = 1",
+            "password_validity_days, created_at, modified_at, last_changed ",
+            "FROM passwords WHERE 1 = 1",
         ]
         params: list[str] = []
 
@@ -356,7 +376,7 @@ class PasswordRepository:
         if not include_deleted:
             query.append("AND deleted_at IS NULL")
 
-        if category_filter and category_filter not in ("", "Toutes"):
+        if category_filter and category_filter not in ("", "All", "Toutes"):
             query.append("AND category = ?")
             params.append(category_filter)
 
@@ -376,7 +396,7 @@ class PasswordRepository:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT id, title, username, password_data, url, notes, category, tags, "
-            "created_at, modified_at, last_changed FROM passwords"
+            "password_validity_days, created_at, modified_at, last_changed FROM passwords"
         )
         return [self._row_to_record(row) for row in cursor.fetchall()]
 
@@ -405,14 +425,14 @@ class PasswordRepository:
         if row[7]:
             try:
                 tags = json.loads(row[7])
-            except Exception:
-                logger.debug("Tags invalides pour l'entrée %s", row[0])
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Invalid tags for entry %s", row[0])
         notes_data = None
         if row[5]:
             try:
                 notes_data = json.loads(row[5])
-            except Exception:
-                logger.debug("Notes invalides pour l'entrée %s", row[0])
+            except (json.JSONDecodeError, TypeError):
+                logger.debug("Invalid notes for entry %s", row[0])
 
         password_data = json.loads(row[3]) if row[3] else {}
 
@@ -425,9 +445,10 @@ class PasswordRepository:
             notes_data=notes_data,
             category=row[6] or "",
             tags=tags,
-            created_at=self._parse_timestamp(row[8]),
-            modified_at=self._parse_timestamp(row[9]),
-            last_changed=self._parse_timestamp(row[10]),
+            password_validity_days=row[8],
+            created_at=self._parse_timestamp(row[9]),
+            modified_at=self._parse_timestamp(row[10]),
+            last_changed=self._parse_timestamp(row[11]),
         )
 
     @staticmethod
@@ -436,5 +457,5 @@ class PasswordRepository:
             return None
         try:
             return datetime.fromisoformat(value)
-        except Exception:
+        except (ValueError, TypeError):
             return None
