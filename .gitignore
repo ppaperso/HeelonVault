@@ -6,8 +6,6 @@ __pycache__/
 .Python
 
 # Virtual Environment
-# Keep both the directory and symlink name ignored
-venv-dev
 venv-dev/
 venv-prod/
 venvpwdmanager/
@@ -15,22 +13,43 @@ venv/
 ENV/
 env/
 .venv
+venv-dev
 
 # Database files (SENSITIVE)
 *.db
 *.sqlite
 *.sqlite3
 
-# Development data directory (SENSITIVE - test data)
-data/
+# Fichiers de données sensibles (SENSITIVE)
+*.bin
+*.key
+*.pem
 
-# CSV exports and imports (SENSITIVE - may contain passwords)
+# Données runtime (SENSITIVE)
+data/
+src/data/avatars/*
+!src/data/avatars/.gitkeep
+src/data/backups/*
+!src/data/backups/.gitkeep
+src/data/*.db
+src/data/*.bin
+src/data/*.log
+src/data/backup_*/
+
+# CSV exports et imports (SENSITIVE)
 export-csv/
 *.csv
 
 # Backups (SENSITIVE)
 *-backups/
 backup_*.tar.gz
+backup_before_*/
+backup_pre_migration_*/
+
+# Logs
+logs/*.log
+logs/pylint_report*.txt
+*.log
 
 # IDE
 .vscode/
@@ -38,13 +57,14 @@ backup_*.tar.gz
 *.swp
 *.swo
 *~
+*.code-workspace
+
+# Compiled translations
+locales/*/LC_MESSAGES/*.mo
 
 # OS
 .DS_Store
 Thumbs.db
-
-# Logs
-*.log
 
 # Distribution / packaging
 build/
@@ -55,7 +75,12 @@ dist/
 .coverage
 htmlcov/
 
-# Backup files
+# Fichiers divers
 *.bak
 *.backup
+liste_docs.txt
+structure_heelonvault.txt
 browser_integration/.webext-credentials
+
+# SPDX / REUSE (généré, pas source)
+.reuse/dep5
