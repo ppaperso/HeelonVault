@@ -1,4 +1,5 @@
 # Ignorer les fichiers inutiles lors du build
+
 venvpwdmanager/
 __pycache__/
 *.pyc

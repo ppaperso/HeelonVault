@@ -22,7 +22,21 @@ def is_dev_mode() -> bool:
 
 
 def get_data_directory() -> Path:
-    """Retourne le dossier de données selon l'environnement."""
+    """Retourne le dossier de données selon l'environnement.
+
+    Priorité :
+      1. HEELONVAULT_DATA_DIR (conteneur Podman / override explicite)
+      2. DEV_MODE             (développement local)
+      3. /var/lib/heelonvault-shared (production bare-metal)
+    """
+    # Conteneur : variable injectée par le Containerfile
+    container_dir = os.environ.get('HEELONVAULT_DATA_DIR')
+    if container_dir:
+        path = Path(container_dir)
+        path.mkdir(parents=True, exist_ok=True)
+        logger.info('CONTAINER mode - Data directory: %s', path)
+        return path
+
     if is_dev_mode():
         dev_dir = Path(__file__).resolve().parent.parent / 'data'
         dev_dir.mkdir(parents=True, exist_ok=True)

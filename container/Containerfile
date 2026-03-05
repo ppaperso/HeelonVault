@@ -1,0 +1,109 @@
+# =============================================================================
+# HeelonVault — Containerfile UBI9 multi-stage
+# Build : podman build --file container/Containerfile --ignorefile container/.containerignore -t heelonvault:latest .
+# Run   : podman run --rm -e DISPLAY=$DISPLAY -v /tmp/.X11-unix:/tmp/.X11-unix heelonvault:latest
+# =============================================================================
+
+# Pinning explicite des images de base pour builds reproductibles.
+ARG BUILDER_BASE=registry.access.redhat.com/ubi9/python-312@sha256:296739d2ac81b73257716e4eec1a25409c00b46f8d387fc287669ba62a7c1bc2
+ARG RUNTIME_BASE=registry.access.redhat.com/ubi9/ubi-minimal@sha256:c7d44146f826037f6873d99da479299b889473492d3c1ab8af86f08af04ec8a0
+ARG VCS_REF=unknown
+ARG SECURITY_POLICY_URL=https://github.com/heelonys/heelonvault/blob/main/SECURITY.md
+ARG SBOM_PROVENANCE=syft-spdx-json+cosign-attach
+
+# -----------------------------------------------------------------------------
+# STAGE 1 — builder : installation des dépendances Python
+# -----------------------------------------------------------------------------
+FROM ${BUILDER_BASE} AS builder
+
+USER 0
+
+WORKDIR /build
+
+# Copier uniquement le lockfile hashé pour profiter du cache Docker
+COPY container/requirements-container.lock .
+
+# Installer les dépendances dans un prefix isolé
+RUN pip install --upgrade pip --no-cache-dir \
+ && pip install --prefix=/build/install --no-cache-dir --require-hashes -r requirements-container.lock
+
+# -----------------------------------------------------------------------------
+# STAGE 2 — runtime : image finale propre et minimale
+# -----------------------------------------------------------------------------
+FROM ${RUNTIME_BASE} AS runtime
+
+ARG VCS_REF
+ARG SECURITY_POLICY_URL
+ARG SBOM_PROVENANCE
+
+LABEL org.opencontainers.image.title="HeelonVault"
+LABEL org.opencontainers.image.description="Gestionnaire de mots de passe sécurisé GNOME"
+LABEL org.opencontainers.image.vendor="Heelonys"
+LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.source="https://github.com/heelonys/heelonvault"
+LABEL org.opencontainers.image.revision="${VCS_REF}"
+LABEL org.heelonys.security.policy="${SECURITY_POLICY_URL}"
+LABEL org.heelonys.sbom.provenance="${SBOM_PROVENANCE}"
+
+# Installer les dépendances système GTK4/Adwaita minimales
+RUN microdnf install -y \
+   python3.12 \
+        gtk4 \
+        libadwaita \
+        python3-gobject \
+        dbus-x11 \
+        hicolor-icon-theme \
+        google-noto-fonts-common \
+    && microdnf clean all \
+    && rm -rf /var/cache/dnf \
+              /var/log/dnf* \
+              /var/log/yum* \
+              /tmp/* \
+              /var/tmp/*
+
+# Copier les dépendances Python depuis le builder
+COPY --from=builder /build/install /usr/local
+
+# Créer un utilisateur non-root dédié (UID/GID configurables)
+ARG APP_UID=10001
+ARG APP_GID=10001
+RUN groupadd -g ${APP_GID} heelonvault \
+ && useradd -m -u ${APP_UID} -g ${APP_GID} -s /bin/bash heelonvault
+
+WORKDIR /app
+
+# Copier le code source — uniquement ce qui est nécessaire au runtime
+COPY heelonvault.py .
+COPY src/ ./src/
+COPY locales/ ./locales/
+
+# Exclure explicitement tout ce qui ne doit pas être dans l'image
+# (les fichiers suivants ne doivent pas exister au moment du build
+#  grace au .containerignore, mais on s'en assure ici)
+RUN find /app -name "*.pyc" -delete \
+ && find /app -name "__pycache__" -type d -exec rm -rf {} + 2>/dev/null || true \
+ && find /app -name "*.log" -delete \
+ && find /app -name "*.bak" -delete \
+ && find /app -name "*.backup" -delete \
+ && find /app -name "*.db" -delete \
+ && find /app -name "*.bin" -delete \
+ && find /app -name "*.csv" -delete
+
+# Icône application
+COPY src/resources/icons/hicolor/256x256/apps/heelonvault.png \
+     /usr/share/icons/hicolor/256x256/apps/heelonvault.png
+
+# Répertoire de données persistant (monté en volume en production)
+RUN mkdir -p /data && chown heelonvault:heelonvault /data /app
+
+# Passer en utilisateur non-root
+USER heelonvault
+
+# Variable d'environnement pour pointer les données vers /data
+ENV HEELONVAULT_DATA_DIR=/data
+ENV PYTHONUNBUFFERED=1
+ENV PYTHONDONTWRITEBYTECODE=1
+
+VOLUME ["/data"]
+
+ENTRYPOINT ["python3.12", "/app/heelonvault.py"]
