@@ -18,6 +18,8 @@ USER_APPS_DIR="$HOME/.local/share/applications"
 REQUIREMENTS_FILE="$INSTALL_DIR/requirements.txt"
 DESKTOP_SOURCE="$INSTALL_DIR/$DESKTOP_FILE"
 RUN_SCRIPT="$INSTALL_DIR/run.sh"
+ICONS_SOURCE_DIR="$INSTALL_DIR/src/resources/icons/hicolor"
+SYSTEM_ICONS_DIR="/usr/share/icons/hicolor"
 FILTERED_REQUIREMENTS=""
 
 # Nettoie le fichier temporaire des dépendances python filtrées
@@ -257,6 +259,18 @@ chown root:users "$DATA_DIR" || error_exit "Impossible d'ajuster les propriétai
 chmod 2775 "$DATA_DIR" || error_exit "Impossible de définir les permissions pour $DATA_DIR"
 grant_user_acl_on_data_dir
 echo "✅ Répertoire de données partagé créé, permissions et groupe configurés"
+
+# Installation des icônes applicatives (thème hicolor)
+echo ""
+echo "🎨 Installation des icônes applicatives..."
+if [ -d "$ICONS_SOURCE_DIR" ]; then
+    mkdir -p "$SYSTEM_ICONS_DIR" || error_exit "Impossible de créer $SYSTEM_ICONS_DIR"
+    cp -a "$ICONS_SOURCE_DIR/." "$SYSTEM_ICONS_DIR/" || error_exit "Impossible de copier les icônes hicolor"
+    gtk-update-icon-cache -f "$SYSTEM_ICONS_DIR" 2>/dev/null || true
+    echo "✅ Icônes installées dans $SYSTEM_ICONS_DIR"
+else
+    echo "⚠️ Répertoire d'icônes introuvable: $ICONS_SOURCE_DIR"
+fi
 
 # Installation du fichier .desktop pour tous les utilisateurs
 echo ""

@@ -1543,10 +1543,6 @@ msgstr "Creato: %s"
 msgid "Reset password"
 msgstr "Reimposta password"
 
-#: src/ui/dialogs/manage_users_dialog.py:120
-msgid "Confirm deletion"
-msgstr "Conferma eliminazione"
-
 #: src/ui/dialogs/manage_users_dialog.py:123
 #, python-format
 msgid ""
@@ -1948,3 +1944,27 @@ msgstr "✅ Email aggiornata"
 #: src/app/application.py:557
 msgid "✅ Two-factor authentication reconfigured"
 msgstr "✅ Autenticazione a due fattori riconfigurata"
+
+#: src/ui/dialogs/email_login_dialog.py:111
+msgid "🌐 Interface language"
+msgstr "🌐 Lingua dell'interfaccia"
+
+#: src/ui/dialogs/email_login_dialog.py:112
+msgid "Choose your language before signing in"
+msgstr "Scegli la tua lingua prima di accedere"
+
+#: src/ui/dialogs/manage_account_dialog.py:129
+msgid "Interface language"
+msgstr "Lingua dell'interfaccia"
+
+#: src/ui/dialogs/manage_account_dialog.py:130
+msgid "Select your preferred display language"
+msgstr "Seleziona la lingua di visualizzazione preferita"
+
+#: src/ui/dialogs/manage_account_dialog.py:234
+msgid "❌ Unable to update language"
+msgstr "❌ Impossibile aggiornare la lingua"
+
+#: src/ui/dialogs/manage_account_dialog.py:241
+msgid "✅ Interface language updated"
+msgstr "✅ Lingua dell'interfaccia aggiornata"

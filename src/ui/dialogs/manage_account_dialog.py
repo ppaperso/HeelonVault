@@ -9,7 +9,7 @@ from pathlib import Path
 import gi
 
 from src.config.environment import get_data_directory
-from src.i18n import _
+from src.i18n import _, get_supported_languages, normalize_language, set_language
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.services.auth_service import AuthService
 
@@ -33,9 +33,10 @@ class ManageAccountDialog(Adw.Window):
         **kwargs,
     ) -> None:
         super().__init__(**kwargs)
+        self.add_css_class("manage-account-dialog")
         self.set_transient_for(parent)
         self.set_modal(True)
-        self.set_default_size(700, 620)
+        self.set_default_size(620, 560)
         self.set_title(_("Manage my account"))
 
         self.auth_service = auth_service
@@ -46,38 +47,48 @@ class ManageAccountDialog(Adw.Window):
         self.on_reconfigure_2fa = on_reconfigure_2fa
 
         self.avatar_file_dialog: Gtk.FileChooserNative | None = None
+        self.language_codes: list[str] = []
+        self.language_dropdown: Gtk.DropDown | None = None
+        self.save_name_btn: Gtk.Button | None = None
+        self.avatar_remove_action_btn: Gtk.Button | None = None
+        self.avatar_actions_popover: Gtk.Popover | None = None
+        self.toast_overlay: Adw.ToastOverlay | None = None
+        self._language_selection_ready = False
+        self.selected_language = normalize_language(self.current_user.get("language"))
 
         self._build_ui()
         self._refresh_avatar_preview()
 
     def _build_ui(self) -> None:
-        root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)
+        toolbar = Adw.ToolbarView()
 
         header = Adw.HeaderBar()
-        root.append(header)
+        header.set_show_title(True)
+        toolbar.add_top_bar(header)
 
         content_scroll = Gtk.ScrolledWindow()
         content_scroll.set_vexpand(True)
-        root.append(content_scroll)
+        toolbar.set_content(content_scroll)
 
-        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=14)
-        content.set_margin_top(14)
-        content.set_margin_bottom(14)
-        content.set_margin_start(14)
-        content.set_margin_end(14)
-        content_scroll.set_child(content)
+        clamp = Adw.Clamp()
+        clamp.set_maximum_size(620)
+        clamp.set_tightening_threshold(420)
+        content_scroll.set_child(clamp)
 
-        title = Gtk.Label(label=_("Manage my account"), xalign=0)
-        title.set_css_classes(["title-2", "account-page-title"])
-        content.append(title)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
+        content.set_margin_top(16)
+        content.set_margin_bottom(16)
+        content.set_margin_start(16)
+        content.set_margin_end(16)
+        clamp.set_child(content)
 
-        subtitle = Gtk.Label(
-            label=_("Single place for your identity, access, and sensitive settings."),
+        intro = Gtk.Label(
+            label=_("Update identity and security settings for this account."),
             xalign=0,
         )
-        subtitle.set_css_classes(["dim-label", "account-page-subtitle"])
-        subtitle.set_wrap(True)
-        content.append(subtitle)
+        intro.set_css_classes(["dim-label", "account-intro"])
+        intro.set_wrap(True)
+        content.append(intro)
 
         profile_group = Adw.PreferencesGroup()
         profile_group.add_css_class("account-group")
@@ -91,21 +102,46 @@ class ManageAccountDialog(Adw.Window):
         profile_group.add(avatar_row)
 
         self.avatar_preview = Adw.Avatar(
-            size=48,
+            size=40,
             text=self.current_user.get("username", "?"),
             show_initials=True,
         )
+        self.avatar_preview.add_css_class("avatar-preview-compact")
         avatar_row.add_prefix(self.avatar_preview)
 
-        choose_avatar_btn = Gtk.Button(label=_("Choose"))
-        choose_avatar_btn.set_css_classes(["pill", "account-action-btn"])
-        choose_avatar_btn.connect("clicked", self.on_choose_avatar_clicked)
-        avatar_row.add_suffix(choose_avatar_btn)
+        modify_avatar_btn = Gtk.Button(label=_("Modify..."))
+        modify_avatar_btn.set_css_classes(["flat", "account-inline-btn"])
+        modify_avatar_btn.connect("clicked", self.on_avatar_actions_clicked)
+        avatar_row.add_suffix(modify_avatar_btn)
 
-        clear_avatar_btn = Gtk.Button(label=_("Delete"))
-        clear_avatar_btn.set_css_classes(["pill", "destructive-action", "account-action-btn"])
-        clear_avatar_btn.connect("clicked", self.on_clear_avatar_clicked)
-        avatar_row.add_suffix(clear_avatar_btn)
+        self.avatar_actions_popover = Gtk.Popover.new()
+        self.avatar_actions_popover.set_autohide(True)
+        self.avatar_actions_popover.set_has_arrow(True)
+        self.avatar_actions_popover.set_position(Gtk.PositionType.BOTTOM)
+        self.avatar_actions_popover.set_parent(modify_avatar_btn)
+
+        avatar_actions_box = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=4)
+        avatar_actions_box.set_margin_top(6)
+        avatar_actions_box.set_margin_bottom(6)
+        avatar_actions_box.set_margin_start(6)
+        avatar_actions_box.set_margin_end(6)
+
+        choose_avatar_action_btn = Gtk.Button(label=_("Choose image"))
+        choose_avatar_action_btn.set_halign(Gtk.Align.FILL)
+        choose_avatar_action_btn.set_css_classes(["flat", "account-popover-action"])
+        choose_avatar_action_btn.connect("clicked", self.on_avatar_choose_action_clicked)
+        avatar_actions_box.append(choose_avatar_action_btn)
+
+        remove_avatar_action_btn = Gtk.Button(label=_("Remove avatar"))
+        remove_avatar_action_btn.set_halign(Gtk.Align.FILL)
+        remove_avatar_action_btn.set_css_classes(
+            ["flat", "destructive-action", "account-popover-action"]
+        )
+        remove_avatar_action_btn.connect("clicked", self.on_avatar_remove_action_clicked)
+        avatar_actions_box.append(remove_avatar_action_btn)
+        self.avatar_remove_action_btn = remove_avatar_action_btn
+
+        self.avatar_actions_popover.set_child(avatar_actions_box)
 
         username_row = Adw.ActionRow()
         username_row.set_title(_("Account name"))
@@ -116,12 +152,35 @@ class ManageAccountDialog(Adw.Window):
         self.username_entry.set_hexpand(True)
         self.username_entry.set_text(self.current_user.get("username", ""))
         self.username_entry.set_placeholder_text(_("e.g. Patrick"))
+        self.username_entry.connect("changed", self.on_username_changed)
+        self.username_entry.connect("activate", self.on_save_username_clicked)
         username_row.add_suffix(self.username_entry)
 
         save_name_btn = Gtk.Button(label=_("Save"))
-        save_name_btn.set_css_classes(["suggested-action", "pill", "account-action-btn"])
+        save_name_btn.set_css_classes(["suggested-action", "account-inline-btn"])
+        save_name_btn.set_sensitive(False)
+        save_name_btn.set_visible(False)
         save_name_btn.connect("clicked", self.on_save_username_clicked)
         username_row.add_suffix(save_name_btn)
+        self.save_name_btn = save_name_btn
+
+        language_row = Adw.ActionRow()
+        language_row.set_title(_("Interface language"))
+        language_row.set_subtitle(_("Select your preferred display language"))
+        profile_group.add(language_row)
+
+        supported_languages = get_supported_languages()
+        self.language_codes = [lang["code"] for lang in supported_languages]
+        language_labels = [self._format_language_label(lang) for lang in supported_languages]
+        self.language_dropdown = Gtk.DropDown.new_from_strings(language_labels)
+        self.language_dropdown.add_css_class("account-compact-dropdown")
+        self.language_dropdown.connect("notify::selected", self.on_language_selected)
+
+        if self.selected_language in self.language_codes:
+            self.language_dropdown.set_selected(self.language_codes.index(self.selected_language))
+
+        language_row.add_suffix(self.language_dropdown)
+        self._language_selection_ready = True
 
         security_group = Adw.PreferencesGroup()
         security_group.add_css_class("account-group")
@@ -135,7 +194,7 @@ class ManageAccountDialog(Adw.Window):
         security_group.add(change_pwd_row)
 
         pwd_btn = Gtk.Button(label=_("Edit"))
-        pwd_btn.set_css_classes(["pill", "account-action-btn"])
+        pwd_btn.set_css_classes(["flat", "account-inline-btn"])
         pwd_btn.connect("clicked", lambda _b: self.on_change_password())
         change_pwd_row.add_suffix(pwd_btn)
 
@@ -145,7 +204,7 @@ class ManageAccountDialog(Adw.Window):
         security_group.add(change_email_row)
 
         email_btn = Gtk.Button(label=_("Edit"))
-        email_btn.set_css_classes(["pill", "account-action-btn"])
+        email_btn.set_css_classes(["flat", "account-inline-btn"])
         email_btn.connect("clicked", lambda _b: self.on_change_email())
         change_email_row.add_suffix(email_btn)
 
@@ -155,22 +214,22 @@ class ManageAccountDialog(Adw.Window):
         security_group.add(reconfigure_2fa_row)
 
         twofa_btn = Gtk.Button(label=_("Reconfigure"))
-        twofa_btn.set_css_classes(["pill", "account-action-btn"])
+        twofa_btn.set_css_classes(["flat", "account-inline-btn"])
         twofa_btn.connect("clicked", lambda _b: self.on_reconfigure_2fa())
         reconfigure_2fa_row.add_suffix(twofa_btn)
 
-        self.status_label = Gtk.Label(label="", xalign=0)
-        self.status_label.set_css_classes(["account-status"])
-        self.status_label.set_wrap(True)
-        content.append(self.status_label)
-
-        self.set_content(root)
+        self.toast_overlay = Adw.ToastOverlay()
+        self.toast_overlay.set_child(toolbar)
+        self.set_content(self.toast_overlay)
 
     def _refresh_avatar_preview(self) -> None:
         username = self.current_user.get("username", "?")
         self.avatar_preview.set_text(username)
 
         avatar_path = self.current_user.get("avatar_path")
+        if self.avatar_remove_action_btn:
+            self.avatar_remove_action_btn.set_sensitive(bool(avatar_path))
+
         if not avatar_path:
             self.avatar_preview.set_custom_image(None)
             return
@@ -182,17 +241,89 @@ class ManageAccountDialog(Adw.Window):
             self.avatar_preview.set_custom_image(None)
 
     def _show_status(self, message: str, status_type: str = "info") -> None:
-        self.status_label.set_text(message)
-        self.status_label.remove_css_class("success")
-        self.status_label.remove_css_class("warning")
-        self.status_label.remove_css_class("error")
+        if not self.toast_overlay:
+            return
 
-        if status_type == "success":
-            self.status_label.add_css_class("success")
+        toast = Adw.Toast.new(message)
+        if status_type == "error":
+            toast.set_timeout(5)
         elif status_type == "warning":
-            self.status_label.add_css_class("warning")
-        elif status_type == "error":
-            self.status_label.add_css_class("error")
+            toast.set_timeout(4)
+        else:
+            toast.set_timeout(3)
+        self.toast_overlay.add_toast(toast)
+
+    def on_username_changed(self, _entry: Gtk.Entry) -> None:
+        if not self.save_name_btn:
+            return
+
+        current_username = self.current_user.get("username", "")
+        new_username = self.username_entry.get_text().strip()
+        is_dirty = bool(new_username) and new_username != current_username
+        self.save_name_btn.set_visible(is_dirty)
+        self.save_name_btn.set_sensitive(is_dirty)
+
+    def on_avatar_actions_clicked(self, button: Gtk.Button) -> None:
+        if not self.avatar_actions_popover:
+            return
+
+        _ = button
+        self.avatar_actions_popover.popup()
+
+    def on_avatar_choose_action_clicked(self, _button: Gtk.Button) -> None:
+        if self.avatar_actions_popover:
+            self.avatar_actions_popover.popdown()
+        self.on_choose_avatar_clicked(_button)
+
+    def on_avatar_remove_action_clicked(self, _button: Gtk.Button) -> None:
+        if self.avatar_actions_popover:
+            self.avatar_actions_popover.popdown()
+        self.on_clear_avatar_clicked(_button)
+
+    def _format_language_label(self, language: dict[str, str]) -> str:
+        code = normalize_language(language.get("code", ""))
+        fallback_emoji_map = {
+            "en": "🇬🇧",
+            "fr": "🇫🇷",
+            "de": "🇩🇪",
+            "it": "🇮🇹",
+        }
+        emoji = (language.get("emoji") or "").strip() or fallback_emoji_map.get(code, "")
+        native_name = language.get("native_name", code)
+        return f"{emoji} {native_name}" if emoji else native_name
+
+    def on_language_selected(self, dropdown: Gtk.DropDown, _pspec) -> None:
+        if not self._language_selection_ready:
+            return
+
+        selected_index = dropdown.get_selected()
+        if selected_index < 0 or selected_index >= len(self.language_codes):
+            return
+
+        language_code = self.language_codes[selected_index]
+        if language_code == self.selected_language:
+            return
+
+        user_id = self.current_user.get("id")
+        if not user_id:
+            self._show_status(_("❌ User not found"), "error")
+            return
+
+        resolved = normalize_language(language_code)
+        previous_language = self.selected_language
+
+        if not self.auth_service.update_user_language(user_id, resolved):
+            self._language_selection_ready = False
+            if previous_language in self.language_codes:
+                dropdown.set_selected(self.language_codes.index(previous_language))
+            self._language_selection_ready = True
+            self._show_status(_("❌ Unable to update language"), "error")
+            return
+
+        self.selected_language = set_language(resolved)
+        self.current_user["language"] = self.selected_language
+        self.on_profile_updated({"language": self.selected_language})
+        self._show_status(_("✅ Interface language updated"), "success")
 
     def on_save_username_clicked(self, _button) -> None:
         new_username = self.username_entry.get_text().strip()
@@ -216,6 +347,7 @@ class ManageAccountDialog(Adw.Window):
         self.current_user["username"] = new_username
         self._refresh_avatar_preview()
         self.on_profile_updated({"username": new_username})
+        self.on_username_changed(self.username_entry)
         self._show_status(_("✅ Name updated"), "success")
 
     def on_choose_avatar_clicked(self, _button) -> None:

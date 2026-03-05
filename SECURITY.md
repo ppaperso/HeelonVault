@@ -1,203 +1,143 @@
-# Politique de Sécurité
+# Politique de Securite
 
-## Versions Supportées
+## Versions supportees
 
-Nous fournissons des correctifs de sécurité pour les versions suivantes :
+Nous fournissons des correctifs de securite pour les versions suivantes :
 
-| Version | Supportée                 |
-| ------- | ------------------        |
-| 0.4.x   | :white_check_mark:        |
-| 0.3.x   | :warning: Support limité  |
-| < 0.3   | :x: Non supportée         |
+| Version | Support |
+| ------- | ------- |
+| 0.4.x   | Oui     |
+| 0.3.x   | Limite  |
+| < 0.3   | Non     |
 
-## Signaler une Vulnérabilité
+## Signaler une vulnerabilite
 
-### ⚠️ IMPORTANT : NE CRÉEZ PAS D'ISSUE PUBLIQUE POUR LES VULNÉRABILITÉS DE SÉCURITÉ
+Ne creez pas d'issue publique pour une vulnerabilite de securite.
 
-Si vous découvrez une vulnérabilité de sécurité, merci de nous la signaler de manière responsable :
+- Contact securite : `security@heelonys.fr`
+- Merci d'inclure : description, etapes de reproduction, impact, version, environnement, preuve de concept et suggestions de correction.
 
-### 📧 Contact
+### Engagement de reponse
 
-Envoyez un email à : <security@heelonys.fr>
+1. Accuse de reception sous 48 heures.
+2. Premier retour d'evaluation sous 7 jours.
+3. Correctif selon severite (coordination de divulgation responsable).
 
-### 📝 Informations à inclure
+## Etat actuel de la securite (mars 2026)
 
-Pour nous aider à évaluer et corriger rapidement la vulnérabilité, veuillez inclure :
+### Refonte cryptographique complete
 
-- **Description détaillée** de la vulnérabilité
-- **Étapes de reproduction** (si possible)
-- **Impact potentiel** (quelles données/fonctionnalités sont affectées)
-- **Version affectée** du logiciel
-- **Votre environnement** (OS, version Python, etc.)
-- **Preuve de concept** (si applicable, mais ne pas exploiter publiquement)
-- **Suggestions de correction** (si vous en avez)
+La couche cryptographique a ete refondue autour de primitives modernes et d'une gestion des secrets plus stricte.
 
-### ⏱️ Notre engagement
+| Domaine | Implementation actuelle |
+| ------- | ----------------------- |
+| Chiffrement des secrets coffre | AES-256-GCM (nonce 96 bits unique par entree) |
+| KDF coffre | PBKDF2-HMAC-SHA256, 600 000 iterations |
+| Longueur de cle | 256 bits |
+| Salt coffre | 32 bytes (min accepte 16 bytes) |
+| Hash mots de passe utilisateurs | PBKDF2-HMAC-SHA256, 600 000 iterations, salt 32 bytes |
+| Confidentialite des emails | HMAC-SHA256 + pepper local (`.email_pepper`) |
+| Chiffrement secrets TOTP | AES-GCM avec cle systeme derivee (PBKDF2-SHA256, 100 000 iterations) |
+| Codes de secours 2FA | HMAC-SHA256 (pas de stockage en clair) |
+| Aleatoire cryptographique | `secrets` (Python) |
 
-Nous nous engageons à :
+Points techniques importants :
 
-1. **Accuser réception** de votre signalement sous **48 heures**
-2. **Évaluer la vulnérabilité** et vous donner un retour sous **7 jours**
-3. **Développer et tester un correctif** dans les plus brefs délais
-4. **Publier un correctif** dès que possible (selon la gravité)
-5. **Vous créditer publiquement** dans les notes de version (si vous le souhaitez)
-6. **Coordonner la divulgation** avec vous avant toute annonce publique
+- `CryptoService` utilise AES-GCM avec authentification integree (detection d'alteration).
+- Les erreurs de dechiffrement sont normalisees (`invalid key or corrupted/tampered data`) pour limiter les fuites d'information.
+- `CryptoService.clear()` effectue un effacement memoire best-effort de la cle en fin de session.
 
-### 🏆 Reconnaissance
+### Authentification et controle d'acces
 
-Nous remercions les chercheurs en sécurité qui signalent les vulnérabilités de manière responsable. Avec votre accord, nous vous créditerons dans :
+- Authentification principale par email (avec hash HMAC + pepper cote stockage).
+- Compatibilite legacy : connexion possible via username si necessaire.
+- 2FA TOTP obligatoire dans le flux applicatif :
+  - utilisateur sans 2FA configure : setup impose,
+  - utilisateur 2FA actif : verification TOTP obligatoire avant ouverture du coffre.
+- Roles : `user` et `admin` (gestion utilisateurs/sauvegardes reservee admin).
 
-- Le fichier CHANGELOG.md
-- Les notes de version
-- Un fichier SECURITY_HALL_OF_FAME.md (si vous le souhaitez)
+### Protection anti brute-force
 
-### ⚖️ Divulgation Responsable
+Protection combinee :
 
-Nous suivons les principes de divulgation responsable :
+- Delai artificiel cote auth : 1.5 s sur echec d'authentification.
+- Delai progressif par identifiant : 1s, 2s, 4s, ... jusqu'a 32s.
+- Verrouillage temporaire : 15 minutes apres 5 echecs.
+- Rate limiting global anti-enumeration :
+  - 5 tentatives/minute,
+  - 30 tentatives/heure.
+- Persistance de l'etat anti-bruteforce en local (`.login_attempts.json`, permissions `600`).
 
-- **Ne divulguez pas** la vulnérabilité publiquement avant qu'un correctif soit disponible
-- **Donnez-nous un délai raisonnable** pour corriger le problème (généralement 90 jours)
-- **Ne tentez pas d'exploiter** la vulnérabilité au-delà de ce qui est nécessaire pour la démonstration
-- **Respectez la vie privée** des utilisateurs et ne accédez/modifiez pas leurs données
+### Isolation des donnees
 
----
+- Un espace de travail chiffre par utilisateur (`workspace_uuid`).
+- Fichiers principaux :
+  - `users.db` (metadonnees/auth),
+  - `passwords_<workspace_uuid>.db`,
+  - `salt_<workspace_uuid>.bin`.
+- Permissions renforcees sur fichiers sensibles (`600`) appliquees au demarrage.
 
-## 🔒 Pratiques de Sécurité du Projet
+### Donnees chiffrees vs non chiffrees
 
-### Cryptographie
+Chiffrees (AES-256-GCM) :
 
-Notre gestionnaire de mots de passe utilise des standards cryptographiques modernes :
+- mots de passe,
+- notes sensibles,
+- secrets TOTP (cote service 2FA).
 
-| Composant | Implémentation | Standard |
-| ----------- | ---------------- | ---------- |
-| **Chiffrement symétrique** | AES-256-GCM | NIST FIPS 197 |
-| **Dérivation de clé (KDF)** | PBKDF2-HMAC-SHA256 | NIST SP 800-132 |
-| **Itérations KDF** | 600 000 | OWASP 2023+ |
-| **Génération aléatoire** | Python `secrets` | Crypto-sûr |
-| **Longueur de clé** | 256 bits | État de l'art |
-| **Nonce/IV** | Unique par entrée | 96 bits (GCM) |
-| **Salt** | Unique par utilisateur | ≥ 128 bits |
+Non chiffrees (necessaires pour UX/recherche/tri) :
 
-### Architecture de Sécurité
+- titre,
+- username de l'entree,
+- URL,
+- categorie,
+- tags,
+- metadonnees temporelles.
 
-- **Séparation des données** : Chaque utilisateur a sa propre base de données SQLite
-- **Permissions strictes** : Fichiers en mode 600 (lecture/écriture propriétaire uniquement)
-- **Protection anti-brute force** : Maximum 5 tentatives de connexion ratées
-- **Validation des mots de passe maîtres** : Critères stricts (longueur, complexité, mots communs)
-- **Passphrases sécurisées** : Wordlist de 1053 mots (entropie ~50-60 bits)
+Recommandation : ne pas stocker de donnees confidentielles dans les champs non chiffres.
 
-### Données Chiffrées vs Non Chiffrées
+### Import / export
 
-Pour plus de détails sur le modèle de sécurité, consultez [SECURITY_MODEL.md](SECURITY_MODEL.md).
+- Export CSV standard : en clair (a manipuler avec prudence).
+- Export ZIP chiffre disponible (`pyzipper`, AES).
+- Import CSV : controles de format et validation minimale, mais les donnees source restent de responsabilite utilisateur.
 
-**Chiffré avec AES-256-GCM** :
+## Audits et tests
 
-- ✅ Mots de passe
-- ✅ Notes
-- ✅ Champs personnalisés
+- Script de tests securite : `scripts/run-security-tests.sh`
+- Revue de code systematique sur les changements sensibles (auth, crypto, stockage).
+- Journalisation des evenements de securite sans exposition de secrets.
 
-**Non chiffré** (pour recherche/tri) :
+## 🐧 Compatible Red Hat/Fedora
 
-- ⚠️ Titre de l'entrée
-- ⚠️ Nom d'utilisateur
-- ⚠️ URL
-- ⚠️ Catégorie
-- ⚠️ Tags
-- ⚠️ Métadonnées (dates de création/modification)
+- **Conteneurs** : UBI9/10 Podman-ready
+- **Licences** : SPDX-compliant (REUSE lint ✅)
+- **SBOM** : Généré avec Syft pour UBI
+- **Partner** : Heelonys (Red Hat Partner)
 
-**Recommandation** : Ne mettez pas d'informations sensibles dans les champs non chiffrés.
+## Limitations connues
 
----
+- Pas de recuperation du mot de passe maitre (par conception).
+- Certaines metadonnees restent en clair pour la recherche et l'ergonomie.
+- Application orientee stockage local (pas de synchronisation cloud native).
 
-## 🔍 Audits de Sécurité
+## Ressources
 
-### Audits Internes
+- `docs/SECURITY.md`
+- `docs/DATA_PROTECTION.md`
+- `docs/ARCHITECTURE.md`
+- `docs/MULTI_USER_GUIDE.md`
 
-Nous effectuons régulièrement des audits internes de sécurité :
+Standards utiles :
 
-- ✅ Analyse statique avec Ruff et Bandit
-- ✅ Tests de sécurité automatisés (`test_security_improvements.py`)
-- ✅ Revue de code pour chaque modification majeure
+- OWASP Password Storage Cheat Sheet
+- NIST SP 800-63B
+- NIST SP 800-132
 
-### Audits Externes
+## Divulgation responsable
 
-Nous accueillons favorablement les audits de sécurité externes :
-
-- **Code open source** : Tout le code est disponible pour audit
-- **Documentation complète** : Architecture et sécurité documentées
-- **Tests reproductibles** : Suite de tests disponible dans `tests/`
-
----
-
-## 📚 Ressources
-
-### Documentation
-
-- [Architecture](docs/ARCHITECTURE.md) - Vue d'ensemble technique
-- [Modèle de Sécurité](SECURITY_MODEL.md) - Détails cryptographiques
-- [Protection des Données](docs/DATA_PROTECTION.md) - Mesures de protection
-- [Guide Multi-utilisateurs](docs/MULTI_USER_GUIDE.md) - Isolation des données
-
-### Standards de Référence
-
-- [OWASP Password Storage Cheat Sheet](https://cheatsheetseries.owasp.org/cheatsheets/Password_Storage_Cheat_Sheet.html)
-- [NIST SP 800-63B - Digital Identity Guidelines](https://pages.nist.gov/800-63-3/sp800-63b.html)
-- [NIST SP 800-132 - PBKDF Recommendations](https://csrc.nist.gov/publications/detail/sp/800-132/final)
-- [OWASP Top 10](https://owasp.org/www-project-top-ten/)
-
-### Outils de Test de Sécurité
-
-```bash
-# Tests de sécurité
-./run-security-tests.sh
-
-# Analyse statique
-ruff check src/
-bandit -r src/
-
-# Tests complets
-python -m pytest tests/ -v
-```
+Merci de ne pas divulguer publiquement une faille avant disponibilite du correctif et coordination avec l'equipe securite.
 
 ---
 
-## ⚠️ Limitations Connues
-
-### Par Conception
-
-- **Pas de récupération de mot de passe maître** : La sécurité cryptographique implique qu'un mot de passe maître oublié = données perdues
-- **Métadonnées non chiffrées** : Pour permettre recherche et tri (voir SECURITY_MODEL.md)
-- **Stockage local uniquement** : Pas de synchronisation cloud (par choix de sécurité)
-
-### En Développement
-
-Consultez [ACTIONS_SECURITE_OPENSOURCE.md](ACTIONS_SECURITE_OPENSOURCE.md) pour les améliorations planifiées :
-
-- Timeout de session automatique
-- Vérification Have I Been Pwned (optionnelle)
-- Authentification à deux facteurs (2FA)
-- Export chiffré
-
----
-
-## 🔄 Mises à Jour de Sécurité
-
-Les correctifs de sécurité sont publiés :
-
-- **Immédiatement** pour les vulnérabilités critiques
-- **Dans les 7 jours** pour les vulnérabilités moyennes
-- **Dans les 30 jours** pour les vulnérabilités mineures
-
-Abonnez-vous aux [releases GitHub](https://github.com/[USERNAME]/password-manager/releases) pour être notifié.
-
----
-
-## 📞 Contact
-
-- **Vulnérabilités de sécurité** : [À CONFIGURER - Email sécurité]
-- **Questions générales** : [GitHub Issues](https://github.com/[USERNAME]/password-manager/issues)
-- **Discussions** : [GitHub Discussions](https://github.com/[USERNAME]/password-manager/discussions)
-
----
-
-**Dernière mise à jour** : 2 mars 2026
+Derniere mise a jour : 5 mars 2026

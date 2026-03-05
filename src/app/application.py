@@ -10,7 +10,7 @@ import gi  # type: ignore[import]
 
 from src.config.environment import get_data_directory, is_dev_mode
 from src.config.logging_config import configure_logging
-from src.i18n import _, init_i18n
+from src.i18n import _, init_i18n, set_language
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.repositories.password_repository import PasswordRepository
 from src.services.auth_service import AuthService
@@ -45,6 +45,14 @@ init_i18n()
 logger = logging.getLogger(__name__)
 DATA_DIR = get_data_directory()
 APP_ID = f"{__app_id__}.dev" if is_dev_mode() else __app_id__
+APP_ICON_NAME = "heelonvault"
+APP_ICON_CANDIDATES = ["heelonvault"]
+APP_ICONS_ROOT = Path(__file__).resolve().parents[1] / "resources" / "icons" / "hicolor"
+APP_ICON_SEARCH_DIRS = [
+    APP_ICONS_ROOT / "48x48" / "apps",
+    APP_ICONS_ROOT / "128x128" / "apps",
+    APP_ICONS_ROOT / "256x256" / "apps",
+]
 
 
 def _install_branding_css() -> None:
@@ -70,6 +78,7 @@ class PasswordManagerApplication(Adw.Application):
             application_id=APP_ID,
             flags=Gio.ApplicationFlags.FLAGS_NONE,
         )
+        Gtk.Window.set_default_icon_name(APP_ICON_NAME)
         self._branding_css_loaded = False
         self.window: PasswordManagerWindow | None = None
         self.email_login_dialog: EmailLoginDialog | None = None
@@ -112,6 +121,36 @@ class PasswordManagerApplication(Adw.Application):
         if not self._branding_css_loaded:
             _install_branding_css()
             self._branding_css_loaded = True
+
+        display = Gdk.Display.get_default()
+        if display:
+            icon_theme = Gtk.IconTheme.get_for_display(display)
+            for icon_dir in APP_ICON_SEARCH_DIRS:
+                icon_theme.add_search_path(str(icon_dir))
+            resolved_icon_name = next(
+                (name for name in APP_ICON_CANDIDATES if icon_theme.has_icon(name)),
+                None,
+            )
+            if resolved_icon_name:
+                Gtk.Window.set_default_icon_name(resolved_icon_name)
+                if resolved_icon_name != APP_ICON_NAME:
+                    logger.info(
+                        "Application icon '%s' unavailable, using '%s'.",
+                        APP_ICON_NAME,
+                        resolved_icon_name,
+                    )
+            else:
+                logger.warning(
+                    "Application icon candidates %s not found in current icon theme or %s.",
+                    APP_ICON_CANDIDATES,
+                    APP_ICON_SEARCH_DIRS,
+                )
+        else:
+            logger.warning(
+                    "Unable to resolve application icon '%s' because no display is available.",
+                    APP_ICON_NAME,
+                )
+
         DATA_DIR.mkdir(parents=True, exist_ok=True)
         users_db_path = DATA_DIR / "users.db"
         self.auth_service = AuthService(users_db_path)
@@ -140,6 +179,7 @@ class PasswordManagerApplication(Adw.Application):
         master_password = dialog.get_master_password()
 
         if user_info and master_password:
+            set_language(user_info.get("language", "en"))
             # Vérifier si email temporaire (migration)
             if self.auth_service and self.auth_service.is_migration_email(user_info['email']):
                 self.show_update_email_dialog(user_info, master_password)
@@ -566,6 +606,9 @@ class PasswordManagerApplication(Adw.Application):
         """Synchronise la fenêtre principale après mise à jour profil."""
         if not self.current_user:
             return
+
+        if "language" in updates:
+            set_language(updates["language"])
 
         self.current_user.update(updates)
 

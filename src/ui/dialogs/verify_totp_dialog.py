@@ -141,6 +141,7 @@ class VerifyTOTPDialog(Adw.Window):
         self.totp_entry.set_input_purpose(Gtk.InputPurpose.DIGITS)
         self.totp_entry.set_halign(Gtk.Align.CENTER)
         self.totp_entry.set_width_chars(10)
+        self.totp_entry.set_alignment(0.5)
         self.totp_entry.add_css_class("large-entry")
         self.totp_entry.connect("changed", self._on_code_changed)
         self.totp_entry.connect("activate", self._on_verify_clicked)

@@ -26,6 +26,7 @@ from cryptography.hazmat.backends import default_backend
 from cryptography.hazmat.primitives import hashes
 from cryptography.hazmat.primitives.kdf.pbkdf2 import PBKDF2HMAC
 
+from src.i18n import normalize_language
 from src.models.user_info import UserInfo
 
 logger = logging.getLogger(__name__)
@@ -57,6 +58,7 @@ class AuthService:
         "last_failed_attempt": "TIMESTAMP",
         "account_locked_until": "TIMESTAMP",
         "avatar_path": "TEXT",
+        "language": "TEXT DEFAULT 'en'",
     }
 
     def __init__(self, users_db_path: Path, totp_service=None):
@@ -135,6 +137,7 @@ class AuthService:
                 last_failed_attempt TIMESTAMP,
                 account_locked_until TIMESTAMP,
                 avatar_path TEXT,
+                language TEXT DEFAULT 'en',
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_login TIMESTAMP
             )
@@ -309,7 +312,7 @@ class AuthService:
         """
         cursor = self.conn.cursor()
         cursor.execute('''
-            SELECT id, username, password_hash, salt, role, last_login
+            SELECT id, username, password_hash, salt, role, last_login, language
             FROM users WHERE username = ?
         ''', (username,))
         row = cursor.fetchone()
@@ -320,7 +323,15 @@ class AuthService:
             )
             return None
 
-        user_id, username, stored_hash, salt_b64, role, previous_last_login = row
+        (
+            user_id,
+            username,
+            stored_hash,
+            salt_b64,
+            role,
+            previous_last_login,
+            language,
+        ) = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
 
@@ -344,6 +355,7 @@ class AuthService:
                 'salt': salt,
                 'last_login_previous': previous_last_login,
                 'login_count_today': self._get_login_count_today(user_id),
+                'language': normalize_language(language),
             })
         logger.warning(
             "AuthService: authentication failed, invalid password for %s",
@@ -534,7 +546,7 @@ class AuthService:
         cursor = self.conn.cursor()
         cursor.execute('''
             SELECT id, username, email, role, workspace_uuid, totp_enabled, totp_confirmed,
-                   created_at, last_login, avatar_path
+                     created_at, last_login, avatar_path, language
             FROM users
             WHERE email_hash = ?
         ''', (email_hash,))
@@ -554,6 +566,7 @@ class AuthService:
             'created_at': row[7],
             'last_login': row[8],
             'avatar_path': row[9],
+            'language': normalize_language(row[10]),
         })
 
     def authenticate_by_email(
@@ -575,7 +588,7 @@ class AuthService:
         cursor = self.conn.cursor()
         cursor.execute('''
              SELECT id, username, email, password_hash, salt, role, workspace_uuid,
-                 totp_enabled, totp_confirmed, last_login, avatar_path
+                 totp_enabled, totp_confirmed, last_login, avatar_path, language
             FROM users
             WHERE email_hash = ?
         ''', (email_hash,))
@@ -586,7 +599,7 @@ class AuthService:
             cursor.execute(
                 '''
                 SELECT id, username, email, password_hash, salt, role, workspace_uuid,
-                       totp_enabled, totp_confirmed, last_login, avatar_path
+                      totp_enabled, totp_confirmed, last_login, avatar_path, language
                 FROM users
                 WHERE lower(username) = ?
                 ''',
@@ -612,6 +625,7 @@ class AuthService:
             totp_confirmed,
             previous_last_login,
             avatar_path,
+            language,
         ) = row
         salt = base64.b64decode(salt_b64)
         password_hash, _ = self._hash_password(password, salt)
@@ -646,6 +660,7 @@ class AuthService:
                 'last_login': datetime.now().strftime("%Y-%m-%d %H:%M:%S"),
                 'login_count_today': self._get_login_count_today(user_id),
                 'avatar_path': avatar_path,
+                'language': normalize_language(language),
             })
 
         logger.warning(
@@ -750,6 +765,21 @@ class AuthService:
             return cursor.rowcount > 0
         except sqlite3.Error:
             logger.exception("AuthService: error while updating avatar")
+            return False
+
+    def update_user_language(self, user_id: int, language: str) -> bool:
+        """Update a user's preferred interface language."""
+        resolved = normalize_language(language)
+        try:
+            cursor = self.conn.cursor()
+            cursor.execute(
+                "UPDATE users SET language = ? WHERE id = ?",
+                (resolved, user_id),
+            )
+            self.conn.commit()
+            return cursor.rowcount > 0
+        except sqlite3.Error:
+            logger.exception("AuthService: error while updating language")
             return False
 
     def setup_2fa(self, user_id: int, secret_encrypted: str, backup_codes_encrypted: str) -> bool:

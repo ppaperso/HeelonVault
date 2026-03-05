@@ -72,6 +72,57 @@
         background: #F3F6F3;
     }
 
+    .app-menu-popover box {
+        min-width: 260px;
+    }
+
+    .app-menu-section {
+        margin-top: 8px;
+        margin-bottom: 2px;
+        font-weight: 600;
+    }
+
+    button.app-menu-item {
+        min-height: 34px;
+        padding: 5px 8px;
+        border-radius: 10px;
+        color: #2C3E50;
+        background: transparent;
+        border: 1px solid transparent;
+        box-shadow: none;
+    }
+
+    button.app-menu-item label,
+    button.app-menu-item image {
+        color: #2C3E50;
+    }
+
+    button.app-menu-item:hover {
+        background: #EAF3F1;
+        border-color: rgba(87, 185, 177, 0.35);
+        transform: none;
+        box-shadow: none;
+    }
+
+    button.app-menu-item:hover label,
+    button.app-menu-item:hover image,
+    button.app-menu-item:focus-visible label,
+    button.app-menu-item:focus-visible image {
+        color: #07393A;
+    }
+
+    button.app-menu-item:focus-visible {
+        background: #EAF3F1;
+        border-color: rgba(87, 185, 177, 0.45);
+        outline: none;
+    }
+
+    button.app-menu-item-destructive,
+    button.app-menu-item-destructive label,
+    button.app-menu-item-destructive image {
+        color: #C01C28;
+    }
+
     toast {
         background-image: linear-gradient(120deg, #13A1A1, #1F8678);
         color: #FFFFFF;
@@ -222,6 +273,47 @@
         font-size: 0.86rem;
         font-weight: 520;
         margin-top: 2px;
+    }
+
+    /* Manage account dialog: compact and HIG-oriented */
+
+    .manage-account-dialog .account-intro {
+        font-size: 0.88rem;
+        font-weight: 500;
+        color: @dim_label_color;
+        margin-bottom: 2px;
+    }
+
+    .manage-account-dialog .account-group {
+        margin-top: 4px;
+        margin-bottom: 4px;
+    }
+
+    .manage-account-dialog .avatar-preview-compact {
+        margin-top: 1px;
+        margin-bottom: 1px;
+    }
+
+    .manage-account-dialog button.account-inline-btn {
+        min-height: 28px;
+        padding: 4px 10px;
+        border-radius: 8px;
+        box-shadow: none;
+    }
+
+    .manage-account-dialog button.account-inline-btn:hover {
+        transform: none;
+        box-shadow: none;
+    }
+
+    .manage-account-dialog .account-compact-dropdown {
+        min-width: 170px;
+    }
+
+    .manage-account-dialog button.account-popover-action {
+        min-height: 28px;
+        border-radius: 8px;
+        padding: 4px 8px;
     }
 
     /* ─── STATUS CARD ──────────────────────────────────────────────────── */

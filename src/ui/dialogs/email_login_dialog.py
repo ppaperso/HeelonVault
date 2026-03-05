@@ -16,7 +16,7 @@ gi.require_version('Adw', '1')
 
 from gi.repository import Adw, Gdk, GLib, Gtk  # noqa: E402
 
-from src.i18n import _  # noqa: E402
+from src.i18n import _, get_active_language, get_supported_languages, set_language  # noqa: E402
 from src.ui.password_strength import evaluate_password_strength  # noqa: E402
 from src.version import __app_name__  # noqa: E402
 
@@ -49,6 +49,8 @@ class EmailLoginDialog(Adw.Window):
         self.authenticated = False
         self._blocked_until: float | None = None
         self._cooldown_source_id: int | None = None
+        self.selected_language = get_active_language()
+        self.language_buttons: dict[str, Gtk.Button] = {}
 
         # Construction de l'UI
         self._build_ui()
@@ -99,6 +101,24 @@ class EmailLoginDialog(Adw.Window):
         )
         subtitle_label.add_css_class("dim-label")
         header_box.append(subtitle_label)
+
+        language_strip = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        language_strip.set_halign(Gtk.Align.CENTER)
+        header_box.append(language_strip)
+
+        self.language_buttons.clear()
+        for language in get_supported_languages():
+            code = language["code"]
+            button = Gtk.Button(label=language["emoji"])
+            button.set_tooltip_text(language["native_name"])
+            button.set_css_classes(["flat"])
+            button.connect(
+                "clicked", lambda _btn, lang=code: self._on_language_selected(lang)
+            )
+            self.language_buttons[code] = button
+            language_strip.append(button)
+
+        self._refresh_language_buttons()
 
         # Groupe de saisie
         input_group = Adw.PreferencesGroup()
@@ -177,6 +197,28 @@ class EmailLoginDialog(Adw.Window):
 
         return False
 
+    def _refresh_language_buttons(self) -> None:
+        for _code, button in self.language_buttons.items():
+            button.remove_css_class("suggested-action")
+
+    def _on_language_selected(self, language_code: str) -> None:
+        if language_code == self.selected_language:
+            return
+        self.selected_language = set_language(language_code)
+        self._rebuild_ui_for_language()
+
+    def _rebuild_ui_for_language(self) -> None:
+        previous_email = self.email_entry.get_text() if hasattr(self, "email_entry") else ""
+        previous_password = (
+            self.password_entry.get_text() if hasattr(self, "password_entry") else ""
+        )
+        self._build_ui()
+        self.email_entry.set_text(previous_email)
+        self.password_entry.set_text(previous_password)
+        self._on_input_changed(None)
+        if self._is_currently_blocked():
+            self._update_cooldown_status()
+
     def _on_input_changed(self, _widget):
         """Appelé quand les champs changent."""
         email = self.email_entry.get_text().strip()
@@ -198,7 +240,7 @@ class EmailLoginDialog(Adw.Window):
             self.password_strength_label.set_css_classes(["caption", "dim-label"])
             return
 
-        self.password_strength_label.set_text(_("Robustesse : %s") % strength_label)
+        self.password_strength_label.set_text(_("Strength: %s") % strength_label)
         self.password_strength_label.set_css_classes(["caption", strength_css])
 
     def _on_login_clicked(self, _button):

@@ -539,7 +539,7 @@ msgid ""
 "\n"
 "This action is irreversible."
 msgstr ""
-"Möchten Sie den Eintrag „%s" wirklich löschen?\n"
+"Möchten Sie den Eintrag \"%s\" wirklich löschen?\n"
 "\n"
 "Diese Aktion ist unwiderruflich."
 
@@ -1543,10 +1543,6 @@ msgstr "Erstellt: %s"
 msgid "Reset password"
 msgstr "Passwort zurücksetzen"
 
-#: src/ui/dialogs/manage_users_dialog.py:120
-msgid "Confirm deletion"
-msgstr "Löschen bestätigen"
-
 #: src/ui/dialogs/manage_users_dialog.py:123
 #, python-format
 msgid ""
@@ -1554,7 +1550,7 @@ msgid ""
 "\n"
 "All their data will be lost."
 msgstr ""
-"Möchten Sie den Benutzer „%s" wirklich löschen?\n"
+"Möchten Sie den Benutzer \"%s\" wirklich löschen?\n"
 "\n"
 "Alle seine Daten gehen verloren."
 
@@ -1619,7 +1615,7 @@ msgstr "❌ Fehler beim Ändern des Passworts oder der Neuverschlüsselung des T
 #: src/ui/dialogs/reset_password_dialog.py:37
 #, python-format
 msgid "Reset password for '%s'"
-msgstr "Passwort zurücksetzen für „%s""
+msgstr "Passwort zurücksetzen für \"%s\""
 
 #: src/ui/dialogs/reset_password_dialog.py:43
 msgid "⚠️ The user will need to use this new master password"
@@ -1636,7 +1632,7 @@ msgstr "Erfolgreich"
 #: src/ui/dialogs/reset_password_dialog.py:125
 #, python-format
 msgid "Password for '%s' has been reset."
-msgstr "Passwort für „%s" wurde zurückgesetzt."
+msgstr "Passwort für \"%s\" wurde zurückgesetzt."
 
 #: src/ui/dialogs/reset_password_dialog.py:130
 msgid "Error while resetting password"
@@ -1948,3 +1944,27 @@ msgstr "✅ E-Mail aktualisiert"
 #: src/app/application.py:557
 msgid "✅ Two-factor authentication reconfigured"
 msgstr "✅ Zwei-Faktor-Authentifizierung neu konfiguriert"
+
+#: src/ui/dialogs/email_login_dialog.py:111
+msgid "🌐 Interface language"
+msgstr "🌐 Sprache der Benutzeroberfläche"
+
+#: src/ui/dialogs/email_login_dialog.py:112
+msgid "Choose your language before signing in"
+msgstr "Wählen Sie Ihre Sprache vor der Anmeldung"
+
+#: src/ui/dialogs/manage_account_dialog.py:129
+msgid "Interface language"
+msgstr "Sprache der Benutzeroberfläche"
+
+#: src/ui/dialogs/manage_account_dialog.py:130
+msgid "Select your preferred display language"
+msgstr "Wählen Sie Ihre bevorzugte Anzeigesprache"
+
+#: src/ui/dialogs/manage_account_dialog.py:234
+msgid "❌ Unable to update language"
+msgstr "❌ Sprache konnte nicht aktualisiert werden"
+
+#: src/ui/dialogs/manage_account_dialog.py:241
+msgid "✅ Interface language updated"
+msgstr "✅ Sprache der Benutzeroberfläche aktualisiert"

@@ -400,20 +400,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         header.set_title_widget(date_label)
 
         menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic")
-        menu = Gio.Menu()
-        menu.append(_("Import from CSV"), "app.import_csv")
-        menu.append(_("Export to CSV"), "app.export_csv")
-        menu.append(_("Trash"), "app.open_trash")
-        menu.append(_("Manage my account"), "app.manage_account")
-        if self.user_info.get("role") == "admin":
-            menu.append(_("Manage users"), "app.manage_users")
-            menu.append(_("Manage backups"), "app.manage_backups")
-        menu.append(_("Switch account"), "app.switch_user")
-        menu.append(_("Logout"), "app.logout")
-        about_section = Gio.Menu()
-        about_section.append(_("About"), "app.about")
-        menu.append_section(None, about_section)
-        menu_button.set_menu_model(menu)
+        menu_button.set_popover(self._build_hamburger_popover())
         header.pack_end(menu_button)
 
         main_box.append(header)
@@ -491,6 +478,221 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.toast_overlay = Adw.ToastOverlay()
         self.toast_overlay.set_child(main_box)
         self.set_content(self.toast_overlay)
+
+    def _build_hamburger_popover(self) -> Gtk.Popover:
+        popover = Gtk.Popover()
+        popover.add_css_class("app-menu-popover")
+
+        container = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=0)
+        container.set_margin_top(8)
+        container.set_margin_bottom(8)
+        container.set_margin_start(8)
+        container.set_margin_end(8)
+
+        self._append_menu_section_label(container, _("Data"))
+        self._append_menu_item(
+            container,
+            _("Import from CSV"),
+            "document-import-symbolic",
+            "import_csv",
+            popover,
+        )
+        self._append_menu_item(
+            container,
+            _("Export to CSV"),
+            "document-export-symbolic",
+            "export_csv",
+            popover,
+        )
+        self._append_menu_item(
+            container,
+            _("Trash"),
+            "user-trash-symbolic",
+            "open_trash",
+            popover,
+        )
+
+        container.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        self._append_menu_section_label(container, _("Account"))
+        self._append_menu_item(
+            container,
+            _("Manage my account"),
+            "avatar-default-symbolic",
+            "manage_account",
+            popover,
+        )
+        if self.user_info.get("role") == "admin":
+            self._append_menu_item(
+                container,
+                _("Manage users"),
+                "system-users-symbolic",
+                "manage_users",
+                popover,
+            )
+            self._append_menu_item(
+                container,
+                _("Manage backups"),
+                "drive-harddisk-symbolic",
+                "manage_backups",
+                popover,
+            )
+        self._append_menu_item(
+            container,
+            _("Switch account"),
+            "system-switch-user-symbolic",
+            "switch_user",
+            popover,
+        )
+
+        container.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        self._append_menu_section_label(container, _("Session"))
+        self._append_menu_item(
+            container,
+            _("Logout"),
+            "system-log-out-symbolic",
+            "logout",
+            popover,
+            destructive=True,
+        )
+
+        container.append(Gtk.Separator(orientation=Gtk.Orientation.HORIZONTAL))
+
+        self._append_menu_section_label(container, _("App"))
+        self._append_menu_item(
+            container,
+            _("About"),
+            "help-about-symbolic",
+            "about",
+            popover,
+        )
+
+        popover.set_child(container)
+        return popover
+
+    def _append_menu_section_label(self, container: Gtk.Box, label: str) -> None:
+        section_label = Gtk.Label(label=label, xalign=0)
+        section_label.set_css_classes(["caption", "dim-label", "app-menu-section"])
+        container.append(section_label)
+
+    def _append_menu_item(
+        self,
+        container: Gtk.Box,
+        label: str,
+        icon_name: str,
+        action_name: str,
+        popover: Gtk.Popover,
+        destructive: bool = False,
+    ) -> None:
+        button = Gtk.Button()
+        button.set_halign(Gtk.Align.FILL)
+        button.set_hexpand(True)
+        button.set_css_classes(["flat", "app-menu-item"])
+        if destructive:
+            button.add_css_class("destructive-action")
+            button.add_css_class("app-menu-item-destructive")
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        resolved_icon_name = self._resolve_menu_icon_name(icon_name)
+        icon = Gtk.Image()
+        icon.set_from_icon_name(resolved_icon_name)
+        icon.set_icon_size(Gtk.IconSize.NORMAL)
+        row.append(icon)
+
+        text = Gtk.Label(label=label, xalign=0)
+        text.set_hexpand(True)
+        row.append(text)
+
+        button.set_child(row)
+        button.connect("clicked", self._on_hamburger_action_clicked, action_name, popover)
+        container.append(button)
+
+    def _resolve_menu_icon_name(self, icon_name: str) -> str:
+        fallback_icon = "image-missing-symbolic"
+        icon_candidates_map = {
+            "document-import-symbolic": [
+                "document-open-symbolic",
+                "folder-open-symbolic",
+                "document-open-recent-symbolic",
+            ],
+            "document-export-symbolic": [
+                "document-save-symbolic",
+                "document-save-as-symbolic",
+                "folder-download-symbolic",
+            ],
+            "user-trash-symbolic": [
+                "user-trash-symbolic",
+                "user-trash-full-symbolic",
+                "edit-delete-symbolic",
+            ],
+            "avatar-default-symbolic": [
+                "avatar-default-symbolic",
+                "avatar-default",
+                "system-users-symbolic",
+            ],
+            "system-users-symbolic": [
+                "system-users-symbolic",
+                "avatar-default-symbolic",
+            ],
+            "drive-harddisk-symbolic": [
+                "drive-harddisk-symbolic",
+                "media-floppy-symbolic",
+                "document-save-symbolic",
+            ],
+            "system-switch-user-symbolic": [
+                "system-switch-user-symbolic",
+                "avatar-default-symbolic",
+            ],
+            "system-log-out-symbolic": [
+                "system-log-out-symbolic",
+                "application-exit-symbolic",
+            ],
+            "help-about-symbolic": [
+                "help-about-symbolic",
+                "dialog-question-symbolic",
+            ],
+        }
+        display = self.get_display() or Gdk.Display.get_default()
+        if display is None:
+            logger.warning(
+                "Unable to resolve icon '%s' because no display is available. Falling back to '%s'.",
+                icon_name,
+                fallback_icon,
+            )
+            return fallback_icon
+
+        icon_theme = Gtk.IconTheme.get_for_display(display)
+        candidates = icon_candidates_map.get(icon_name, [icon_name])
+        for candidate in candidates:
+            if icon_theme.has_icon(candidate):
+                if candidate != icon_name:
+                    logger.info(
+                        "Icon '%s' unavailable in current theme. Using '%s'.",
+                        icon_name,
+                        candidate,
+                    )
+                return candidate
+
+        logger.warning(
+            "Missing symbolic icon '%s' (candidates=%s) in current icon theme. Using '%s'.",
+            icon_name,
+            ", ".join(candidates),
+            fallback_icon,
+        )
+        return fallback_icon
+
+    def _on_hamburger_action_clicked(
+        self,
+        _button: Gtk.Button,
+        action_name: str,
+        popover: Gtk.Popover,
+    ) -> None:
+        popover.popdown()
+        app = self.get_application()
+        if app is None:
+            return
+        app.activate_action(action_name, None)
 
     def _build_sidebar(self) -> Gtk.Widget:
         sidebar = Gtk.Box(orientation=Gtk.Orientation.VERTICAL)

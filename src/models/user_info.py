@@ -14,6 +14,7 @@ class UserInfo(TypedDict):
     totp_confirmed: NotRequired[bool]
     last_login: NotRequired[str | None]
     avatar_path: NotRequired[str | None]
+    language: NotRequired[str]
 
 class UserInfoUpdate(TypedDict, total=False):
     """Mises à jour partielles d'un utilisateur."""
@@ -25,3 +26,4 @@ class UserInfoUpdate(TypedDict, total=False):
     totp_confirmed: bool
     last_login: str | None
     avatar_path: str | None
+    language: str

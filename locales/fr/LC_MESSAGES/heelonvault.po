@@ -1200,6 +1200,7 @@ msgid "e.g. Patrick"
 msgstr "Ex. : Patrick"
 
 #: src/ui/dialogs/manage_account_dialog.py:128
+#: src/ui/dialogs/export_dialog.py:122
 msgid "Security"
 msgstr "Sécurité"
 
@@ -1324,10 +1325,6 @@ msgstr "Choisissez où sauvegarder l'archive ZIP"
 #: src/ui/dialogs/export_dialog.py:104
 msgid "Choose location"
 msgstr "Choisir l'emplacement"
-
-#: src/ui/dialogs/export_dialog.py:122
-msgid "Security"
-msgstr "Sécurité"
 
 #: src/ui/dialogs/export_dialog.py:125
 msgid "ZIP archive password"
@@ -1548,10 +1545,6 @@ msgstr "Créé le : %s"
 #: src/ui/dialogs/manage_users_dialog.py:101
 msgid "Reset password"
 msgstr "Réinitialiser le mot de passe"
-
-#: src/ui/dialogs/manage_users_dialog.py:120
-msgid "Confirm deletion"
-msgstr "Confirmer la suppression"
 
 #: src/ui/dialogs/manage_users_dialog.py:123
 #, python-format
@@ -1954,3 +1947,27 @@ msgstr "✅ Email mis à jour"
 #: src/app/application.py:557
 msgid "✅ Two-factor authentication reconfigured"
 msgstr "✅ Authentification à deux facteurs reconfigurée"
+
+#: src/ui/dialogs/email_login_dialog.py:111
+msgid "🌐 Interface language"
+msgstr "🌐 Langue de l'interface"
+
+#: src/ui/dialogs/email_login_dialog.py:112
+msgid "Choose your language before signing in"
+msgstr "Choisissez votre langue avant de vous connecter"
+
+#: src/ui/dialogs/manage_account_dialog.py:129
+msgid "Interface language"
+msgstr "Langue de l'interface"
+
+#: src/ui/dialogs/manage_account_dialog.py:130
+msgid "Select your preferred display language"
+msgstr "Sélectionnez votre langue d'affichage préférée"
+
+#: src/ui/dialogs/manage_account_dialog.py:234
+msgid "❌ Unable to update language"
+msgstr "❌ Impossible de mettre à jour la langue"
+
+#: src/ui/dialogs/manage_account_dialog.py:241
+msgid "✅ Interface language updated"
+msgstr "✅ Langue de l'interface mise à jour"
