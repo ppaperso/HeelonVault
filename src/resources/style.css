@@ -1,4 +1,4 @@
-    * {
+* {
         font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
     }
 
@@ -280,7 +280,7 @@
     .manage-account-dialog .account-intro {
         font-size: 0.88rem;
         font-weight: 500;
-        color: @dim_label_color;
+        color: #6B9EA3;
         margin-bottom: 2px;
     }
 
@@ -355,8 +355,14 @@
     }
 
     /* Chips de statistiques */
-    .status-stat-chip { /* no background, just spacing via margins */ }
-    .status-stat-icon { color: #57B9B1; opacity: 0.80; }
+    .status-stat-chip {
+        margin-left: 6px;
+        margin-right: 6px;
+    }
+    .status-stat-icon {
+        color: #57B9B1;
+        opacity: 0.80;
+    }
     .status-stat-value {
         font-weight: 700;
         font-size: 1.20rem;
@@ -420,6 +426,67 @@
         padding: 0;
     }
 
+    /* Phase 1 split-view additions */
+
+    .detail-panel {
+        background: linear-gradient(135deg, #FFFFFF 0%, #EEF8F7 100%);
+        border: 1px solid rgba(164, 223, 207, 0.75);
+        border-radius: 20px;
+        box-shadow: 0 10px 22px rgba(7, 57, 58, 0.08);
+    }
+
+    .detail-field {
+        border-radius: 12px;
+        border: 1px solid rgba(87, 185, 177, 0.55);
+        background: #FFFFFF;
+        color: #2C3E50;
+    }
+
+    .detail-field:focus {
+        border-color: #13A1A1;
+        box-shadow: 0 0 0 2px rgba(19, 161, 161, 0.16);
+    }
+
+    .detail-label {
+        color: #07393A;
+        font-weight: 620;
+        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
+    }
+
+    .entry-list-row {
+        border-radius: 14px;
+        border: 1px solid rgba(164, 223, 207, 0.55);
+        background: linear-gradient(135deg, #FFFFFF 0%, #F3F6F3 100%);
+        margin-top: 3px;
+        margin-bottom: 3px;
+    }
+
+    .entry-list-row:selected {
+        border-color: #13A1A1;
+        background: linear-gradient(135deg, rgba(19, 161, 161, 0.16), rgba(87, 185, 177, 0.14));
+        box-shadow: 0 6px 16px rgba(7, 57, 58, 0.10);
+    }
+
+    flowboxchild.entry-card-child {
+        min-width: 280px;
+    }
+
+    flowboxchild.entry-card-child:selected .entry-compact-card {
+        border-color: #13A1A1;
+        box-shadow: 0 8px 18px rgba(7, 57, 58, 0.14);
+    }
+
+    .unsaved-indicator {
+        background: rgba(87, 185, 177, 0.18);
+        color: #07393A;
+        border: 1px solid rgba(87, 185, 177, 0.75);
+        border-radius: 999px;
+        padding: 4px 10px;
+        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
+        font-weight: 650;
+        letter-spacing: 0.02em;
+    }
+
     tooltip > * {
         background: linear-gradient(145deg, #07393A 0%, #0C5254 60%, #0F6B60 100%);
         color: #FFFFFF;
@@ -456,10 +523,25 @@
         transform: translateY(-2px);
     }
 
+    .entry-compact-card {
+        border-radius: 12px;
+        box-shadow: 0 3px 10px rgba(7, 57, 58, 0.06);
+    }
+
+    .entry-compact-card:hover {
+        transform: none;
+        box-shadow: 0 5px 12px rgba(7, 57, 58, 0.10);
+    }
+
     /* Bande de force en haut */
     .card-strength-bar {
         border-radius: 18px 18px 0 0;
         min-height: 4px;
+    }
+    .entry-strength-bar {
+        min-width: 3px;
+        min-height: 48px;
+        border-radius: 12px 0 0 12px;
     }
     .card-strength-success { background: linear-gradient(90deg, #1F8678, #13A1A1); }
     .card-strength-warning { background: linear-gradient(90deg, #E6B800, #F0C040); }
@@ -531,6 +613,18 @@
         opacity: 0.9;
     }
 
+    .password-action-btn,
+    .password-action-btn image {
+        color: #07393A;
+        opacity: 0.80;
+    }
+
+    .password-action-btn:hover,
+    .password-action-btn:hover image {
+        color: #0A5F5C;
+        opacity: 1;
+    }
+
     /* Badges d'alerte */
     .card-alert-badge {
         font-size: 0.68rem;
@@ -549,6 +643,12 @@
         border: 1px solid rgba(231, 76, 60, 0.35);
     }
 
+    .card-usage-badge {
+        background: rgba(19, 161, 161, 0.14);
+        color: #0A5F5C;
+        border: 1px solid rgba(19, 161, 161, 0.32);
+    }
+
     /* Tag pills */
     .card-tag-pill {
         font-size: 0.65rem;
@@ -558,6 +658,11 @@
         border: 1px solid rgba(19, 161, 161, 0.28);
         border-radius: 999px;
         padding: 1px 7px;
+    }
+
+    .filter-tag-pill {
+        font-size: 1.04rem;
+        padding: 2px 8px;
     }
     .card-tag-more {
         font-size: 0.63rem;

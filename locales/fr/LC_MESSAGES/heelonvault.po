@@ -1971,3 +1971,165 @@ msgstr "❌ Impossible de mettre à jour la langue"
 #: src/ui/dialogs/manage_account_dialog.py:241
 msgid "✅ Interface language updated"
 msgstr "✅ Langue de l'interface mise à jour"
+
+#: src/ui/windows/main_window.py
+msgid "No metadata"
+msgstr "Aucune métadonnée"
+
+#: src/ui/windows/main_window.py
+msgid "Create a new entry"
+msgstr "Créer une nouvelle entrée"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes"
+msgstr "Modifications non enregistrées"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Title (A-Z)"
+msgstr "Tri : Titre (A-Z)"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Most used"
+msgstr "Tri : Les plus utilisées"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Last modified (newest)"
+msgstr "Tri : Dernière modification (récent)"
+
+#: src/ui/windows/main_window.py
+msgid "Filters"
+msgstr "Filtres"
+
+#: src/ui/windows/main_window.py
+msgid "Entries"
+msgstr "Entrées"
+
+#: src/ui/windows/main_window.py
+msgid "Vault"
+msgstr "Coffre"
+
+#: src/ui/windows/main_window.py
+msgid "Vaults"
+msgstr "Coffres"
+
+#: src/ui/windows/main_window.py
+msgid "Single local vault (multi-vault ready)"
+msgstr "Coffre local unique (multi-coffres prêt)"
+
+#: src/ui/windows/main_window.py
+msgid "Catégories"
+msgstr "Catégories"
+
+#: src/ui/windows/main_window.py
+msgid "Étiquettes"
+msgstr "Étiquettes"
+
+#: src/ui/windows/main_window.py
+msgid "Your secrets never leave your machine."
+msgstr "Vos secrets ne quittent jamais votre machine."
+
+#: src/ui/windows/main_window.py
+msgid "Search in title, username or URL"
+msgstr "Rechercher dans le titre, l'identifiant ou l'URL"
+
+#: src/ui/windows/main_window.py
+msgid "No entries for current filters"
+msgstr "Aucune entrée pour les filtres actifs"
+
+#: src/ui/windows/main_window.py
+msgid "Select an entry"
+msgstr "Sélectionnez une entrée"
+
+#: src/ui/windows/main_window.py
+msgid "Revert changes"
+msgstr "Annuler les modifications"
+
+#: src/ui/windows/main_window.py
+msgid "Identifiants"
+msgstr "Identifiants"
+
+#: src/ui/windows/main_window.py
+msgid "Generate password"
+msgstr "Générer un mot de passe"
+
+#: src/ui/windows/main_window.py
+msgid "Organisation"
+msgstr "Organisation"
+
+#: src/ui/windows/main_window.py
+msgid "Sécurité"
+msgstr "Sécurité"
+
+#: src/ui/windows/main_window.py
+msgid "Show notes"
+msgstr "Afficher les notes"
+
+#: src/ui/windows/main_window.py
+msgid "Password validity (days)"
+msgstr "Validité du mot de passe (jours)"
+
+#: src/ui/windows/main_window.py
+msgid "All"
+msgstr "Tout"
+
+#: src/ui/windows/main_window.py
+msgid "All categories"
+msgstr "Toutes les catégories"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries"
+msgstr "%(count)s entrées"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries shown"
+msgstr "%(count)s entrées affichées"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s uses"
+msgstr "%(count)s utilisations"
+
+#: src/ui/windows/main_window.py
+msgid "All cards are at 0 use. Run a search to find them."
+msgstr "Toutes les cartes sont à 0 utilisation. Lancez une recherche pour les trouver."
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Vault: %(count)s cards at 0 use, run a search to find them"
+msgstr "Coffre : %(count)s cartes à 0 utilisation, lancez une recherche pour les trouver"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes were discarded"
+msgstr "Les modifications non enregistrées ont été ignorées"
+
+#: src/ui/windows/main_window.py
+msgid "Fill fields, then save"
+msgstr "Renseignez les champs puis enregistrez"
+
+#: src/ui/windows/main_window.py
+msgid "Entry created"
+msgstr "Entrée créée"
+
+#: src/ui/windows/main_window.py
+msgid "Entry saved"
+msgstr "Entrée enregistrée"
+
+#: src/ui/windows/main_window.py
+msgid "Unknown"
+msgstr "Inconnu"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Last modified: %s"
+msgstr "Dernière modification : %s"
+
+#: src/ui/windows/main_window.py
+msgid "This entry can be restored from the Trash."
+msgstr "Cette entrée peut être restaurée depuis la corbeille."
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(username)s's vault"
+msgstr "Coffre de %(username)s"

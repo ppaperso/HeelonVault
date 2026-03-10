@@ -32,6 +32,7 @@ class PasswordEntry:
     password_validity_days: int | None = 90
     created_at: datetime | None = None
     modified_at: datetime | None = None
+    usage_count: int = 0
 
     def __str__(self) -> str:
         return f"PasswordEntry(id={self.id}, title='{self.title}', category='{self.category}')"
@@ -92,3 +93,4 @@ class PasswordRecord:
     created_at: datetime | None = None
     modified_at: datetime | None = None
     last_changed: datetime | None = None
+    usage_count: int = 0

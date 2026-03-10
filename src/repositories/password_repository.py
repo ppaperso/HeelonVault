@@ -53,6 +53,7 @@ class PasswordRepository:
                 category TEXT,
                 tags TEXT,
                 password_validity_days INTEGER DEFAULT 90,
+                usage_count INTEGER DEFAULT 0,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 modified_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 last_changed TIMESTAMP,
@@ -125,6 +126,17 @@ class PasswordRepository:
             cursor.execute(
                 "ALTER TABLE passwords ADD COLUMN password_validity_days INTEGER DEFAULT 90"
             )
+        usage_migration_needed = False
+        try:
+            cursor.execute("SELECT usage_count FROM passwords LIMIT 1")
+        except sqlite3.OperationalError:
+            usage_migration_needed = True
+
+        if usage_migration_needed:
+            logger.info("Migration: adding usage_count column")
+            cursor.execute(
+                "ALTER TABLE passwords ADD COLUMN usage_count INTEGER DEFAULT 0"
+            )
 
         self.conn.commit()
         logger.debug("SQLite schema verified for %s", self.db_path)
@@ -181,8 +193,8 @@ class PasswordRepository:
             """
             INSERT INTO passwords (
                 title, username, password_data, url, notes, category, tags,
-                password_validity_days, last_changed
-            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
+                password_validity_days, usage_count, last_changed
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, CURRENT_TIMESTAMP)
             """,
             (
                 record.title,
@@ -193,6 +205,7 @@ class PasswordRepository:
                 record.category,
                 json.dumps(record.tags if record.tags else []),
                 record.password_validity_days,
+                record.usage_count,
             ),
         )
         self.conn.commit()
@@ -215,7 +228,7 @@ class PasswordRepository:
                 """
                 UPDATE passwords
                 SET title=?, username=?, password_data=?, url=?, notes=?, category=?, tags=?,
-                    password_validity_days=?,
+                    password_validity_days=?, usage_count=?,
                     modified_at=CURRENT_TIMESTAMP,
                     last_changed=CURRENT_TIMESTAMP
                 WHERE id=?
@@ -229,6 +242,7 @@ class PasswordRepository:
                     record.category,
                     json.dumps(record.tags if record.tags else []),
                     record.password_validity_days,
+                    record.usage_count,
                     record.id,
                 ),
             )
@@ -237,7 +251,7 @@ class PasswordRepository:
                 """
                 UPDATE passwords
                 SET title=?, username=?, password_data=?, url=?, notes=?, category=?, tags=?,
-                    password_validity_days=?,
+                    password_validity_days=?, usage_count=?,
                     modified_at=CURRENT_TIMESTAMP
                 WHERE id=?
                 """,
@@ -250,6 +264,7 @@ class PasswordRepository:
                     record.category,
                     json.dumps(record.tags if record.tags else []),
                     record.password_validity_days,
+                    record.usage_count,
                     record.id,
                 ),
             )
@@ -314,7 +329,7 @@ class PasswordRepository:
         cursor.execute(
             """
             SELECT id, title, username, password_data, url, notes, category, tags,
-                     password_validity_days, created_at, modified_at, last_changed
+                     password_validity_days, created_at, modified_at, last_changed, usage_count
             FROM passwords WHERE deleted_at IS NOT NULL
             ORDER BY deleted_at DESC
             """
@@ -346,7 +361,7 @@ class PasswordRepository:
         cursor = self.conn.cursor()
         query = """
             SELECT id, title, username, password_data, url, notes, category, tags,
-                   password_validity_days, created_at, modified_at, last_changed
+                     password_validity_days, created_at, modified_at, last_changed, usage_count
             FROM passwords WHERE id=?
         """
         if not include_deleted:
@@ -367,7 +382,7 @@ class PasswordRepository:
     ) -> list[PasswordRecord]:
         query = [
             "SELECT id, title, username, password_data, url, notes, category, tags,",
-            "password_validity_days, created_at, modified_at, last_changed ",
+            "password_validity_days, created_at, modified_at, last_changed, usage_count ",
             "FROM passwords WHERE 1 = 1",
         ]
         params: list[str] = []
@@ -396,9 +411,24 @@ class PasswordRepository:
         cursor = self.conn.cursor()
         cursor.execute(
             "SELECT id, title, username, password_data, url, notes, category, tags, "
-            "password_validity_days, created_at, modified_at, last_changed FROM passwords"
+            "password_validity_days, created_at, modified_at, last_changed, usage_count "
+            "FROM passwords"
         )
         return [self._row_to_record(row) for row in cursor.fetchall()]
+
+    def increment_usage_count(self, entry_id: int, amount: int = 1) -> None:
+        cursor = self.conn.cursor()
+        cursor.execute(
+            """
+            UPDATE passwords
+            SET usage_count = COALESCE(usage_count, 0) + ?,
+                modified_at = CURRENT_TIMESTAMP
+            WHERE id = ? AND deleted_at IS NULL
+            """,
+            (amount, entry_id),
+        )
+        self.conn.commit()
+        self._has_changes = True
 
     # ------------------------------------------------------------------
     # Méta
@@ -446,6 +476,7 @@ class PasswordRepository:
             category=row[6] or "",
             tags=tags,
             password_validity_days=row[8],
+            usage_count=int(row[12] or 0),
             created_at=self._parse_timestamp(row[9]),
             modified_at=self._parse_timestamp(row[10]),
             last_changed=self._parse_timestamp(row[11]),

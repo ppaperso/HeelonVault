@@ -141,6 +141,12 @@ class PasswordService:
             return None
         return (datetime.now() - last_changed).days
 
+    def record_entry_usage(self, entry_id: int, amount: int = 1) -> None:
+        """Incrémente le compteur d'utilisation pour prioriser les entrées fréquentes."""
+        if amount <= 0:
+            return
+        self.repository.increment_usage_count(entry_id, amount=amount)
+
     # ------------------------------------------------------------------
     # Persistance & cycle de vie
     # ------------------------------------------------------------------
@@ -181,6 +187,7 @@ class PasswordService:
             password_validity_days=record.password_validity_days,
             created_at=record.created_at,
             modified_at=record.modified_at,
+            usage_count=record.usage_count,
         )
 
     def _encrypt_entry(self, entry: PasswordEntry) -> PasswordRecord:
@@ -196,6 +203,7 @@ class PasswordService:
             category=entry.category,
             tags=entry.tags,
             password_validity_days=entry.password_validity_days,
+            usage_count=entry.usage_count,
         )
 
     def _has_password_changed(self, record: PasswordRecord, new_password: str) -> bool:
