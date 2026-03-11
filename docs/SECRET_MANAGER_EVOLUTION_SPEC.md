@@ -62,16 +62,16 @@ Keep existing password table, then add a new generic table for non-password secr
 
 ```sql
 CREATE TABLE IF NOT EXISTS secret_items (
-	id INTEGER PRIMARY KEY AUTOINCREMENT,
-	secret_type TEXT NOT NULL CHECK (secret_type IN ('ssh_key', 'api_token', 'secure_document')),
-	title TEXT NOT NULL,
-	metadata_json TEXT,
-	secret_blob BLOB NOT NULL,
-	tags TEXT DEFAULT '',
-	expires_at TEXT,
-	created_at TEXT NOT NULL,
-	modified_at TEXT NOT NULL,
-	usage_count INTEGER DEFAULT 0
+ id INTEGER PRIMARY KEY AUTOINCREMENT,
+ secret_type TEXT NOT NULL CHECK (secret_type IN ('ssh_key', 'api_token', 'secure_document')),
+ title TEXT NOT NULL,
+ metadata_json TEXT,
+ secret_blob BLOB NOT NULL,
+ tags TEXT DEFAULT '',
+ expires_at TEXT,
+ created_at TEXT NOT NULL,
+ modified_at TEXT NOT NULL,
+ usage_count INTEGER DEFAULT 0
 );
 
 CREATE INDEX IF NOT EXISTS idx_secret_items_type ON secret_items(secret_type);
@@ -82,21 +82,21 @@ CREATE INDEX IF NOT EXISTS idx_secret_items_expires ON secret_items(expires_at);
 ### Metadata JSON per type
 
 - `ssh_key`:
-	- `algorithm` (`ed25519`, `rsa`, ...)
-	- `fingerprint`
-	- `public_key_preview`
-	- `has_passphrase` (bool)
+  - `algorithm` (`ed25519`, `rsa`, ...)
+  - `fingerprint`
+  - `public_key_preview`
+  - `has_passphrase` (bool)
 - `api_token`:
-	- `provider`
-	- `environment` (`dev`, `staging`, `prod`)
-	- `scopes` (array string)
-	- `token_hint` (last chars masked)
+  - `provider`
+  - `environment` (`dev`, `staging`, `prod`)
+  - `scopes` (array string)
+  - `token_hint` (last chars masked)
 - `secure_document`:
-	- `filename`
-	- `mime_type`
-	- `size_bytes`
-	- `sha256`
-	- `blob_path` (encrypted file path)
+  - `filename`
+  - `mime_type`
+  - `size_bytes`
+  - `sha256`
+  - `blob_path` (encrypted file path)
 
 ## 4.3 Document blob storage
 
@@ -140,16 +140,16 @@ src/data/blobs/<vault_uuid>/<item_id_or_uuid>.bin
 ```python
 @dataclass
 class SecretItem:
-		id: int | None
-		secret_type: str
-		title: str
-		metadata: dict[str, Any]
-		payload: str | bytes
-		tags: list[str]
-		expires_at: datetime | None
-		created_at: datetime | None
-		modified_at: datetime | None
-		usage_count: int = 0
+  id: int | None
+  secret_type: str
+  title: str
+  metadata: dict[str, Any]
+  payload: str | bytes
+  tags: list[str]
+  expires_at: datetime | None
+  created_at: datetime | None
+  modified_at: datetime | None
+  usage_count: int = 0
 ```
 
 ## 6.2 Repository
@@ -337,4 +337,3 @@ Switch right panel form by selected type.
 3. Add type filter UI and API token detail form.
 4. Add tests for migration + API token CRUD.
 5. Add i18n entries and run compile for all locales.
-
