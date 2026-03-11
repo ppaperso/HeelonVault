@@ -12,6 +12,7 @@ from src.config.environment import get_data_directory, is_dev_mode
 from src.config.logging_config import configure_logging
 from src.i18n import _, init_i18n, set_language
 from src.models.user_info import UserInfo, UserInfoUpdate
+from src.models.vault import Vault
 from src.repositories.password_repository import PasswordRepository
 from src.services.auth_service import AuthService
 from src.services.backup_service import BackupService
@@ -21,6 +22,7 @@ from src.services.csv_importer import CSVImporter
 from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.services.password_service import PasswordService
 from src.services.totp_service import TOTPService
+from src.services.vault_service import VaultService
 from src.ui.dialogs.about_dialog import show_about_dialog
 from src.ui.dialogs.backup_manager_dialog import BackupManagerDialog
 from src.ui.dialogs.change_own_password_dialog import ChangeOwnPasswordDialog
@@ -88,8 +90,13 @@ class PasswordManagerApplication(Adw.Application):
         self.crypto_service: CryptoService | None = None
         self.repository: PasswordRepository | None = None
         self.password_service: PasswordService | None = None
+        self.vault_service: VaultService | None = None
+        self.current_vault: Vault | None = None
         self.current_user: UserInfo | None = None
         self.current_db_path: Path | None = None
+        # Security note: session-only secret kept in RAM and purged on logout.
+        # Never persist this value to disk or logs.
+        self._session_master_password: str | None = None
         self.backup_service = BackupService(DATA_DIR)
 
         self._register_actions()
@@ -106,6 +113,7 @@ class PasswordManagerApplication(Adw.Application):
         self._add_action("reconfigure_2fa", self.on_reconfigure_2fa)
         self._add_action("import_csv", self.on_import_csv)
         self._add_action("export_csv", self.on_export_csv)
+        self._add_action("manage_categories", self.on_manage_categories)
         self._add_action("manage_backups", self.on_manage_backups)
         self._add_action("open_trash", self.on_open_trash)
         self._add_action("about", self.on_about)
@@ -327,26 +335,34 @@ class PasswordManagerApplication(Adw.Application):
     def on_user_authenticated(self, user_info: UserInfo, master_password: str) -> None:
         """Appelé après authentification complète (Email + Password + TOTP).
 
-        IMPORTANT: master_password reste UNIQUEMENT dans cette portée locale,
-        jamais stocké dans une variable de classe.
+        IMPORTANT: master_password est conserve UNIQUEMENT en memoire de session
+        (RAM) pour permettre la recreation de la cle de dechiffrement lors des
+        changements de vault. Il n'est jamais persiste sur disque.
 
         Args:
             user_info: Dictionnaire contenant les infos utilisateur (avec workspace_uuid)
             master_password: Master password (JAMAIS stocké en variable de classe)
         """
         try:
-            # Utiliser workspace_uuid au lieu de username pour les fichiers
-            workspace_uuid = user_info.get("workspace_uuid")
+            user_id = user_info.get("id")
             username = user_info.get("username")  # Conservé pour l'affichage
 
-            if not workspace_uuid:
-                raise ValueError("missing workspace_uuid in user_info")
+            if not isinstance(user_id, int):
+                raise ValueError("missing user id in user_info")
 
             self.current_user = user_info
+            self._session_master_password = master_password
 
-            # Chemins basés sur workspace_uuid
-            db_path = DATA_DIR / f"passwords_{workspace_uuid}.db"
-            salt_path = DATA_DIR / f"salt_{workspace_uuid}.bin"
+            if self.vault_service:
+                self.vault_service.close()
+            self.vault_service = VaultService(DATA_DIR / "users.db", DATA_DIR)
+
+            vault = self.vault_service.get_active_vault(user_id)
+            self.current_vault = vault
+
+            # Chemins basés sur le vault actif
+            db_path = DATA_DIR / f"passwords_{vault.uuid}.db"
+            salt_path = DATA_DIR / f"salt_{vault.uuid}.bin"
 
             # Charger ou créer le salt
             if salt_path.exists():
@@ -380,10 +396,18 @@ class PasswordManagerApplication(Adw.Application):
                 self.window.close()
 
             # Ouvrir la fenêtre principale
-            self.window = PasswordManagerWindow(self, self.password_service, user_info)
+            self.window = PasswordManagerWindow(
+                self,
+                self.password_service,
+                user_info,
+                self.vault_service,
+                vault,
+            )
             self.window.present()
             logger.debug(
-                "Main window displayed for %s (UUID: %s)", username, workspace_uuid[:8]
+                "Main window displayed for %s (Vault UUID: %s)",
+                username,
+                vault.uuid[:8],
             )
 
         except Exception as exc:
@@ -402,13 +426,24 @@ class PasswordManagerApplication(Adw.Application):
         _param: object | None = None,
     ) -> None:
         logger.info("Logout requested")
+        if self.window and not self.window._auto_save_if_dirty(reload_entries=False):
+            logger.info("Logout aborted: autosave failed")
+            return
+
         if self.current_user and self.password_service and self.current_db_path:
-            username = self.current_user["username"]
             if self.password_service.has_unsaved_changes():
-                backup_path = self.backup_service.create_user_db_backup(username)
+                backup_key = (
+                    self.current_vault.uuid
+                    if self.current_vault is not None
+                    else self.current_user["username"]
+                )
+                backup_path = self.backup_service.create_backup(
+                    self.current_db_path,
+                    backup_key,
+                )
                 if backup_path:
                     self.password_service.mark_as_saved()
-                    if self.window and hasattr(self.window, "toast_overlay"):
+                    if self.window and self.window.toast_overlay:
                         toast = Adw.Toast.new(
                             _("💾 Backup created: %s") % backup_path.name
                         )
@@ -418,9 +453,73 @@ class PasswordManagerApplication(Adw.Application):
             self.window.close()
             self.window = None
         self._close_repository()
+        if self.vault_service:
+            self.vault_service.close()
+            self.vault_service = None
+        self._session_master_password = None
+        self.current_vault = None
         self.current_user = None
         self.current_db_path = None
         self.show_email_login()
+
+    def on_vault_switched(self, vault: Vault) -> bool:
+        """Recharge le repository courant après changement de vault actif."""
+        if not (
+            self.current_user
+            and self.password_service
+            and self.vault_service
+        ):
+            return False
+
+        if self.window and not self.window._auto_save_if_dirty(reload_entries=False):
+            logger.info("Vault switch aborted: autosave failed")
+            return False
+
+        user_id = self.current_user.get("id")
+        if not isinstance(user_id, int):
+            logger.warning("Vault switch aborted: missing user id")
+            return False
+
+        if self.password_service.has_unsaved_changes():
+            logger.warning("Vault switch aborted: unsaved changes present")
+            return False
+
+        try:
+            vault = self.vault_service.switch_vault(user_id, vault.id)
+        except ValueError:
+            logger.warning("Vault switch aborted: vault does not belong to user")
+            return False
+
+        salt_path = DATA_DIR / f"salt_{vault.uuid}.bin"
+        if not salt_path.exists():
+            logger.error("Salt file missing for vault %s", vault.uuid)
+            return False
+
+        if not self._session_master_password:
+            logger.error("Vault switch aborted: missing session master password")
+            return False
+
+        salt = salt_path.read_bytes()
+
+        self._close_repository()
+
+        # Rebuild CryptoService with target vault salt using session-only secret.
+        self.crypto_service = CryptoService(self._session_master_password, salt)
+        db_path = DATA_DIR / f"passwords_{vault.uuid}.db"
+        self.repository = PasswordRepository(db_path, self.backup_service)
+        self.password_service = PasswordService(self.repository, self.crypto_service)
+        self.current_db_path = db_path
+        self.current_vault = vault
+
+        if self.window:
+            # Update window with new PasswordService and current Vault
+            self.window.password_service = self.password_service
+            self.window.current_vault = vault
+            # Reload all UI components for new vault
+            self.window.load_categories()
+            self.window.load_tags()
+            self.window.load_entries()
+        return True
 
     def on_switch_user(self, action: Gio.SimpleAction | None, param: object | None) -> None:
         self.on_logout(action, param)
@@ -513,12 +612,16 @@ class PasswordManagerApplication(Adw.Application):
         if not (self.current_user and self.auth_service and self.password_service):
             return False
 
-        workspace_uuid = self.current_user.get("workspace_uuid")
-        if not workspace_uuid:
-            logger.error("Missing workspace_uuid for password change")
+        vault_uuid = (
+            self.current_vault.uuid
+            if self.current_vault
+            else self.current_user.get("workspace_uuid")
+        )
+        if not vault_uuid:
+            logger.error("Missing vault UUID for password change")
             return False
 
-        salt_path = DATA_DIR / f"salt_{workspace_uuid}.bin"
+        salt_path = DATA_DIR / f"salt_{vault_uuid}.bin"
         if not salt_path.exists():
             logger.error("Salt file not found: %s", salt_path)
             return False
@@ -541,6 +644,7 @@ class PasswordManagerApplication(Adw.Application):
 
         self.crypto_service = new_crypto
         self.password_service.crypto = new_crypto
+        self._session_master_password = new_password
         return True
 
     def on_change_own_email(
@@ -563,7 +667,7 @@ class PasswordManagerApplication(Adw.Application):
             new_email = dlg.get_new_email()
             if new_email and self.current_user:
                 self.current_user["email"] = new_email
-                if self.window and hasattr(self.window, "toast_overlay"):
+                if self.window and self.window.toast_overlay:
                     toast = Adw.Toast.new(_("✅ Email updated"))
                     toast.set_timeout(3)
                     self.window.toast_overlay.add_toast(toast)
@@ -593,7 +697,7 @@ class PasswordManagerApplication(Adw.Application):
             if dlg.get_success() and self.current_user:
                 self.current_user["totp_enabled"] = True
                 self.current_user["totp_confirmed"] = True
-                if self.window and hasattr(self.window, "toast_overlay"):
+                if self.window and self.window.toast_overlay:
                     toast = Adw.Toast.new(_("✅ Two-factor authentication reconfigured"))
                     toast.set_timeout(4)
                     self.window.toast_overlay.add_toast(toast)
@@ -630,6 +734,10 @@ class PasswordManagerApplication(Adw.Application):
             BackupManagerDialog(
                 self.window, self.backup_service, self.current_user["username"]
             ).present()
+
+    def on_manage_categories(self, _action: Gio.SimpleAction | None, _param: object | None) -> None:
+        if self.window and hasattr(self.window, "open_manage_categories_dialog"):
+            self.window.open_manage_categories_dialog()
 
     def on_open_trash(self, _action: Gio.SimpleAction | None, _param: object | None) -> None:
         """Ouvre le dialogue de la corbeille."""

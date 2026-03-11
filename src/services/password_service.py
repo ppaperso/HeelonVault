@@ -105,8 +105,25 @@ class PasswordService:
     def add_category(self, category: Category) -> None:
         self.repository.add_category(category)
 
+    def category_exists(self, name: str) -> bool:
+        return self.repository.category_exists(name)
+
+    def rename_category(self, old_name: str, new_name: str) -> bool:
+        return self.repository.rename_category(old_name, new_name)
+
+    def delete_category(self, name: str, fallback_name: str = "Autres") -> bool:
+        if not self.repository.category_exists(fallback_name):
+            self.repository.add_category(Category(name=fallback_name))
+        return self.repository.delete_category(name, fallback_name)
+
+    def is_default_category(self, name: str) -> bool:
+        return self.repository.is_default_category(name)
+
     def list_tags(self) -> list[str]:
         return self.repository.list_tags()
+
+    def count_entries(self) -> int:
+        return self.repository.count_entries()
 
     # ------------------------------------------------------------------
     # Analyse & outils

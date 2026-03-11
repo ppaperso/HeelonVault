@@ -14,6 +14,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: src/services/crypto_service.py:133
 msgid "Unable to decrypt: invalid key or corrupted/tampered data."
@@ -1968,3 +1969,261 @@ msgstr "❌ Impossibile aggiornare la lingua"
 #: src/ui/dialogs/manage_account_dialog.py:241
 msgid "✅ Interface language updated"
 msgstr "✅ Lingua dell'interfaccia aggiornata"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Create vault"
+msgstr "Crea cassaforte"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name"
+msgstr "Nome cassaforte"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "New vault"
+msgstr "Nuova cassaforte"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name is required."
+msgstr "Il nome della cassaforte è obbligatorio."
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Master password must contain at least 8 characters."
+msgstr "La password principale deve contenere almeno 8 caratteri."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to create vault: %s"
+msgstr "Impossibile creare la cassaforte: %s"
+
+#: src/ui/windows/main_window.py
+msgid "Vault actions"
+msgstr "Azioni cassaforte"
+
+#: src/ui/windows/main_window.py
+msgid "You have unsaved changes. Switch vault anyway?"
+msgstr "Hai modifiche non salvate. Cambiare comunque cassaforte?"
+
+#: src/ui/windows/main_window.py
+msgid "Rename vault"
+msgstr "Rinomina cassaforte"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a new vault name."
+msgstr "Inserisci un nuovo nome per la cassaforte."
+
+#: src/ui/windows/main_window.py
+msgid "Delete vault"
+msgstr "Elimina cassaforte"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Delete vault %(name)s? All entries will be lost."
+msgstr "Eliminare la cassaforte %(name)s? Tutte le voci verranno perse."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to delete this vault."
+msgstr "Impossibile eliminare questa cassaforte."
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "default"
+msgstr "predefinita"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Manage categories"
+msgstr "Gestisci categorie"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "New category"
+msgstr "Nuova categoria"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a category name."
+msgstr "Inserisci un nome categoria."
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Rename category"
+msgstr "Rinomina categoria"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Delete category"
+msgstr "Elimina categoria"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+#, python-format
+msgid "Delete category %(name)s? Associated entries will move to category 'Autres'."
+msgstr "Eliminare la categoria %(name)s? Le voci associate verranno spostate nella categoria 'Autres'."
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries"
+msgstr "%(count)s voci"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries shown"
+msgstr "%(count)s voci visualizzate"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s uses"
+msgstr "%(count)s utilizzi"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(username)s's vault"
+msgstr "Cassaforte di %(username)s"
+
+#: src/ui/windows/main_window.py
+msgid "All"
+msgstr "Tutti"
+
+#: src/ui/windows/main_window.py
+msgid "All cards are at 0 use. Run a search to find them."
+msgstr "Tutte le schede hanno 0 utilizzi. Esegui una ricerca per trovarle."
+
+#: src/ui/windows/main_window.py
+msgid "All categories"
+msgstr "Tutte le categorie"
+
+#: src/ui/windows/main_window.py
+msgid "Catégories"
+msgstr "Categorie"
+
+#: src/ui/windows/main_window.py
+msgid "Create a new entry"
+msgstr "Crea una nuova voce"
+
+#: src/ui/windows/main_window.py
+msgid "Entries"
+msgstr "Voci"
+
+#: src/ui/windows/main_window.py
+msgid "Entry created"
+msgstr "Voce creata"
+
+#: src/ui/windows/main_window.py
+msgid "Entry saved"
+msgstr "Voce salvata"
+
+#: src/ui/windows/main_window.py
+msgid "Fill fields, then save"
+msgstr "Compila i campi, poi salva"
+
+#: src/ui/windows/main_window.py
+msgid "Filters"
+msgstr "Filtri"
+
+#: src/ui/windows/main_window.py
+msgid "Generate password"
+msgstr "Genera password"
+
+#: src/ui/windows/main_window.py
+msgid "Identifiants"
+msgstr "Credenziali"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Last modified: %s"
+msgstr "Ultima modifica: %s"
+
+#: src/ui/windows/main_window.py
+msgid "No entries for current filters"
+msgstr "Nessuna voce per i filtri correnti"
+
+#: src/ui/windows/main_window.py
+msgid "No metadata"
+msgstr "Nessun metadato"
+
+#: src/ui/windows/main_window.py
+msgid "Organisation"
+msgstr "Organizzazione"
+
+#: src/ui/windows/main_window.py
+msgid "Password validity (days)"
+msgstr "Validità della password (giorni)"
+
+#: src/ui/windows/main_window.py
+msgid "Revert changes"
+msgstr "Annulla modifiche"
+
+#: src/ui/windows/main_window.py
+msgid "Search in title, username or URL"
+msgstr "Cerca in titolo, nome utente o URL"
+
+#: src/ui/windows/main_window.py
+msgid "Select an entry"
+msgstr "Seleziona una voce"
+
+#: src/ui/windows/main_window.py
+msgid "Show notes"
+msgstr "Mostra note"
+
+#: src/ui/windows/main_window.py
+msgid "Single local vault (multi-vault ready)"
+msgstr "Cassaforte locale singola (pronta per multi-cassaforte)"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Last modified (newest)"
+msgstr "Ordina: Ultima modifica (più recenti)"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Most used"
+msgstr "Ordina: Più utilizzati"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Title (A-Z)"
+msgstr "Ordina: Titolo (A-Z)"
+
+#: src/ui/windows/main_window.py
+msgid "Sécurité"
+msgstr "Sicurezza"
+
+#: src/ui/windows/main_window.py
+msgid "This entry can be restored from the Trash."
+msgstr "Questa voce può essere ripristinata dal Cestino."
+
+#: src/ui/windows/main_window.py
+msgid "Unknown"
+msgstr "Sconosciuto"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes"
+msgstr "Modifiche non salvate"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes were discarded"
+msgstr "Le modifiche non salvate sono state annullate"
+
+#: src/ui/windows/main_window.py
+msgid "Vault"
+msgstr "Cassaforte"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Vault: %(count)s cards at 0 use, run a search to find them"
+msgstr "Cassaforte: %(count)s schede con 0 utilizzi, esegui una ricerca per trovarle"
+
+#: src/ui/windows/main_window.py
+msgid "Vaults"
+msgstr "Casseforti"
+
+#: src/ui/windows/main_window.py
+msgid "Your secrets never leave your machine."
+msgstr "I tuoi segreti non lasciano mai il tuo computer."
+
+#: src/ui/windows/main_window.py
+msgid "Étiquettes"
+msgstr "Etichette"
+
+#: src/ui/windows/main_window.py
+msgid "✓ Saved"
+msgstr "✓ Salvato"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entry"
+msgid_plural "%(count)s entries"
+msgstr[0] "%(count)s voce"
+msgstr[1] "%(count)s voci"

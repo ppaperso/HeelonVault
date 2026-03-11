@@ -467,6 +467,39 @@
         box-shadow: 0 6px 16px rgba(7, 57, 58, 0.10);
     }
 
+    /* ─── VAULT ROWS PREMIUM ─────────────────────────────────────────────── */
+    .vault-row {
+        border-radius: 12px;
+        transition: all 150ms ease-in-out;
+        overflow: hidden;
+    }
+
+    .vault-accent-bar {
+        min-width: 4px;
+        border-radius: 12px 0 0 12px;
+        background: linear-gradient(180deg, #13A1A1, #07393A);
+    }
+
+    .vault-row-icon {
+        color: #0A5F5C;
+        opacity: 0.85;
+    }
+
+    .vault-row:selected {
+        background: linear-gradient(135deg, rgba(19, 161, 161, 0.16), rgba(87, 185, 177, 0.14));
+        border-color: #13A1A1;
+        box-shadow: 0 4px 12px rgba(7, 57, 58, 0.08);
+    }
+
+    .vault-row:selected .vault-accent-bar {
+        background: linear-gradient(180deg, #1F8678, #0A5F5C);
+    }
+
+    .vault-row:selected .vault-row-icon {
+        color: #07393A;
+        opacity: 1;
+    }
+
     flowboxchild.entry-card-child {
         min-width: 280px;
     }
@@ -477,14 +510,11 @@
     }
 
     .unsaved-indicator {
-        background: rgba(87, 185, 177, 0.18);
-        color: #07393A;
-        border: 1px solid rgba(87, 185, 177, 0.75);
-        border-radius: 999px;
-        padding: 4px 10px;
-        font-family: "Space Grotesk", "Inter", "Cantarell", sans-serif;
-        font-weight: 650;
-        letter-spacing: 0.02em;
+        color: #0A5F5C;
+        font-size: 0.82rem;
+        font-weight: 600;
+        margin-top: 2px;
+        margin-bottom: 4px;
     }
 
     tooltip > * {

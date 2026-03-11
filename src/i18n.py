@@ -44,6 +44,10 @@ def _(message: str) -> str:
     return _translation.gettext(message)
 
 
+def ngettext(singular: str, plural: str, count: int) -> str:
+    return _translation.ngettext(singular, plural, count)
+
+
 def normalize_language(language: str | None) -> str:
     """Normalize an input language code to one of the supported languages."""
     if not language:

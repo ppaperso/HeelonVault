@@ -170,6 +170,43 @@ class PasswordRepository:
         )
         self.conn.commit()
 
+    def category_exists(self, name: str) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT 1 FROM categories WHERE name=?", (name,))
+        return cursor.fetchone() is not None
+
+    def rename_category(self, old_name: str, new_name: str) -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM categories WHERE name=?", (old_name,))
+        if not cursor.fetchone():
+            return False
+
+        cursor.execute("UPDATE categories SET name=? WHERE name=?", (new_name, old_name))
+        # Cascade on entries in the active vault DB.
+        cursor.execute("UPDATE passwords SET category=? WHERE category=?", (new_name, old_name))
+        self.conn.commit()
+        self._has_changes = True
+        return True
+
+    def delete_category(self, name: str, fallback_name: str = "Autres") -> bool:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT id FROM categories WHERE name=?", (name,))
+        if not cursor.fetchone():
+            return False
+
+        cursor.execute(
+            "UPDATE passwords SET category=? WHERE category=?",
+            (fallback_name, name),
+        )
+        cursor.execute("DELETE FROM categories WHERE name=?", (name,))
+        self.conn.commit()
+        self._has_changes = True
+        return True
+
+    @staticmethod
+    def is_default_category(name: str) -> bool:
+        return name in {category.name for category in DEFAULT_CATEGORIES}
+
     def list_tags(self) -> list[str]:
         cursor = self.conn.cursor()
         cursor.execute(
@@ -183,6 +220,12 @@ class PasswordRepository:
             except (json.JSONDecodeError, TypeError):
                 logger.debug("Ignored invalid tags: %s", tags_json)
         return sorted(tag_set)
+
+    def count_entries(self) -> int:
+        cursor = self.conn.cursor()
+        cursor.execute("SELECT COUNT(*) FROM passwords WHERE deleted_at IS NULL")
+        row = cursor.fetchone()
+        return int(row[0]) if row else 0
 
     # ------------------------------------------------------------------
     # CRUD entrées

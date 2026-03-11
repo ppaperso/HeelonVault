@@ -14,6 +14,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n != 1);\n"
 
 #: src/services/crypto_service.py:133
 msgid "Unable to decrypt: invalid key or corrupted/tampered data."
@@ -1968,3 +1969,261 @@ msgstr "❌ Sprache konnte nicht aktualisiert werden"
 #: src/ui/dialogs/manage_account_dialog.py:241
 msgid "✅ Interface language updated"
 msgstr "✅ Sprache der Benutzeroberfläche aktualisiert"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Create vault"
+msgstr "Tresor erstellen"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name"
+msgstr "Tresor-Name"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "New vault"
+msgstr "Neuer Tresor"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name is required."
+msgstr "Tresor-Name ist erforderlich."
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Master password must contain at least 8 characters."
+msgstr "Masterpasswort muss mindestens 8 Zeichen enthalten."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to create vault: %s"
+msgstr "Tresor konnte nicht erstellt werden: %s"
+
+#: src/ui/windows/main_window.py
+msgid "Vault actions"
+msgstr "Tresor-Aktionen"
+
+#: src/ui/windows/main_window.py
+msgid "You have unsaved changes. Switch vault anyway?"
+msgstr "Sie haben ungespeicherte Änderungen. Tresor trotzdem wechseln?"
+
+#: src/ui/windows/main_window.py
+msgid "Rename vault"
+msgstr "Tresor umbenennen"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a new vault name."
+msgstr "Geben Sie einen neuen Tresor-Namen ein."
+
+#: src/ui/windows/main_window.py
+msgid "Delete vault"
+msgstr "Tresor löschen"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Delete vault %(name)s? All entries will be lost."
+msgstr "Tresor %(name)s löschen? Alle Einträge gehen verloren."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to delete this vault."
+msgstr "Dieser Tresor kann nicht gelöscht werden."
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "default"
+msgstr "Standard"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Manage categories"
+msgstr "Kategorien verwalten"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "New category"
+msgstr "Neue Kategorie"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a category name."
+msgstr "Geben Sie einen Kategorienamen ein."
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Rename category"
+msgstr "Kategorie umbenennen"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Delete category"
+msgstr "Kategorie löschen"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+#, python-format
+msgid "Delete category %(name)s? Associated entries will move to category 'Autres'."
+msgstr "Kategorie %(name)s löschen? Zugehörige Einträge werden in die Kategorie 'Autres' verschoben."
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries"
+msgstr "%(count)s Einträge"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entries shown"
+msgstr "%(count)s Einträge angezeigt"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s uses"
+msgstr "%(count)s Verwendungen"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(username)s's vault"
+msgstr "Tresor von %(username)s"
+
+#: src/ui/windows/main_window.py
+msgid "All"
+msgstr "Alle"
+
+#: src/ui/windows/main_window.py
+msgid "All cards are at 0 use. Run a search to find them."
+msgstr "Alle Karten haben 0 Verwendungen. Führen Sie eine Suche aus, um sie zu finden."
+
+#: src/ui/windows/main_window.py
+msgid "All categories"
+msgstr "Alle Kategorien"
+
+#: src/ui/windows/main_window.py
+msgid "Catégories"
+msgstr "Kategorien"
+
+#: src/ui/windows/main_window.py
+msgid "Create a new entry"
+msgstr "Neuen Eintrag erstellen"
+
+#: src/ui/windows/main_window.py
+msgid "Entries"
+msgstr "Einträge"
+
+#: src/ui/windows/main_window.py
+msgid "Entry created"
+msgstr "Eintrag erstellt"
+
+#: src/ui/windows/main_window.py
+msgid "Entry saved"
+msgstr "Eintrag gespeichert"
+
+#: src/ui/windows/main_window.py
+msgid "Fill fields, then save"
+msgstr "Füllen Sie die Felder aus und speichern Sie dann"
+
+#: src/ui/windows/main_window.py
+msgid "Filters"
+msgstr "Filter"
+
+#: src/ui/windows/main_window.py
+msgid "Generate password"
+msgstr "Passwort generieren"
+
+#: src/ui/windows/main_window.py
+msgid "Identifiants"
+msgstr "Anmeldedaten"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Last modified: %s"
+msgstr "Zuletzt geändert: %s"
+
+#: src/ui/windows/main_window.py
+msgid "No entries for current filters"
+msgstr "Keine Einträge für die aktuellen Filter"
+
+#: src/ui/windows/main_window.py
+msgid "No metadata"
+msgstr "Keine Metadaten"
+
+#: src/ui/windows/main_window.py
+msgid "Organisation"
+msgstr "Organisation"
+
+#: src/ui/windows/main_window.py
+msgid "Password validity (days)"
+msgstr "Passwortgültigkeit (Tage)"
+
+#: src/ui/windows/main_window.py
+msgid "Revert changes"
+msgstr "Änderungen verwerfen"
+
+#: src/ui/windows/main_window.py
+msgid "Search in title, username or URL"
+msgstr "In Titel, Benutzername oder URL suchen"
+
+#: src/ui/windows/main_window.py
+msgid "Select an entry"
+msgstr "Einen Eintrag auswählen"
+
+#: src/ui/windows/main_window.py
+msgid "Show notes"
+msgstr "Notizen anzeigen"
+
+#: src/ui/windows/main_window.py
+msgid "Single local vault (multi-vault ready)"
+msgstr "Einzelner lokaler Tresor (bereit für Multi-Tresor)"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Last modified (newest)"
+msgstr "Sortierung: Zuletzt geändert (neueste zuerst)"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Most used"
+msgstr "Sortierung: Am häufigsten verwendet"
+
+#: src/ui/windows/main_window.py
+msgid "Sort: Title (A-Z)"
+msgstr "Sortierung: Titel (A-Z)"
+
+#: src/ui/windows/main_window.py
+msgid "Sécurité"
+msgstr "Sicherheit"
+
+#: src/ui/windows/main_window.py
+msgid "This entry can be restored from the Trash."
+msgstr "Dieser Eintrag kann aus dem Papierkorb wiederhergestellt werden."
+
+#: src/ui/windows/main_window.py
+msgid "Unknown"
+msgstr "Unbekannt"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes"
+msgstr "Ungespeicherte Änderungen"
+
+#: src/ui/windows/main_window.py
+msgid "Unsaved changes were discarded"
+msgstr "Ungespeicherte Änderungen wurden verworfen"
+
+#: src/ui/windows/main_window.py
+msgid "Vault"
+msgstr "Tresor"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Vault: %(count)s cards at 0 use, run a search to find them"
+msgstr "Tresor: %(count)s Karten mit 0 Verwendungen, führen Sie eine Suche aus, um sie zu finden"
+
+#: src/ui/windows/main_window.py
+msgid "Vaults"
+msgstr "Tresore"
+
+#: src/ui/windows/main_window.py
+msgid "Your secrets never leave your machine."
+msgstr "Ihre Geheimnisse verlassen niemals Ihren Rechner."
+
+#: src/ui/windows/main_window.py
+msgid "Étiquettes"
+msgstr "Schlagwörter"
+
+#: src/ui/windows/main_window.py
+msgid "✓ Saved"
+msgstr "✓ Gespeichert"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entry"
+msgid_plural "%(count)s entries"
+msgstr[0] "%(count)s Eintrag"
+msgstr[1] "%(count)s Einträge"

@@ -14,6 +14,7 @@ msgstr ""
 "MIME-Version: 1.0\n"
 "Content-Type: text/plain; charset=UTF-8\n"
 "Content-Transfer-Encoding: 8bit\n"
+"Plural-Forms: nplurals=2; plural=(n > 1);\n"
 
 #: src/services/crypto_service.py:133
 msgid "Unable to decrypt: invalid key or corrupted/tampered data."
@@ -2133,3 +2134,99 @@ msgstr "Cette entrée peut être restaurée depuis la corbeille."
 #, python-format
 msgid "%(username)s's vault"
 msgstr "Coffre de %(username)s"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Create vault"
+msgstr "Créer un coffre"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name"
+msgstr "Nom du coffre"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "New vault"
+msgstr "Nouveau coffre"
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Vault name is required."
+msgstr "Le nom du coffre est obligatoire."
+
+#: src/ui/dialogs/create_vault_dialog.py
+msgid "Master password must contain at least 8 characters."
+msgstr "Le mot de passe maître doit contenir au moins 8 caractères."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to create vault: %s"
+msgstr "Impossible de créer le coffre : %s"
+
+#: src/ui/windows/main_window.py
+msgid "Vault actions"
+msgstr "Actions du coffre"
+
+#: src/ui/windows/main_window.py
+msgid "You have unsaved changes. Switch vault anyway?"
+msgstr "Vous avez des modifications non enregistrées. Basculer vers le coffre quand même ?"
+
+#: src/ui/windows/main_window.py
+msgid "Rename vault"
+msgstr "Renommer le coffre"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a new vault name."
+msgstr "Entrez un nouveau nom pour le coffre."
+
+#: src/ui/windows/main_window.py
+msgid "Delete vault"
+msgstr "Supprimer le coffre"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Delete vault %(name)s? All entries will be lost."
+msgstr "Supprimer le coffre %(name)s ? Toutes les entrées seront perdues."
+
+#: src/ui/windows/main_window.py
+msgid "Unable to delete this vault."
+msgstr "Impossible de supprimer ce coffre."
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "default"
+msgstr "par défaut"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Manage categories"
+msgstr "Gérer les catégories"
+
+#: src/ui/windows/main_window.py
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "New category"
+msgstr "Nouvelle catégorie"
+
+#: src/ui/windows/main_window.py
+msgid "Enter a category name."
+msgstr "Saisissez un nom de catégorie."
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Rename category"
+msgstr "Renommer la catégorie"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+msgid "Delete category"
+msgstr "Supprimer la catégorie"
+
+#: src/ui/dialogs/manage_categories_dialog.py
+#, python-format
+msgid "Delete category %(name)s? Associated entries will move to category 'Autres'."
+msgstr "Supprimer la catégorie %(name)s ? Les entrées associées seront déplacées vers la catégorie 'Autres'."
+
+#: src/ui/windows/main_window.py
+msgid "✓ Saved"
+msgstr "✓ Sauvegardé"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s entry"
+msgid_plural "%(count)s entries"
+msgstr[0] "%(count)s entrée"
+msgstr[1] "%(count)s entrées"
