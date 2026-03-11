@@ -16,13 +16,17 @@ from src.models.password_entry import PasswordEntry
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.repositories.password_repository import PasswordRepository
 from src.services.password_service import PasswordService
+from src.services.password_strength_service import PasswordStrengthService
+from src.services.security_audit_service import SecurityAuditService
 from src.ui.dialogs.create_vault_dialog import CreateVaultDialog
 from src.ui.dialogs.helpers import present_alert
 from src.ui.dialogs.manage_categories_dialog import ManageCategoriesDialog
 from src.ui.dialogs.password_generator_dialog import PasswordGeneratorDialog
+from src.ui.widgets.security_dashboard_bar import SecurityDashboardBar
 from src.version import __app_name__
 
 if TYPE_CHECKING:
+    from src.app.application import PasswordManagerApplication
     from src.models.vault import Vault
     from src.services.vault_service import VaultService
 
@@ -34,48 +38,19 @@ from gi.repository import Adw, Gdk, Gio, GLib, Gtk, Pango  # noqa: E402
 logger = logging.getLogger(__name__)
 
 
-def analyze_password_strength(password: str) -> tuple[int, str]:
-    """Return strength score and css suffix (success/warning/error)."""
-    if not password:
-        return (0, "error")
-
-    score = 0
-    if len(password) >= 12:
-        score += 2
-    elif len(password) >= 8:
-        score += 1
-
-    has_lower = any(char.islower() for char in password)
-    has_upper = any(char.isupper() for char in password)
-    has_digit = any(char.isdigit() for char in password)
-    has_symbol = any(not char.isalnum() for char in password)
-    complexity = sum([has_lower, has_upper, has_digit, has_symbol])
-
-    if complexity >= 3:
-        score += 2
-    elif complexity >= 2:
-        score += 1
-
-    if score >= 3:
-        return (score, "success")
-    if score == 2:
-        return (score, "warning")
-    return (score, "error")
-
-
 class EntryCard(Gtk.Box):
     """Entry card rendered inside the center grid."""
 
-    def __init__(self, entry: PasswordEntry):
+    def __init__(self, entry: PasswordEntry, strength_service: PasswordStrengthService):
         super().__init__()
         self.entry = entry
+        self.strength_service = strength_service
         self.add_css_class("entry-list-row")
         self.usage_badge: Gtk.Label | None = None
         self.title_label: Gtk.Label | None = None
         self.hint_label: Gtk.Label | None = None
         self.tags_box: Gtk.Box | None = None
-
-        _score, strength_css = analyze_password_strength(entry.password)
+        self.strength_bar: Gtk.Box | None = None
 
         frame = Gtk.Frame()
         frame.set_css_classes(["password-card"])
@@ -83,11 +58,10 @@ class EntryCard(Gtk.Box):
 
         row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
 
-        strength_bar = Gtk.Box()
-        strength_bar.set_css_classes(
-            ["card-strength-bar", "entry-strength-bar", f"card-strength-{strength_css}"]
-        )
-        row.append(strength_bar)
+        self.strength_bar = Gtk.Box()
+        self.strength_bar.set_css_classes(["card-strength-bar", "entry-strength-bar"])
+        self._refresh_strength(entry)
+        row.append(self.strength_bar)
 
         content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=2)
         content.set_margin_top(7)
@@ -145,6 +119,19 @@ class EntryCard(Gtk.Box):
             self.hint_label.set_label(self._build_hint(entry))
         self._refresh_tags(entry)
         self._update_usage_badge()
+        self._refresh_strength(entry)
+
+    def _refresh_strength(self, entry: PasswordEntry) -> None:
+        if not self.strength_bar:
+            return
+        score = entry.strength_score
+        if score < 0:
+            result = self.strength_service.evaluate(entry.password)
+            score_raw = result.get("score", 0)
+            score = score_raw if isinstance(score_raw, int) else 0
+        for level in range(5):
+            self.strength_bar.remove_css_class(f"strength-{level}")
+        self.strength_bar.add_css_class(f"strength-{max(0, min(score, 4))}")
 
     def _refresh_tags(self, entry: PasswordEntry) -> None:
         if not self.tags_box:
@@ -174,6 +161,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self,
         app: Adw.Application,
         password_service: PasswordService,
+        strength_service: PasswordStrengthService,
+        audit_service: SecurityAuditService,
         user_info: UserInfo,
         vault_service: VaultService,
         current_vault: Vault,
@@ -181,6 +170,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title=__app_name__)
 
         self.password_service = password_service
+        self.strength_service = strength_service
+        self.audit_service = audit_service
         self.user_info = user_info
         self.app = app
         self.vault_service = vault_service
@@ -188,6 +179,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         self.current_category_filter = "All"
         self.current_tag_filter: str | None = None
+        self.current_security_filter: str | None = None
         self.current_search_text = ""
         self.current_sort_mode = "usage_desc"
         self.current_entry_id: int | None = None
@@ -210,6 +202,9 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.unsaved_badge: Gtk.Label | None = None
 
         self.sort_dropdown: Gtk.DropDown | None = None
+        self.nav_toggle_button: Gtk.ToggleButton | None = None
+        self.nav_revealer: Gtk.Revealer | None = None
+        self.nav_scrim: Gtk.Button | None = None
         self.vault_listbox: Gtk.ListBox | None = None
         self._vault_by_row: dict[Gtk.ListBoxRow, Vault] = {}
         self._suppress_vault_signals = False
@@ -219,6 +214,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.tag_flowbox: Gtk.FlowBox | None = None
         self.entry_flowbox: Gtk.FlowBox | None = None
         self.entry_counter_label: Gtk.Label | None = None
+        self.security_bar: SecurityDashboardBar | None = None
         self.empty_state_label: Gtk.Label | None = None
         self.zero_usage_label: Gtk.Label | None = None
 
@@ -230,6 +226,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_title_row: Adw.EntryRow | None = None
         self.detail_username_row: Adw.EntryRow | None = None
         self.detail_password_row: Adw.PasswordEntryRow | None = None
+        self.detail_password_strength_inline_label: Gtk.Label | None = None
         self.detail_url_row: Adw.EntryRow | None = None
         self.detail_category_row: Adw.ComboRow | None = None
         self.detail_category_model: Gtk.StringList | None = None
@@ -281,9 +278,32 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.sort_dropdown.connect("notify::selected", self._on_sort_changed)
         header.pack_end(self.sort_dropdown)
 
-        menu_button = Gtk.MenuButton(icon_name="open-menu-symbolic")
-        menu_button.set_menu_model(self._build_app_menu())
-        header.pack_end(menu_button)
+        panic_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=4)
+        panic_box.add_css_class("panic-badge")
+
+        panic_label = Gtk.Label(label=_("Panic"))
+        panic_label.add_css_class("panic-badge-label")
+        panic_box.append(panic_label)
+
+        soft_lock_btn = Gtk.Button(icon_name="system-lock-screen-symbolic")
+        soft_lock_btn.set_tooltip_text(_("Soft lock (logout)"))
+        soft_lock_btn.set_css_classes(["flat", "circular", "card-action-btn", "panic-soft-btn"])
+        soft_lock_btn.connect("clicked", self._on_soft_lock_clicked)
+        panic_box.append(soft_lock_btn)
+
+        panic_lock_btn = Gtk.Button(icon_name="process-stop-symbolic")
+        panic_lock_btn.set_tooltip_text(_("Panic lock (purge and close app)"))
+        panic_lock_btn.set_css_classes(["flat", "circular", "card-action-btn", "panic-hard-btn"])
+        panic_lock_btn.connect("clicked", self._on_panic_lock_clicked)
+        panic_box.append(panic_lock_btn)
+
+        header.pack_end(panic_box)
+
+        self.nav_toggle_button = Gtk.ToggleButton(icon_name="sidebar-show-left-symbolic")
+        self.nav_toggle_button.set_tooltip_text(_("Open navigation"))
+        self.nav_toggle_button.set_css_classes(["flat", "circular", "card-action-btn"])
+        self.nav_toggle_button.connect("toggled", self._on_nav_toggle_toggled)
+        header.pack_end(self.nav_toggle_button)
 
         outer_split = Adw.NavigationSplitView.new()
         outer_split.set_min_sidebar_width(260)
@@ -306,7 +326,30 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         outer_split.set_sidebar(sidebar_page)
         outer_split.set_content(center_page)
 
-        toolbar_view.set_content(outer_split)
+        content_overlay = Gtk.Overlay()
+        content_overlay.set_child(outer_split)
+
+        self.nav_scrim = Gtk.Button()
+        self.nav_scrim.set_visible(False)
+        self.nav_scrim.set_halign(Gtk.Align.FILL)
+        self.nav_scrim.set_valign(Gtk.Align.FILL)
+        self.nav_scrim.set_hexpand(True)
+        self.nav_scrim.set_vexpand(True)
+        self.nav_scrim.set_can_focus(False)
+        self.nav_scrim.add_css_class("nav-drawer-scrim")
+        self.nav_scrim.connect("clicked", self._on_nav_scrim_clicked)
+        content_overlay.add_overlay(self.nav_scrim)
+
+        self.nav_revealer = Gtk.Revealer()
+        self.nav_revealer.set_transition_type(Gtk.RevealerTransitionType.SLIDE_RIGHT)
+        self.nav_revealer.set_transition_duration(220)
+        self.nav_revealer.set_reveal_child(False)
+        self.nav_revealer.set_halign(Gtk.Align.START)
+        self.nav_revealer.set_valign(Gtk.Align.FILL)
+        self.nav_revealer.set_child(self._build_right_navigation_panel())
+        content_overlay.add_overlay(self.nav_revealer)
+
+        toolbar_view.set_content(content_overlay)
 
     def _build_sidebar_column(self) -> Gtk.Widget:
         root = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=12)
@@ -321,6 +364,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             text=self.user_info.get("username", "?")[:2].upper(),
             show_initials=True,
         )
+        self._apply_avatar_image(self.user_avatar, self.user_info.get("avatar_path"))
         profile_box.append(self.user_avatar)
 
         profile_text = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=1)
@@ -395,6 +439,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         search.set_placeholder_text(_("Search in title, username or URL"))
         search.connect("search-changed", self.on_search_changed)
         root.append(search)
+
+        self.security_bar = SecurityDashboardBar()
+        self.security_bar.connect("filter-changed", self._on_security_filter)
+        self.security_bar.set_visible(False)
+        root.append(self.security_bar)
 
         self.entry_flowbox = Gtk.FlowBox()
         self.entry_flowbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
@@ -495,6 +544,13 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_password_row = Adw.PasswordEntryRow.new()
         self.detail_password_row.set_title(_("Password"))
         self.detail_password_row.add_css_class("detail-field")
+
+        self.detail_password_strength_inline_label = Gtk.Label(label="", xalign=0)
+        self.detail_password_strength_inline_label.set_css_classes(
+            ["password-inline-strength", "card-hint"]
+        )
+        self.detail_password_strength_inline_label.set_valign(Gtk.Align.CENTER)
+        self.detail_password_row.add_suffix(self.detail_password_strength_inline_label)
 
         copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
         copy_btn.set_css_classes(
@@ -605,37 +661,238 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         return scrolled
 
     # ------------------------------------------------------------------
-    # Menu
+    # Navigation drawer
     # ------------------------------------------------------------------
-    def _build_app_menu(self) -> Gio.Menu:
-        menu = Gio.Menu()
+    def _build_right_navigation_panel(self) -> Gtk.Widget:
+        panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=10)
+        panel.add_css_class("nav-drawer")
+        panel.set_margin_top(12)
+        panel.set_margin_start(12)
+        panel.set_margin_bottom(12)
+        panel.set_size_request(320, -1)
 
-        account = Gio.Menu()
-        account.append(_("Manage account"), "app.manage_account")
-        account.append(_("Change password"), "app.change_own_password")
-        account.append(_("Change email"), "app.change_own_email")
-        account.append(_("Reconfigure 2FA"), "app.reconfigure_2fa")
-        menu.append_section(_("Account"), account)
+        head = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        title = Gtk.Label(label=_("Navigation"), xalign=0)
+        title.set_css_classes(["title-4", "nav-drawer-title"])
+        title.set_hexpand(True)
+        head.append(title)
 
-        data_ops = Gio.Menu()
-        data_ops.append(_("Import CSV"), "app.import_csv")
-        data_ops.append(_("Export CSV"), "app.export_csv")
-        data_ops.append(_("Manage categories"), "app.manage_categories")
-        data_ops.append(_("Backups"), "app.manage_backups")
-        data_ops.append(_("Trash"), "app.open_trash")
-        menu.append_section(_("Data"), data_ops)
+        close_btn = Gtk.Button(icon_name="window-close-symbolic")
+        close_btn.set_css_classes(["flat", "circular", "card-action-btn"])
+        close_btn.set_tooltip_text(_("Close"))
+        close_btn.connect("clicked", lambda _b: self._set_navigation_visible(False))
+        head.append(close_btn)
+        panel.append(head)
 
-        admin = Gio.Menu()
-        admin.append(_("Manage users"), "app.manage_users")
-        menu.append_section(_("Administration"), admin)
+        nav_scroll = Gtk.ScrolledWindow()
+        nav_scroll.set_vexpand(True)
 
-        session = Gio.Menu()
-        session.append(_("Switch user"), "app.switch_user")
-        session.append(_("Logout"), "app.logout")
-        session.append(_("About"), "app.about")
-        menu.append_section(_("Session"), session)
+        content = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        content.set_margin_start(6)
+        content.set_margin_end(6)
+        content.set_margin_top(4)
+        content.set_margin_bottom(4)
 
-        return menu
+        sections: list[tuple[str, list[tuple[str, str, str, bool]]]] = [
+            (
+                _("Account"),
+                [(_("Manage account"), "manage_account", "avatar-default-symbolic", False)],
+            ),
+            (
+                _("Data"),
+                [
+                    (_("Import CSV"), "import_csv", "document-open-symbolic", False),
+                    (_("Export CSV"), "export_csv", "document-save-symbolic", False),
+                    (_("Manage categories"), "manage_categories", "tag-symbolic", False),
+                    (_("Backups"), "manage_backups", "folder-download-symbolic", False),
+                    (_("Trash"), "open_trash", "user-trash-symbolic", False),
+                ],
+            ),
+            (
+                _("Security"),
+                [(_("Security Report ✨"), "security_report", "security-high-symbolic", False)],
+            ),
+            (
+                _("Administration"),
+                [(_("Manage users"), "manage_users", "system-users-symbolic", False)],
+            ),
+            (
+                _("Session"),
+                [
+                    (_("Switch user"), "switch_user", "system-switch-user-symbolic", False),
+                    (_("Logout"), "logout", "system-log-out-symbolic", True),
+                    (_("About"), "about", "help-about-symbolic", False),
+                ],
+            ),
+        ]
+
+        for section_title, actions in sections:
+            section_lbl = Gtk.Label(label=section_title, xalign=0)
+            section_lbl.set_css_classes(["caption", "dim-label", "nav-drawer-section"])
+            content.append(section_lbl)
+
+            for label, action_name, icon_name, destructive in actions:
+                content.append(
+                    self._build_nav_action_button(label, action_name, icon_name, destructive)
+                )
+
+        nav_scroll.set_child(content)
+        panel.append(nav_scroll)
+        return panel
+
+    def _build_nav_action_button(
+        self,
+        label: str,
+        action_name: str,
+        icon_name: str,
+        destructive: bool = False,
+    ) -> Gtk.Button:
+        button = Gtk.Button()
+        button.set_hexpand(True)
+        button.set_halign(Gtk.Align.FILL)
+        button.set_css_classes(["flat", "app-menu-item", "nav-drawer-btn"])
+        if destructive:
+            button.add_css_class("app-menu-item-destructive")
+
+        row = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=10)
+        row.set_margin_start(8)
+        row.set_margin_end(8)
+        row.set_margin_top(6)
+        row.set_margin_bottom(6)
+
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.set_pixel_size(18)
+        row.append(icon)
+
+        text = Gtk.Label(label=label, xalign=0)
+        text.set_hexpand(True)
+        row.append(text)
+
+        chevron = Gtk.Image.new_from_icon_name("go-next-symbolic")
+        chevron.add_css_class("dim-label")
+        chevron.set_pixel_size(14)
+        row.append(chevron)
+
+        button.set_child(row)
+        button.connect("clicked", lambda _b: self._on_nav_action_clicked(action_name))
+
+        action = self.app.lookup_action(action_name)
+        if action is None:
+            button.set_sensitive(False)
+
+        return button
+
+    def _on_nav_toggle_toggled(self, button: Gtk.ToggleButton) -> None:
+        self._set_navigation_visible(button.get_active())
+
+    def _on_nav_scrim_clicked(self, _button: Gtk.Button) -> None:
+        self._set_navigation_visible(False)
+
+    def _set_navigation_visible(self, visible: bool) -> None:
+        if self.nav_revealer:
+            self.nav_revealer.set_reveal_child(visible)
+        if self.nav_scrim:
+            self.nav_scrim.set_visible(visible)
+        if self.nav_toggle_button and self.nav_toggle_button.get_active() != visible:
+            self.nav_toggle_button.set_active(visible)
+
+    def _on_nav_action_clicked(self, action_name: str) -> None:
+        self._set_navigation_visible(False)
+        if self.app.lookup_action(action_name) is not None:
+            self.app.activate_action(action_name, None)
+
+    def _on_soft_lock_clicked(self, _button: Gtk.Button) -> None:
+        """Quick lock for shoulder-surfing: logout but keep application alive."""
+        self._set_navigation_visible(False)
+        if self.app.lookup_action("logout") is not None:
+            self.app.activate_action("logout", None)
+
+    def _on_panic_lock_clicked(self, _button: Gtk.Button) -> None:
+        """Emergency lock: purge in-memory UI/session refs then close app immediately."""
+        dialog = Adw.MessageDialog.new(
+            self,
+            _("Panic lock"),
+            _("Purge volatile data and close the application immediately?"),
+        )
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("panic", _("Panic lock"))
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+        dialog.set_response_appearance("panic", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.connect("response", self._on_panic_dialog_response)
+        dialog.present()
+
+    def _on_panic_dialog_response(self, _dialog: Adw.MessageDialog, response: str) -> None:
+        if response != "panic":
+            return
+        self._execute_panic_lock()
+
+    def _execute_panic_lock(self) -> None:
+        self._set_navigation_visible(False)
+        self._panic_purge_memory_state()
+
+        app = cast("PasswordManagerApplication", self.app)
+        if getattr(app, "window", None) is self:
+            app.window = None
+        app.quit()
+
+    def _panic_purge_memory_state(self) -> None:
+        """Best-effort purge of volatile user data held by the active window/session."""
+        if self._clipboard_clear_source_id:
+            GLib.source_remove(self._clipboard_clear_source_id)
+            self._clipboard_clear_source_id = None
+        self._clipboard_token += 1
+        self._clear_clipboard_now()
+
+        self._clear_detail()
+        self._set_detail_sensitive(False)
+
+        self.current_entry_id = None
+        self.current_search_text = ""
+        self.current_tag_filter = None
+        self.current_security_filter = None
+        self._detail_dirty = False
+
+        self._entry_by_child.clear()
+        self._entry_child_by_id.clear()
+        self._entry_card_by_id.clear()
+        if self.entry_flowbox:
+            self._clear_flowbox(self.entry_flowbox)
+
+        try:
+            self.password_service.close()
+        except Exception:
+            logger.exception("Panic lock: unable to close password service cleanly")
+
+        app = cast("PasswordManagerApplication", self.app)
+        vault_service = app.vault_service
+        if vault_service is not None:
+            try:
+                vault_service.close()
+            except Exception:
+                logger.exception("Panic lock: unable to close vault service cleanly")
+            app.vault_service = None
+
+        app.password_service = None
+        app.repository = None
+        app.crypto_service = None
+        app._session_master_password = None
+        app.current_vault = None
+        app.current_user = None
+        app.current_db_path = None
+
+    def _clear_clipboard_now(self) -> None:
+        clipboard = self.get_clipboard()
+        if not clipboard:
+            return
+        try:
+            provider = Gdk.ContentProvider.new_for_bytes(
+                "text/plain;charset=utf-8",
+                GLib.Bytes.new(b""),
+            )
+            clipboard.set_content(provider)
+        except Exception:
+            logger.warning("Panic lock: unable to clear clipboard")
 
     # ------------------------------------------------------------------
     # Data loading
@@ -809,6 +1066,27 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             tag_filter=self.current_tag_filter,
             search_text=self.current_search_text or None,
         )
+        for entry in all_entries:
+            result = self.strength_service.evaluate(entry.password)
+            score_raw = result.get("score", 0)
+            entry.strength_score = score_raw if isinstance(score_raw, int) else 0
+
+        summary = self.audit_service.get_audit_summary(all_entries)
+        if self.security_bar:
+            self.security_bar.set_visible(len(all_entries) > 0)
+            self.security_bar.update(summary)
+            self.security_bar.set_active_filter(self.current_security_filter)
+
+        filtered_entries = all_entries
+        if self.current_security_filter == "weak":
+            weak_ids = cast(set[int], summary.get("weak_ids", set()))
+            filtered_entries = [e for e in all_entries if e.id in weak_ids]
+        elif self.current_security_filter == "reused":
+            reused_ids = cast(set[int], summary.get("reused_ids", set()))
+            filtered_entries = [e for e in all_entries if e.id in reused_ids]
+        elif self.current_security_filter == "expired":
+            expired_ids = cast(set[int], summary.get("expired_ids", set()))
+            filtered_entries = [e for e in all_entries if e.id in expired_ids]
         # DEBUG TEMPORAIRE
         import logging
         logging.getLogger(__name__).debug(
@@ -820,11 +1098,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         )
 
         if self.current_search_text:
-            visible_entries = all_entries
+            visible_entries = filtered_entries
             hidden_zero_usage = 0
         else:
-            visible_entries = [entry for entry in all_entries if entry.usage_count > 0]
-            hidden_zero_usage = len(all_entries) - len(visible_entries)
+            visible_entries = [entry for entry in filtered_entries if entry.usage_count > 0]
+            hidden_zero_usage = len(filtered_entries) - len(visible_entries)
 
         entries = self._sorted_entries(visible_entries)
 
@@ -844,7 +1122,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         for entry in entries:
             child = Gtk.FlowBoxChild()
             child.add_css_class("entry-card-child")
-            card = EntryCard(entry)
+            card = EntryCard(entry, self.strength_service)
             child.set_child(card)
             self.entry_flowbox.append(child)
             self._entry_by_child[child] = entry
@@ -936,6 +1214,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
     def on_search_changed(self, search_entry: Gtk.SearchEntry) -> None:
         self.current_search_text = search_entry.get_text().strip()
+        self.load_entries()
+
+    def _on_security_filter(self, _bar: SecurityDashboardBar, filter_type: object) -> None:
+        self.current_security_filter = filter_type if isinstance(filter_type, str) else None
         self.load_entries()
 
     def _on_sort_changed(self, dropdown: Gtk.DropDown, _param: object) -> None:
@@ -1114,6 +1396,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         if not self.detail_password_row:
             return
         self.detail_password_row.set_text(password)
+        self._update_detail_strength_indicator(password)
         self._mark_dirty(True)
 
     # ------------------------------------------------------------------
@@ -1149,6 +1432,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         tags_row.set_text(", ".join(entry.tags))
         validity_row.set_value(float(entry.password_validity_days or 90))
         notes_view.get_buffer().set_text(entry.notes)
+        self._update_detail_strength_indicator(entry.password)
 
         if self.detail_header_title:
             self.detail_header_title.set_label(entry.title)
@@ -1188,6 +1472,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         tags_row.set_text("")
         validity_row.set_value(90)
         notes_view.get_buffer().set_text("")
+        self._update_detail_strength_indicator("")
 
         if self.detail_header_title:
             self.detail_header_title.set_label(_("Select an entry"))
@@ -1264,6 +1549,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         title_row.connect("changed", self._on_detail_changed)
         username_row.connect("changed", self._on_detail_changed)
         password_row.connect("changed", self._on_detail_changed)
+        password_row.connect("notify::text", self._on_detail_password_text_changed)
         url_row.connect("changed", self._on_detail_changed)
         category_row.connect("notify::selected", self._on_detail_changed)
         tags_row.connect("changed", self._on_detail_changed)
@@ -1293,6 +1579,38 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         if self._updating_detail:
             return
         self._mark_dirty(True)
+
+    def _on_detail_password_text_changed(
+        self,
+        password_row: Adw.PasswordEntryRow,
+        _param: object,
+    ) -> None:
+        self._update_detail_strength_indicator(password_row.get_text())
+
+    def _update_detail_strength_indicator(self, password: str) -> None:
+        if not self.detail_password_row or not self.detail_password_strength_inline_label:
+            return
+
+        result = self.strength_service.evaluate(password)
+        score_raw = result.get("score", 0)
+        score = score_raw if isinstance(score_raw, int) else 0
+        label = str(result.get("label", ""))
+        crack_time = str(result.get("crack_time", ""))
+
+        for level in range(5):
+            self.detail_password_row.remove_css_class(f"password-row-strength-{level}")
+            self.detail_password_strength_inline_label.remove_css_class(f"strength-{level}")
+
+        normalized_score = max(0, min(score, 4))
+        self.detail_password_row.add_css_class(f"password-row-strength-{normalized_score}")
+        self.detail_password_strength_inline_label.add_css_class(f"strength-{normalized_score}")
+
+        if password:
+            self.detail_password_strength_inline_label.set_label(
+                _("%(label)s · %(crack_time)s") % {"label": label, "crack_time": crack_time}
+            )
+        else:
+            self.detail_password_strength_inline_label.set_label("")
 
     def _mark_dirty(self, dirty: bool) -> None:
         self._detail_dirty = dirty
@@ -1364,6 +1682,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.detail_username_row,
             self.detail_password_row,
             self.detail_url_row,
+            self.detail_password_strength_inline_label,
             self.detail_category_row,
             self.detail_tags_row,
             self.detail_validity_row,
@@ -1377,12 +1696,25 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     # ------------------------------------------------------------------
     # Compatibility methods used from application.py
     # ------------------------------------------------------------------
+    @staticmethod
+    def _apply_avatar_image(avatar: Adw.Avatar, avatar_path: str | None) -> None:
+        if not avatar_path:
+            avatar.set_custom_image(None)
+            return
+        try:
+            texture = Gdk.Texture.new_from_filename(str(avatar_path))
+            avatar.set_custom_image(texture)
+        except Exception:
+            avatar.set_custom_image(None)
+
     def refresh_account_profile(self, user_info: UserInfoUpdate) -> None:
         self.user_info.update(user_info)
         if self.user_name_label:
             self.user_name_label.set_label(self.user_info.get("username", "?"))
         if self.user_avatar:
             self.user_avatar.set_text(self.user_info.get("username", "?")[:2].upper())
+            if "avatar_path" in user_info:
+                self._apply_avatar_image(self.user_avatar, user_info.get("avatar_path"))
 
     def refresh_vault_sidebar(self) -> None:
         if not self.vault_listbox:
@@ -1563,6 +1895,9 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         if on_switch(vault):
             self.current_vault = vault
+            self.current_security_filter = None
+            if self.security_bar:
+                self.security_bar.set_active_filter(None)
             self.load_categories()
             self.load_tags()
             self.load_entries()

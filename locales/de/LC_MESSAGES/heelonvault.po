@@ -2227,3 +2227,123 @@ msgid "%(count)s entry"
 msgid_plural "%(count)s entries"
 msgstr[0] "%(count)s Eintrag"
 msgstr[1] "%(count)s Einträge"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Security Dashboard"
+msgstr "Sicherheitsdashboard"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Unknown vault"
+msgstr "Unbekannter Tresor"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Web security dashboard unavailable"
+msgstr "Web-Sicherheitsdashboard nicht verfügbar"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "WebKit runtime is missing. Install WebKitGTK to display this dashboard."
+msgstr "Die WebKit-Laufzeit fehlt. Installieren Sie WebKitGTK, um dieses Dashboard anzuzeigen."
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Global security score"
+msgstr "Globaler Sicherheitswert"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Password strength distribution"
+msgstr "Verteilung der Passwortstärke"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Vulnerability by category"
+msgstr "Schwachstellen nach Kategorie"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Top 5 entries at risk"
+msgstr "Top 5 riskante Einträge"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Password expiration timeline"
+msgstr "Passwortablauf-Zeitachse"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Score history"
+msgstr "Score-Verlauf"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Application logs (admin)"
+msgstr "Anwendungsprotokolle (Admin)"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Updated:"
+msgstr "Aktualisiert:"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Reused"
+msgstr "Wiederverwendet"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Expiring"
+msgstr "Läuft bald ab"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Score"
+msgstr "Score"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "strong"
+msgstr "stark"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "No category data"
+msgstr "Keine Kategoriedaten"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "No immediate risks detected"
+msgstr "Keine unmittelbaren Risiken erkannt"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Expires"
+msgstr "Läuft ab"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "days"
+msgstr "Tage"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "No expiration configured"
+msgstr "Kein Ablauf konfiguriert"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Open this dashboard regularly to build history"
+msgstr "Öffnen Sie dieses Dashboard regelmäßig, um Verlauf aufzubauen"
+
+#: src/ui/windows/security_dashboard_window.py
+msgid "Unable to load local report data."
+msgstr "Lokale Berichtsdaten konnten nicht geladen werden."
+
+#: src/ui/windows/main_window.py
+msgid "Panic"
+msgstr "Panik"
+
+#: src/ui/windows/main_window.py
+msgid "Soft lock (logout)"
+msgstr "Soft Lock (Abmelden)"
+
+#: src/ui/windows/main_window.py
+msgid "Panic lock (purge and close app)"
+msgstr "Panik-Sperre (RAM leeren und App schließen)"
+
+#: src/ui/windows/main_window.py
+msgid "Open navigation"
+msgstr "Navigation öffnen"
+
+#: src/ui/windows/main_window.py
+msgid "Navigation"
+msgstr "Navigation"
+
+#: src/ui/windows/main_window.py
+msgid "Panic lock"
+msgstr "Panik-Sperre"
+
+#: src/ui/windows/main_window.py
+msgid "Purge volatile data and close the application immediately?"
+msgstr "Flüchtige Daten löschen und die Anwendung sofort schließen?"

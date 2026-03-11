@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import secrets
 from pathlib import Path
+from typing import cast
 
 import gi  # type: ignore[import]
 
@@ -21,6 +22,8 @@ from src.services.csv_exporter import CSVExporter
 from src.services.csv_importer import CSVImporter
 from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.services.password_service import PasswordService
+from src.services.password_strength_service import PasswordStrengthService
+from src.services.security_audit_service import SecurityAuditService
 from src.services.totp_service import TOTPService
 from src.services.vault_service import VaultService
 from src.ui.dialogs.about_dialog import show_about_dialog
@@ -36,6 +39,7 @@ from src.ui.dialogs.trash_dialog import TrashDialog
 from src.ui.dialogs.update_email_dialog import UpdateEmailDialog
 from src.ui.dialogs.verify_totp_dialog import VerifyTOTPDialog
 from src.ui.windows.main_window import PasswordManagerWindow
+from src.ui.windows.security_dashboard_window import SecurityDashboardWindow
 from src.version import __app_id__
 
 gi.require_version("Gtk", "4.0")
@@ -90,6 +94,8 @@ class PasswordManagerApplication(Adw.Application):
         self.crypto_service: CryptoService | None = None
         self.repository: PasswordRepository | None = None
         self.password_service: PasswordService | None = None
+        self.strength_service: PasswordStrengthService | None = None
+        self.audit_service: SecurityAuditService | None = None
         self.vault_service: VaultService | None = None
         self.current_vault: Vault | None = None
         self.current_user: UserInfo | None = None
@@ -115,6 +121,7 @@ class PasswordManagerApplication(Adw.Application):
         self._add_action("export_csv", self.on_export_csv)
         self._add_action("manage_categories", self.on_manage_categories)
         self._add_action("manage_backups", self.on_manage_backups)
+        self._add_action("security_report", self.on_security_report)
         self._add_action("open_trash", self.on_open_trash)
         self._add_action("about", self.on_about)
 
@@ -384,6 +391,11 @@ class PasswordManagerApplication(Adw.Application):
             self.password_service = PasswordService(
                 self.repository, self.crypto_service
             )
+            self.strength_service = PasswordStrengthService()
+            self.audit_service = SecurityAuditService(
+                self.password_service,
+                self.strength_service,
+            )
             self.current_db_path = db_path
 
             # Fermer le dialogue de login si ouvert
@@ -399,6 +411,8 @@ class PasswordManagerApplication(Adw.Application):
             self.window = PasswordManagerWindow(
                 self,
                 self.password_service,
+                self.strength_service,
+                self.audit_service,
                 user_info,
                 self.vault_service,
                 vault,
@@ -457,6 +471,8 @@ class PasswordManagerApplication(Adw.Application):
             self.vault_service.close()
             self.vault_service = None
         self._session_master_password = None
+        self.strength_service = None
+        self.audit_service = None
         self.current_vault = None
         self.current_user = None
         self.current_db_path = None
@@ -508,12 +524,22 @@ class PasswordManagerApplication(Adw.Application):
         db_path = DATA_DIR / f"passwords_{vault.uuid}.db"
         self.repository = PasswordRepository(db_path, self.backup_service)
         self.password_service = PasswordService(self.repository, self.crypto_service)
+        if self.strength_service is None:
+            self.strength_service = PasswordStrengthService()
+        self.audit_service = SecurityAuditService(self.password_service, self.strength_service)
         self.current_db_path = db_path
         self.current_vault = vault
 
         if self.window:
             # Update window with new PasswordService and current Vault
             self.window.password_service = self.password_service
+            if self.strength_service is not None:
+                self.window.strength_service = self.strength_service
+            if self.audit_service is not None:
+                self.window.audit_service = self.audit_service
+                self.window.current_security_filter = None
+                if self.window.security_bar:
+                    self.window.security_bar.set_active_filter(None)
             self.window.current_vault = vault
             # Reload all UI components for new vault
             self.window.load_categories()
@@ -734,6 +760,43 @@ class PasswordManagerApplication(Adw.Application):
             BackupManagerDialog(
                 self.window, self.backup_service, self.current_user["username"]
             ).present()
+
+    def on_security_report(self, _action: Gio.SimpleAction | None, _param: object | None) -> None:
+        if not (
+            self.window
+            and self.password_service
+            and self.audit_service
+            and self.strength_service
+        ):
+            return
+
+        all_entries = self.password_service.list_entries(
+            category_filter="All",
+            tag_filter=None,
+            search_text=None,
+        )
+        summary = self.audit_service.get_audit_summary(all_entries)
+
+        log_dir = Path(__file__).resolve().parents[2] / "logs"
+        candidates = sorted(
+            [path for path in log_dir.glob("heelonvault_*.log") if path.is_file()],
+            key=lambda path: path.stat().st_mtime,
+            reverse=True,
+        )
+        log_file = candidates[0] if candidates else None
+
+        win = SecurityDashboardWindow(
+            parent=self.window,
+            entries=all_entries,
+            audit_summary=summary,
+            strength_service=self.strength_service,
+            audit_service=self.audit_service,
+            vault=self.current_vault,
+            user_info=cast(dict[str, object] | None, self.current_user),
+            users_db_path=DATA_DIR / "users.db",
+            log_file=log_file,
+        )
+        win.present()
 
     def on_manage_categories(self, _action: Gio.SimpleAction | None, _param: object | None) -> None:
         if self.window and hasattr(self.window, "open_manage_categories_dialog"):

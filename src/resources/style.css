@@ -123,6 +123,88 @@
         color: #C01C28;
     }
 
+    button.nav-drawer-scrim {
+        background: rgba(7, 57, 58, 0.18);
+        border: none;
+        border-radius: 0;
+        box-shadow: none;
+        padding: 0;
+    }
+
+    .nav-drawer {
+        background: linear-gradient(170deg, #FFFFFF 0%, #EEF8F7 100%);
+        border: 1px solid rgba(87, 185, 177, 0.42);
+        border-radius: 18px;
+        box-shadow: 0 22px 46px rgba(7, 57, 58, 0.22);
+        padding: 8px;
+    }
+
+    .nav-drawer-title {
+        color: #07393A;
+        font-weight: 780;
+        letter-spacing: 0.02em;
+    }
+
+    .nav-drawer-section {
+        color: #5F7E80;
+        font-weight: 680;
+        letter-spacing: 0.06em;
+        margin-top: 8px;
+        margin-bottom: 2px;
+    }
+
+    button.nav-drawer-btn {
+        border-radius: 12px;
+        border: 1px solid transparent;
+        background: rgba(255, 255, 255, 0.48);
+    }
+
+    button.nav-drawer-btn:hover {
+        border-color: rgba(87, 185, 177, 0.48);
+        background: rgba(234, 243, 241, 0.96);
+        box-shadow: 0 8px 18px rgba(7, 57, 58, 0.12);
+    }
+
+    .panic-badge {
+        background: linear-gradient(140deg, #5A0F16 0%, #6F1722 100%);
+        border: 1px solid rgba(255, 196, 196, 0.36);
+        border-radius: 999px;
+        padding: 3px 9px;
+        box-shadow: 0 10px 24px rgba(44, 6, 10, 0.34);
+    }
+
+    .panic-badge-label {
+        color: #FFFFFF;
+        font-weight: 820;
+        letter-spacing: 0.05em;
+        margin-right: 3px;
+    }
+
+    .panic-soft-btn,
+    .panic-soft-btn image {
+        color: #FFFFFF;
+        opacity: 0.98;
+    }
+
+    .panic-soft-btn:hover,
+    .panic-soft-btn:hover image {
+        background: rgba(255, 255, 255, 0.18);
+        opacity: 1;
+    }
+
+    .panic-hard-btn,
+    .panic-hard-btn image {
+        color: #FFFFFF;
+        opacity: 1;
+    }
+
+    .panic-hard-btn:hover,
+    .panic-hard-btn:hover image {
+        color: #FFFFFF;
+        background: rgba(0, 0, 0, 0.22);
+        opacity: 1;
+    }
+
     toast {
         background-image: linear-gradient(120deg, #13A1A1, #1F8678);
         color: #FFFFFF;
@@ -471,7 +553,6 @@
     .vault-row {
         border-radius: 12px;
         transition: all 150ms ease-in-out;
-        overflow: hidden;
     }
 
     .vault-accent-bar {
@@ -573,9 +654,154 @@
         min-height: 48px;
         border-radius: 12px 0 0 12px;
     }
-    .card-strength-success { background: linear-gradient(90deg, #1F8678, #13A1A1); }
-    .card-strength-warning { background: linear-gradient(90deg, #E6B800, #F0C040); }
-    .card-strength-error   { background: linear-gradient(90deg, #E74C3C, #FF6B6B); }
+    .entry-strength-bar.strength-0 { background: #E53935; }
+    .entry-strength-bar.strength-1 { background: #FB8C00; }
+    .entry-strength-bar.strength-2 { background: #FDD835; }
+    .entry-strength-bar.strength-3 { background: #43A047; }
+    .entry-strength-bar.strength-4 { background: #13A1A1; }
+
+    .password-row-strength-0 {
+        border-bottom: 3px solid rgba(229, 57, 53, 0.40);
+    }
+    .password-row-strength-0:focus-within {
+        border-bottom: 4px solid #E53935;
+    }
+
+    .password-row-strength-1 {
+        border-bottom: 3px solid rgba(251, 140, 0, 0.40);
+    }
+    .password-row-strength-1:focus-within {
+        border-bottom: 4px solid #FB8C00;
+    }
+
+    .password-row-strength-2 {
+        border-bottom: 3px solid rgba(253, 216, 53, 0.40);
+    }
+    .password-row-strength-2:focus-within {
+        border-bottom: 4px solid #FDD835;
+    }
+
+    .password-row-strength-3 {
+        border-bottom: 3px solid rgba(67, 160, 71, 0.40);
+    }
+    .password-row-strength-3:focus-within {
+        border-bottom: 4px solid #43A047;
+    }
+
+    .password-row-strength-4 {
+        border-bottom: 3px solid rgba(19, 161, 161, 0.40);
+    }
+    .password-row-strength-4:focus-within {
+        border-bottom: 4px solid #13A1A1;
+    }
+
+    .password-inline-strength {
+        font-size: 0.76rem;
+        font-weight: 550;
+        margin-right: 6px;
+    }
+
+    .security-badge {
+        border-radius: 12px;
+        padding: 8px 14px;
+        background: rgba(19, 161, 161, 0.08);
+        border: 1px solid rgba(19, 161, 161, 0.20);
+        min-width: 80px;
+    }
+
+    .security-badge:hover {
+        background: rgba(19, 161, 161, 0.14);
+    }
+
+    .security-badge-active {
+        border-width: 2px;
+        background: rgba(19, 161, 161, 0.16);
+    }
+
+    .security-badge-count {
+        font-size: 1.2rem;
+        font-weight: 700;
+    }
+
+    .security-badge-label {
+        font-size: 0.75rem;
+        opacity: 0.75;
+    }
+
+    .security-badge.badge-weak { color: #E53935; }
+    .security-badge.badge-reused { color: #FB8C00; }
+    .security-badge.badge-expired { color: #13A1A1; }
+    .security-badge.badge-score { color: #13A1A1; }
+
+    .security-badge.badge-score.score-good { color: #43A047; }
+    .security-badge.badge-score.score-medium { color: #FB8C00; }
+    .security-badge.badge-score.score-bad { color: #E53935; }
+
+    .dashboard-kpi-card {
+        border-radius: 16px;
+        padding: 16px;
+        background: rgba(19, 161, 161, 0.06);
+        border: 1px solid rgba(19, 161, 161, 0.15);
+    }
+
+    .dashboard-kpi-value {
+        font-size: 2rem;
+        font-weight: 800;
+    }
+
+    .dashboard-kpi-label {
+        font-size: 0.8rem;
+        opacity: 0.70;
+    }
+
+    .score-good {
+        color: #43A047;
+    }
+
+    .score-medium {
+        color: #FB8C00;
+    }
+
+    .score-bad {
+        color: #E53935;
+    }
+
+    .risk-badge-weak,
+    .risk-badge-reused,
+    .risk-badge-expired {
+        border-radius: 999px;
+        padding: 2px 8px;
+        font-size: 0.72rem;
+        font-weight: 650;
+    }
+
+    .risk-badge-weak {
+        color: #E53935;
+        background: rgba(229, 57, 53, 0.14);
+        border: 1px solid rgba(229, 57, 53, 0.28);
+    }
+
+    .risk-badge-reused {
+        color: #FB8C00;
+        background: rgba(251, 140, 0, 0.14);
+        border: 1px solid rgba(251, 140, 0, 0.28);
+    }
+
+    .risk-badge-expired {
+        color: #13A1A1;
+        background: rgba(19, 161, 161, 0.14);
+        border: 1px solid rgba(19, 161, 161, 0.28);
+    }
+
+    .log-viewer {
+        font-family: "Space Mono", monospace;
+        font-size: 0.78rem;
+        background: #0D1117;
+        color: #C9D1D9;
+        padding: 8px;
+        border-radius: 8px;
+    }
+
 
     /* Badge icône */
     .card-icon-badge {

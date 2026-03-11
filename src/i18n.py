@@ -44,6 +44,11 @@ def _(message: str) -> str:
     return _translation.gettext(message)
 
 
+def N_(message: str) -> str:  # noqa: N802
+    """Mark a string for translation extraction without translating now."""
+    return message
+
+
 def ngettext(singular: str, plural: str, count: int) -> str:
     return _translation.ngettext(singular, plural, count)
 

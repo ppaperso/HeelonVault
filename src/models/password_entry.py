@@ -33,6 +33,7 @@ class PasswordEntry:
     created_at: datetime | None = None
     modified_at: datetime | None = None
     usage_count: int = 0
+    strength_score: int = -1
 
     def __str__(self) -> str:
         return f"PasswordEntry(id={self.id}, title='{self.title}', category='{self.category}')"

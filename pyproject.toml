@@ -36,7 +36,9 @@ classifiers = [
 dependencies = [
     "PyGObject>=3.42.0",
     "cryptography>=41.0.0",
+    "reportlab>=4.2.0",
     "validators>=0.20.0",
+    "zxcvbn>=4.5.0",
 ]
 
 [project.optional-dependencies]
