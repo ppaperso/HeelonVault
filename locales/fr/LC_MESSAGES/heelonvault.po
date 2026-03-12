@@ -2350,3 +2350,74 @@ msgstr "Panic Lock"
 #: src/ui/windows/main_window.py
 msgid "Purge volatile data and close the application immediately?"
 msgstr "Purger les données volatiles et fermer l'application immédiatement ?"
+
+#: src/ui/windows/main_window.py
+msgid "Passwords"
+msgstr "Mots de passe"
+
+#: src/ui/windows/main_window.py
+msgid "API Tokens"
+msgstr "Jetons API"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s API tokens shown"
+msgstr "%(count)s jetons API affichés"
+
+#: src/ui/windows/main_window.py
+msgid "No API tokens for current filters"
+msgstr "Aucun jeton API pour les filtres actuels"
+
+#: src/ui/windows/main_window.py
+msgid "Provider"
+msgstr "Fournisseur"
+
+#: src/ui/windows/main_window.py
+msgid "API token"
+msgstr "Jeton API"
+
+#: src/ui/windows/main_window.py
+msgid "Environment"
+msgstr "Environnement"
+
+#: src/ui/windows/main_window.py
+msgid "Scopes (comma-separated)"
+msgstr "Scopes (séparés par des virgules)"
+
+#: src/ui/windows/main_window.py
+msgid "Expiration warning (days)"
+msgstr "Alerte d'expiration (jours)"
+
+#: src/ui/windows/main_window.py
+msgid "New API token"
+msgstr "Nouveau jeton API"
+
+#: src/ui/windows/main_window.py
+msgid "Token is required"
+msgstr "Le jeton est requis"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to reveal token"
+msgstr "Impossible d'afficher le jeton"
+
+#: src/ui/windows/main_window.py
+msgid "API token copied"
+msgstr "Jeton API copié"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Unable to save API token: %s"
+msgstr "Impossible d'enregistrer le jeton API : %s"
+
+#: src/ui/windows/main_window.py
+msgid "API token deleted"
+msgstr "Jeton API supprimé"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "API token · Last modified: %s"
+msgstr "Jeton API · Dernière modification : %s"
+
+#: src/ui/windows/main_window.py
+msgid "Copy token"
+msgstr "Copier le jeton"

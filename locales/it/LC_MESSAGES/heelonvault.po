@@ -2347,3 +2347,74 @@ msgstr "Blocco panico"
 #: src/ui/windows/main_window.py
 msgid "Purge volatile data and close the application immediately?"
 msgstr "Eliminare i dati volatili e chiudere immediatamente l'applicazione?"
+
+#: src/ui/windows/main_window.py
+msgid "Passwords"
+msgstr "Password"
+
+#: src/ui/windows/main_window.py
+msgid "API Tokens"
+msgstr "Token API"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s API tokens shown"
+msgstr "%(count)s token API mostrati"
+
+#: src/ui/windows/main_window.py
+msgid "No API tokens for current filters"
+msgstr "Nessun token API per i filtri correnti"
+
+#: src/ui/windows/main_window.py
+msgid "Provider"
+msgstr "Provider"
+
+#: src/ui/windows/main_window.py
+msgid "API token"
+msgstr "Token API"
+
+#: src/ui/windows/main_window.py
+msgid "Environment"
+msgstr "Ambiente"
+
+#: src/ui/windows/main_window.py
+msgid "Scopes (comma-separated)"
+msgstr "Ambiti (separati da virgole)"
+
+#: src/ui/windows/main_window.py
+msgid "Expiration warning (days)"
+msgstr "Avviso di scadenza (giorni)"
+
+#: src/ui/windows/main_window.py
+msgid "New API token"
+msgstr "Nuovo token API"
+
+#: src/ui/windows/main_window.py
+msgid "Token is required"
+msgstr "Il token è obbligatorio"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to reveal token"
+msgstr "Impossibile mostrare il token"
+
+#: src/ui/windows/main_window.py
+msgid "API token copied"
+msgstr "Token API copiato"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "Unable to save API token: %s"
+msgstr "Impossibile salvare il token API: %s"
+
+#: src/ui/windows/main_window.py
+msgid "API token deleted"
+msgstr "Token API eliminato"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "API token · Last modified: %s"
+msgstr "Token API · Ultima modifica: %s"
+
+#: src/ui/windows/main_window.py
+msgid "Copy token"
+msgstr "Copia token"

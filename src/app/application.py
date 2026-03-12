@@ -15,6 +15,7 @@ from src.i18n import _, init_i18n, set_language
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.models.vault import Vault
 from src.repositories.password_repository import PasswordRepository
+from src.repositories.secret_repository import SecretRepository
 from src.services.auth_service import AuthService
 from src.services.backup_service import BackupService
 from src.services.crypto_service import CryptoService
@@ -23,6 +24,7 @@ from src.services.csv_importer import CSVImporter
 from src.services.login_attempt_tracker import LoginAttemptTracker
 from src.services.password_service import PasswordService
 from src.services.password_strength_service import PasswordStrengthService
+from src.services.secret_service import SecretService
 from src.services.security_audit_service import SecurityAuditService
 from src.services.totp_service import TOTPService
 from src.services.vault_service import VaultService
@@ -93,7 +95,9 @@ class PasswordManagerApplication(Adw.Application):
         self.login_tracker: LoginAttemptTracker | None = None
         self.crypto_service: CryptoService | None = None
         self.repository: PasswordRepository | None = None
+        self.secret_repository: SecretRepository | None = None
         self.password_service: PasswordService | None = None
+        self.secret_service: SecretService | None = None
         self.strength_service: PasswordStrengthService | None = None
         self.audit_service: SecurityAuditService | None = None
         self.vault_service: VaultService | None = None
@@ -391,6 +395,10 @@ class PasswordManagerApplication(Adw.Application):
             self.password_service = PasswordService(
                 self.repository, self.crypto_service
             )
+            self.secret_repository = SecretRepository(db_path, self.backup_service)
+            self.secret_service = SecretService(
+                self.secret_repository, self.crypto_service
+            )
             self.strength_service = PasswordStrengthService()
             self.audit_service = SecurityAuditService(
                 self.password_service,
@@ -411,6 +419,7 @@ class PasswordManagerApplication(Adw.Application):
             self.window = PasswordManagerWindow(
                 self,
                 self.password_service,
+                self.secret_service,
                 self.strength_service,
                 self.audit_service,
                 user_info,
@@ -524,6 +533,8 @@ class PasswordManagerApplication(Adw.Application):
         db_path = DATA_DIR / f"passwords_{vault.uuid}.db"
         self.repository = PasswordRepository(db_path, self.backup_service)
         self.password_service = PasswordService(self.repository, self.crypto_service)
+        self.secret_repository = SecretRepository(db_path, self.backup_service)
+        self.secret_service = SecretService(self.secret_repository, self.crypto_service)
         if self.strength_service is None:
             self.strength_service = PasswordStrengthService()
         self.audit_service = SecurityAuditService(self.password_service, self.strength_service)
@@ -533,6 +544,8 @@ class PasswordManagerApplication(Adw.Application):
         if self.window:
             # Update window with new PasswordService and current Vault
             self.window.password_service = self.password_service
+            if self.secret_service is not None:
+                self.window.secret_service = self.secret_service
             if self.strength_service is not None:
                 self.window.strength_service = self.strength_service
             if self.audit_service is not None:
@@ -818,6 +831,14 @@ class PasswordManagerApplication(Adw.Application):
             show_about_dialog(self.window)
 
     def _close_repository(self) -> None:
+        if self.secret_service:
+            self.secret_service.close()
+            self.secret_service = None
+            self.secret_repository = None
+        elif self.secret_repository:
+            self.secret_repository.close()
+            self.secret_repository = None
+
         if self.password_service:
             self.password_service.close()
             self.password_service = None

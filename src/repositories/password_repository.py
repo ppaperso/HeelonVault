@@ -18,6 +18,29 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
+def _maybe_run_v2_migration(conn, backup_service, db_path, logger) -> None:
+    """Déclenche la migration v1→v2 si schema_version < 2."""
+    row = conn.execute(
+        "SELECT value FROM metadata WHERE key = 'schema_version'"
+    ).fetchone()
+    current_version = int(row[0]) if row else 1
+
+    if current_version >= 2:
+        return  # déjà migré
+
+    from src.repositories.migrations.migrate_v1_to_v2 import (  # noqa: E402, I001
+        MigrationError,
+        run as _run_migration,
+    )
+
+    try:
+        _run_migration(conn, backup_service, db_path, logger)
+        logger.info("Schema migrated to v2 for %s", db_path.name)
+    except MigrationError as exc:
+        logger.error("Migration v1→v2 failed for %s: %s", db_path.name, exc)
+        raise  # remonter pour bloquer l'ouverture du vault
+
+
 class PasswordRepository:
     """Encapsule toutes les requêtes SQLite liées aux mots de passe."""
 
@@ -137,8 +160,16 @@ class PasswordRepository:
             cursor.execute(
                 "ALTER TABLE passwords ADD COLUMN usage_count INTEGER DEFAULT 0"
             )
+        # Initialiser schema_version si absente (bases existantes = v1)
+        cursor.execute(
+            "INSERT OR IGNORE INTO metadata (key, value) VALUES ('schema_version', '1')"
+        )
 
         self.conn.commit()
+
+        # Migration Phase 1 : introduction de secret_items
+        _maybe_run_v2_migration(self.conn, self.backup_service, self.db_path, logger)
+
         logger.debug("SQLite schema verified for %s", self.db_path)
 
     def close(self) -> None:

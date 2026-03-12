@@ -13,10 +13,13 @@ from src.config.environment import get_data_directory
 from src.i18n import _, ngettext
 from src.models.category import Category
 from src.models.password_entry import PasswordEntry
+from src.models.secret_item import SecretItem
+from src.models.secret_types import SECRET_TYPE_API_TOKEN, SECRET_TYPE_PASSWORD
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.repositories.password_repository import PasswordRepository
 from src.services.password_service import PasswordService
 from src.services.password_strength_service import PasswordStrengthService
+from src.services.secret_service import SecretService
 from src.services.security_audit_service import SecurityAuditService
 from src.ui.dialogs.create_vault_dialog import CreateVaultDialog
 from src.ui.dialogs.helpers import present_alert
@@ -161,6 +164,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self,
         app: Adw.Application,
         password_service: PasswordService,
+        secret_service: SecretService,
         strength_service: PasswordStrengthService,
         audit_service: SecurityAuditService,
         user_info: UserInfo,
@@ -170,6 +174,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         super().__init__(application=app, title=__app_name__)
 
         self.password_service = password_service
+        self.secret_service = secret_service
         self.strength_service = strength_service
         self.audit_service = audit_service
         self.user_info = user_info
@@ -178,6 +183,9 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.current_vault = current_vault
 
         self.current_category_filter = "All"
+        self.current_secret_type_filter = SECRET_TYPE_PASSWORD
+        self.current_provider_filter: str | None = None
+        self.current_organization_filter: str | None = None
         self.current_tag_filter: str | None = None
         self.current_security_filter: str | None = None
         self.current_search_text = ""
@@ -191,12 +199,17 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._clipboard_token = 0
 
         self._category_by_row: dict[Gtk.ListBoxRow, str] = {}
+        self._secret_type_by_row: dict[Gtk.ListBoxRow, str] = {}
+        self._provider_by_row: dict[Gtk.ListBoxRow, str | None] = {}
+        self._organization_by_row: dict[Gtk.ListBoxRow, str | None] = {}
         self._tag_by_child: dict[Gtk.FlowBoxChild, str] = {}
         self._entry_by_child: dict[Gtk.FlowBoxChild, PasswordEntry] = {}
         self._entry_child_by_id: dict[int, Gtk.FlowBoxChild] = {}
         self._entry_card_by_id: dict[int, EntryCard] = {}
+        self._secret_item_by_ui_id: dict[int, SecretItem] = {}
         self._suppress_entry_selection = False
         self._suppress_filter_signals = False
+        self.current_detail_mode = "password"
 
         self.toast_overlay: Adw.ToastOverlay | None = None
         self.unsaved_badge: Gtk.Label | None = None
@@ -210,7 +223,18 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._suppress_vault_signals = False
         self.user_avatar: Adw.Avatar | None = None
         self.user_name_label: Gtk.Label | None = None
+        self.secret_mode_password_button: Gtk.ToggleButton | None = None
+        self.secret_mode_api_button: Gtk.ToggleButton | None = None
+        self.secret_mode_password_count_label: Gtk.Label | None = None
+        self.secret_mode_api_count_label: Gtk.Label | None = None
+        self.category_group: Adw.PreferencesGroup | None = None
+        self.tags_group: Adw.PreferencesGroup | None = None
+        self.provider_group: Adw.PreferencesGroup | None = None
+        self.organization_group: Adw.PreferencesGroup | None = None
         self.category_listbox: Gtk.ListBox | None = None
+        self.secret_type_listbox: Gtk.ListBox | None = None
+        self.provider_listbox: Gtk.ListBox | None = None
+        self.organization_listbox: Gtk.ListBox | None = None
         self.tag_flowbox: Gtk.FlowBox | None = None
         self.entry_flowbox: Gtk.FlowBox | None = None
         self.entry_counter_label: Gtk.Label | None = None
@@ -227,6 +251,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_username_row: Adw.EntryRow | None = None
         self.detail_password_row: Adw.PasswordEntryRow | None = None
         self.detail_password_strength_inline_label: Gtk.Label | None = None
+        self.detail_password_copy_button: Gtk.Button | None = None
+        self.detail_password_generate_button: Gtk.Button | None = None
         self.detail_url_row: Adw.EntryRow | None = None
         self.detail_category_row: Adw.ComboRow | None = None
         self.detail_category_model: Gtk.StringList | None = None
@@ -237,6 +263,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         self._init_layout()
         self.refresh_vault_sidebar()
+        self.load_secret_type_filters()
+        self._apply_sidebar_visibility_by_secret_type(self.current_secret_type_filter)
         self.load_categories()
         self.load_tags()
         self.load_entries()
@@ -398,16 +426,88 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         vault_group.add(self.vault_listbox)
         root.append(vault_group)
 
+        secrets_panel = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=8)
+        secrets_panel.add_css_class("secret-mode-panel")
+        secrets_panel.set_margin_start(2)
+        secrets_panel.set_margin_end(2)
+
+        secrets_title = Gtk.Label(label=_("Secrets"), xalign=0)
+        secrets_title.add_css_class("secret-mode-title")
+        secrets_panel.append(secrets_title)
+
+        secrets_switch = Gtk.Box(orientation=Gtk.Orientation.VERTICAL, spacing=6)
+        secrets_switch.add_css_class("secret-mode-switch")
+        secrets_switch.set_homogeneous(True)
+
+        (
+            self.secret_mode_password_button,
+            self.secret_mode_password_count_label,
+        ) = self._build_secret_mode_button(
+            label=_("Passwords"),
+            icon_name="dialog-password-symbolic",
+            tooltip=_("Switch to password vault view"),
+        )
+        self.secret_mode_password_button.connect(
+            "toggled",
+            lambda btn: self._on_secret_mode_toggled(btn, SECRET_TYPE_PASSWORD),
+        )
+        secrets_switch.append(self.secret_mode_password_button)
+
+        (
+            self.secret_mode_api_button,
+            self.secret_mode_api_count_label,
+        ) = self._build_secret_mode_button(
+            label=_("API Tokens"),
+            icon_name="network-server-symbolic",
+            tooltip=_("Switch to API token vault view"),
+        )
+        self.secret_mode_api_button.connect(
+            "toggled",
+            lambda btn: self._on_secret_mode_toggled(btn, SECRET_TYPE_API_TOKEN),
+        )
+        secrets_switch.append(self.secret_mode_api_button)
+
+        secrets_panel.append(secrets_switch)
+        root.append(secrets_panel)
+
         categories_group = Adw.PreferencesGroup.new()
         categories_group.set_title(_("Catégories"))
+        self.category_group = categories_group
         self.category_listbox = Gtk.ListBox()
         self.category_listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.category_listbox.connect("row-selected", self.on_category_selected)
         categories_group.add(self.category_listbox)
         root.append(categories_group)
 
+        providers_group = Adw.PreferencesGroup.new()
+        providers_group.set_title(_("Fournisseurs"))
+        self.provider_group = providers_group
+        providers_group.add_css_class("secret-subfilter-group")
+        self.provider_listbox = Gtk.ListBox()
+        self.provider_listbox.add_css_class("secret-subfilter-listbox")
+        self.provider_listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.provider_listbox.connect("row-selected", self.on_provider_selected)
+        providers_group.add(self.provider_listbox)
+        providers_group.set_visible(False)
+        providers_group.set_title(f"{_('Fournisseurs')} [0]")
+        root.append(providers_group)
+
+        organizations_group = Adw.PreferencesGroup.new()
+        organizations_group.set_title(_("Organisation"))
+        self.organization_group = organizations_group
+        organizations_group.add_css_class("secret-subfilter-group")
+        self.organization_listbox = Gtk.ListBox()
+        self.organization_listbox.add_css_class("secret-subfilter-listbox")
+        self.organization_listbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
+        self.organization_listbox.connect("row-selected", self.on_organization_selected)
+        organizations_group.add(self.organization_listbox)
+        organizations_group.set_visible(False)
+        organizations_group.set_title(f"{_('Organisation')} [0]")
+        root.append(organizations_group)
+
         tags_group = Adw.PreferencesGroup.new()
         tags_group.set_title(_("Étiquettes"))
+        self.tags_group = tags_group
         self.tag_flowbox = Gtk.FlowBox()
         self.tag_flowbox.set_selection_mode(Gtk.SelectionMode.SINGLE)
         self.tag_flowbox.set_max_children_per_line(3)
@@ -552,21 +652,21 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_password_strength_inline_label.set_valign(Gtk.Align.CENTER)
         self.detail_password_row.add_suffix(self.detail_password_strength_inline_label)
 
-        copy_btn = Gtk.Button(icon_name="edit-copy-symbolic")
-        copy_btn.set_css_classes(
+        self.detail_password_copy_button = Gtk.Button(icon_name="edit-copy-symbolic")
+        self.detail_password_copy_button.set_css_classes(
             ["flat", "circular", "card-action-btn", "password-action-btn"]
         )
-        copy_btn.set_tooltip_text(_("Copy password"))
-        copy_btn.connect("clicked", self._on_copy_password_clicked)
-        self.detail_password_row.add_suffix(copy_btn)
+        self.detail_password_copy_button.set_tooltip_text(_("Copy password"))
+        self.detail_password_copy_button.connect("clicked", self._on_copy_password_clicked)
+        self.detail_password_row.add_suffix(self.detail_password_copy_button)
 
-        gen_btn = Gtk.Button(icon_name="view-refresh-symbolic")
-        gen_btn.set_css_classes(
+        self.detail_password_generate_button = Gtk.Button(icon_name="view-refresh-symbolic")
+        self.detail_password_generate_button.set_css_classes(
             ["flat", "circular", "card-action-btn", "password-action-btn"]
         )
-        gen_btn.set_tooltip_text(_("Generate password"))
-        gen_btn.connect("clicked", self._on_open_generator_clicked)
-        self.detail_password_row.add_suffix(gen_btn)
+        self.detail_password_generate_button.set_tooltip_text(_("Generate password"))
+        self.detail_password_generate_button.connect("clicked", self._on_open_generator_clicked)
+        self.detail_password_row.add_suffix(self.detail_password_generate_button)
         identifiers_group.add(self.detail_password_row)
 
         self.detail_url_row = Adw.EntryRow.new()
@@ -875,6 +975,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         app.password_service = None
         app.repository = None
+        app.secret_service = None
+        app.secret_repository = None
         app.crypto_service = None
         app._session_master_password = None
         app.current_vault = None
@@ -921,6 +1023,191 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._suppress_filter_signals = True
             self.category_listbox.select_row(first)
             self._suppress_filter_signals = False
+
+    def load_secret_type_filters(self) -> None:
+        if not self.secret_mode_password_button or not self.secret_mode_api_button:
+            return
+
+        selected_value = self.current_secret_type_filter or SECRET_TYPE_PASSWORD
+        self._suppress_filter_signals = True
+        try:
+            self.secret_mode_password_button.set_active(selected_value == SECRET_TYPE_PASSWORD)
+            self.secret_mode_api_button.set_active(selected_value == SECRET_TYPE_API_TOKEN)
+        finally:
+            self._suppress_filter_signals = False
+
+        self._refresh_secret_mode_chips()
+
+    def _refresh_secret_mode_chips(self) -> None:
+        password_count = len(
+            self.password_service.list_entries(
+                category_filter="All",
+                tag_filter=None,
+                search_text=None,
+            )
+        )
+        api_count = len(self.secret_service.list_items(secret_type=SECRET_TYPE_API_TOKEN))
+
+        if self.secret_mode_password_count_label:
+            self.secret_mode_password_count_label.set_label(str(password_count))
+        if self.secret_mode_api_count_label:
+            self.secret_mode_api_count_label.set_label(str(api_count))
+
+    def _on_secret_mode_toggled(self, button: Gtk.ToggleButton, secret_type: str) -> None:
+        if self._suppress_filter_signals:
+            return
+        if not button.get_active():
+            return
+        self._set_secret_type_filter(secret_type)
+
+    def _set_secret_type_filter(self, secret_type: str) -> None:
+        self.current_secret_type_filter = secret_type
+        self.current_entry_id = None
+        self.is_creating_new = False
+        self.current_security_filter = None
+        self.current_provider_filter = None
+        self.current_organization_filter = None
+        if self.security_bar:
+            self.security_bar.set_active_filter(None)
+
+        if self.secret_mode_password_button and self.secret_mode_api_button:
+            self._suppress_filter_signals = True
+            try:
+                self.secret_mode_password_button.set_active(
+                    secret_type == SECRET_TYPE_PASSWORD
+                )
+                self.secret_mode_api_button.set_active(secret_type == SECRET_TYPE_API_TOKEN)
+            finally:
+                self._suppress_filter_signals = False
+
+        self._apply_sidebar_visibility_by_secret_type(secret_type)
+        if secret_type == SECRET_TYPE_API_TOKEN:
+            self.load_api_token_filters()
+
+        self._set_detail_mode(
+            SECRET_TYPE_API_TOKEN
+            if secret_type == SECRET_TYPE_API_TOKEN
+            else SECRET_TYPE_PASSWORD
+        )
+        self.load_entries()
+
+    def on_secret_type_selected(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
+        if self._suppress_filter_signals or row is None:
+            return
+        secret_type = self._secret_type_by_row.get(row)
+        if not secret_type:
+            return
+        self._set_secret_type_filter(secret_type)
+
+    def _apply_sidebar_visibility_by_secret_type(self, secret_type: str) -> None:
+        is_api = secret_type == SECRET_TYPE_API_TOKEN
+        if self.category_group:
+            self.category_group.set_visible(not is_api)
+        if self.tags_group:
+            self.tags_group.set_visible(not is_api)
+        if self.provider_group:
+            self.provider_group.set_visible(is_api)
+        if self.organization_group:
+            self.organization_group.set_visible(is_api)
+
+    def load_api_token_filters(self) -> None:
+        if not self.provider_listbox or not self.organization_listbox:
+            return
+
+        items = self.secret_service.list_items(secret_type=SECRET_TYPE_API_TOKEN)
+        providers = sorted(
+            {
+                str(item.metadata.get("provider", "")).strip()
+                for item in items
+                if str(item.metadata.get("provider", "")).strip()
+            },
+            key=str.lower,
+        )
+        organizations = sorted(
+            {
+                str(scope).strip()
+                for item in items
+                for scope in (
+                    item.metadata.get("scopes", [])
+                    if isinstance(item.metadata.get("scopes", []), list)
+                    else []
+                )
+                if str(scope).strip()
+            },
+            key=str.lower,
+        )
+
+        if self.provider_group:
+            self.provider_group.set_title(f"{_('Fournisseurs')} [{len(providers)}]")
+        if self.organization_group:
+            self.organization_group.set_title(f"{_('Organisation')} [{len(organizations)}]")
+
+        self._clear_listbox(self.provider_listbox)
+        self._clear_listbox(self.organization_listbox)
+        self._provider_by_row.clear()
+        self._organization_by_row.clear()
+
+        provider_all_row = self._build_filter_row(
+            _("Tous les fournisseurs"),
+            "network-workgroup-symbolic",
+        )
+        self.provider_listbox.append(provider_all_row)
+        self._provider_by_row[provider_all_row] = None
+        for provider in providers:
+            row = self._build_filter_row(provider, "network-server-symbolic")
+            self.provider_listbox.append(row)
+            self._provider_by_row[row] = provider
+
+        organization_all_row = self._build_filter_row(
+            _("Tous les scopes"),
+            "tag-symbolic",
+        )
+        self.organization_listbox.append(organization_all_row)
+        self._organization_by_row[organization_all_row] = None
+        for organization in organizations:
+            row = self._build_filter_row(organization, "tag-symbolic")
+            self.organization_listbox.append(row)
+            self._organization_by_row[row] = organization
+
+        self._suppress_filter_signals = True
+        try:
+            provider_selected = False
+            for row, value in self._provider_by_row.items():
+                if value == self.current_provider_filter:
+                    self.provider_listbox.select_row(row)
+                    provider_selected = True
+                    break
+            if not provider_selected:
+                self.provider_listbox.select_row(provider_all_row)
+
+            organization_selected = False
+            for row, value in self._organization_by_row.items():
+                if value == self.current_organization_filter:
+                    self.organization_listbox.select_row(row)
+                    organization_selected = True
+                    break
+            if not organization_selected:
+                self.organization_listbox.select_row(organization_all_row)
+        finally:
+            self._suppress_filter_signals = False
+
+    def on_provider_selected(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
+        if self._suppress_filter_signals or row is None:
+            return
+        if self.current_secret_type_filter != SECRET_TYPE_API_TOKEN:
+            return
+
+        self.current_provider_filter = self._provider_by_row.get(row)
+        self.load_entries()
+
+    def on_organization_selected(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
+        if self._suppress_filter_signals or row is None:
+            return
+        if self.current_secret_type_filter != SECRET_TYPE_API_TOKEN:
+            return
+
+        self.current_organization_filter = self._organization_by_row.get(row)
+        self.load_entries()
 
     def refresh_category_combo(self) -> None:
         if not self.detail_category_row:
@@ -1060,6 +1347,14 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._entry_by_child.clear()
         self._entry_child_by_id.clear()
         self._entry_card_by_id.clear()
+        self._secret_item_by_ui_id.clear()
+
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            self._load_api_token_entries()
+            self._refresh_secret_mode_chips()
+            return
+
+        self._set_detail_mode(SECRET_TYPE_PASSWORD)
 
         all_entries = self.password_service.list_entries(
             category_filter=self.current_category_filter,
@@ -1177,10 +1472,126 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._clear_detail()
             self._set_detail_sensitive(False)
 
+        self._refresh_secret_mode_chips()
+
+    def _load_api_token_entries(self) -> None:
+        if not self.entry_flowbox:
+            return
+
+        self._set_detail_mode(SECRET_TYPE_API_TOKEN)
+        self.load_api_token_filters()
+        if self.security_bar:
+            self.security_bar.set_visible(False)
+
+        secret_items = self.secret_service.list_items(
+            secret_type=SECRET_TYPE_API_TOKEN,
+            search_text=self.current_search_text or None,
+        )
+
+        if self.current_provider_filter:
+            secret_items = [
+                item
+                for item in secret_items
+                if str(item.metadata.get("provider", "")).strip()
+                == self.current_provider_filter
+            ]
+
+        if self.current_organization_filter:
+            secret_items = [
+                item
+                for item in secret_items
+                if self.current_organization_filter
+                in [
+                    str(scope).strip()
+                    for scope in (
+                        item.metadata.get("scopes", [])
+                        if isinstance(item.metadata.get("scopes", []), list)
+                        else []
+                    )
+                ]
+            ]
+
+        entries: list[PasswordEntry] = []
+        for item in secret_items:
+            if item.id is None:
+                continue
+            ui_id = self._to_secret_ui_id(item.id)
+            self._secret_item_by_ui_id[ui_id] = item
+
+            provider = str(item.metadata.get("provider", ""))
+            token_hint = str(item.metadata.get("token_hint", ""))
+            environment = str(item.metadata.get("environment", ""))
+            scopes_raw = item.metadata.get("scopes", [])
+            scopes = [str(scope) for scope in scopes_raw] if isinstance(scopes_raw, list) else []
+
+            entries.append(
+                PasswordEntry(
+                    id=ui_id,
+                    title=item.title,
+                    username=provider,
+                    password=token_hint,
+                    url=environment,
+                    notes="",
+                    category="API token",
+                    tags=scopes,
+                    password_validity_days=90,
+                    created_at=item.created_at,
+                    modified_at=item.modified_at,
+                    usage_count=item.usage_count,
+                )
+            )
+
+        self._suppress_entry_selection = True
+        for entry in self._sorted_entries(entries):
+            child = Gtk.FlowBoxChild()
+            child.add_css_class("entry-card-child")
+            card = EntryCard(entry, self.strength_service)
+            child.set_child(card)
+            self.entry_flowbox.append(child)
+            self._entry_by_child[child] = entry
+            if entry.id is not None:
+                self._entry_child_by_id[entry.id] = child
+                self._entry_card_by_id[entry.id] = card
+        self._suppress_entry_selection = False
+
+        if self.entry_counter_label:
+            self.entry_counter_label.set_label(
+                _("%(count)s API tokens shown") % {"count": len(entries)}
+            )
+
+        if self.empty_state_label:
+            self.empty_state_label.set_label(_("No API tokens for current filters"))
+            self.empty_state_label.set_visible(len(entries) == 0)
+
+        if self.zero_usage_label:
+            self.zero_usage_label.set_visible(False)
+
+        if entries:
+            child = self._entry_child_by_id.get(self.current_entry_id or -1)
+            if child is None:
+                child = self.entry_flowbox.get_child_at_index(0)
+            if child:
+                self._suppress_entry_selection = True
+                self.entry_flowbox.select_child(child)
+                self._suppress_entry_selection = False
+                entry = self._entry_by_child.get(child)
+                if entry:
+                    self.current_entry_id = entry.id
+                    self.is_creating_new = False
+                    self._populate_api_token_detail_from_ui_id(entry.id)
+                    self._mark_dirty(False)
+        else:
+            self.current_entry_id = None
+            self.is_creating_new = False
+            self._clear_detail()
+            self._set_detail_sensitive(False)
+
     # ------------------------------------------------------------------
     # Filters / sorting / selection
     # ------------------------------------------------------------------
     def on_category_selected(self, _listbox, row):
+        if self.current_secret_type_filter != SECRET_TYPE_PASSWORD:
+            return
         if self._suppress_filter_signals or not row:
             return
         category = self._category_by_row.get(row)
@@ -1197,6 +1608,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.load_entries()
 
     def on_tag_selected(self, _flowbox, child):
+        if self.current_secret_type_filter != SECRET_TYPE_PASSWORD:
+            return
         if self._suppress_filter_signals or not child:
             return
         tag = self._tag_by_child.get(child)
@@ -1217,6 +1630,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.load_entries()
 
     def _on_security_filter(self, _bar: SecurityDashboardBar, filter_type: object) -> None:
+        if self.current_secret_type_filter != SECRET_TYPE_PASSWORD:
+            return
         self.current_security_filter = filter_type if isinstance(filter_type, str) else None
         self.load_entries()
 
@@ -1250,7 +1665,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         self.is_creating_new = False
         self.current_entry_id = entry.id
-        self._populate_detail(entry)
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            self._populate_api_token_detail_from_ui_id(entry.id)
+        else:
+            self._populate_detail(entry)
         self._mark_dirty(False)
 
     def _sorted_entries(self, entries: list[PasswordEntry]) -> list[PasswordEntry]:
@@ -1270,17 +1688,65 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def on_add_clicked(self, _button: Gtk.Button) -> None:
         self.current_entry_id = None
         self.is_creating_new = True
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            self._set_detail_mode(SECRET_TYPE_API_TOKEN)
+        else:
+            self._set_detail_mode(SECRET_TYPE_PASSWORD)
         self._clear_detail()
         self._set_detail_sensitive(True)
         if self.detail_delete_button:
             self.detail_delete_button.set_sensitive(False)
         if self.detail_header_title:
-            self.detail_header_title.set_label(_("New entry"))
+            if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+                self.detail_header_title.set_label(_("New API token"))
+            else:
+                self.detail_header_title.set_label(_("New entry"))
         if self.detail_meta_label:
             self.detail_meta_label.set_label("")
         self._mark_dirty(False)
 
     def _save_current_entry(self, *, reload_entries: bool) -> bool:
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            payload = self._collect_detail_api_token()
+            if payload is None:
+                return False
+
+            try:
+                if self.is_creating_new:
+                    token_value = payload[1] or ""
+                    created = self.secret_service.create_api_token(
+                        title=payload[0],
+                        token=token_value,
+                        metadata=payload[2],
+                    )
+                else:
+                    source_id = self.current_entry_id or 0
+                    real_id = self._from_secret_ui_id(source_id)
+                    created = self.secret_service.update_api_token(
+                        item_id=real_id,
+                        title=payload[0],
+                        token=payload[1],
+                        metadata=payload[2],
+                    )
+
+                if created.id is None:
+                    raise ValueError("API token saved without identifier")
+
+                self.current_entry_id = self._to_secret_ui_id(created.id)
+                self.is_creating_new = False
+
+                self._set_unsaved(False)
+                if reload_entries:
+                    self.load_entries()
+                return True
+
+            except Exception as exc:
+                logger.exception("Unable to save API token")
+                from src.ui.notifications import error as show_error
+
+                show_error(self, _("Unable to save API token: %s") % str(exc))
+                return False
+
         payload = self._collect_detail_entry()
         if payload is None:
             return False
@@ -1342,6 +1808,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._mark_dirty(False)
             return
 
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            self._populate_api_token_detail_from_ui_id(self.current_entry_id)
+            self._mark_dirty(False)
+            return
+
         entry = self.password_service.get_entry(self.current_entry_id)
         if not entry:
             return
@@ -1354,6 +1825,21 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.on_delete_clicked(self.current_entry_id)
 
     def _on_copy_password_clicked(self, _button: Gtk.Button) -> None:
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            if self.current_entry_id is None:
+                self.show_toast(_("Token is required"))
+                return
+            real_id = self._from_secret_ui_id(self.current_entry_id)
+            try:
+                token = self.secret_service.reveal_api_token(real_id)
+            except Exception:
+                self.show_toast(_("Unable to reveal token"))
+                return
+            self.copy_to_clipboard(token, _("API token copied"))
+            if self.current_sort_mode == "usage_desc":
+                self.load_entries()
+            return
+
         password = ""
 
         if self.current_entry_id is not None:
@@ -1530,6 +2016,166 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             password_validity_days=int(validity_row.get_value()),
         )
 
+    def _collect_detail_api_token(self) -> tuple[str, str | None, dict[str, object]] | None:
+        rows = self._require_detail_rows()
+        if not rows:
+            return None
+
+        (
+            title_row,
+            provider_row,
+            token_row,
+            environment_row,
+            _category_row,
+            scopes_row,
+            validity_row,
+            notes_view,
+        ) = rows
+
+        title = title_row.get_text().strip()
+        provider = provider_row.get_text().strip()
+        token = token_row.get_text().strip()
+        environment = environment_row.get_text().strip() or "other"
+        scopes = [item.strip() for item in scopes_row.get_text().split(",") if item.strip()]
+
+        if not title:
+            self.show_toast(_("Title is required"))
+            return None
+        if not provider:
+            self.show_toast(_("Provider is required"))
+            return None
+        if self.is_creating_new and not token:
+            self.show_toast(_("Token is required"))
+            return None
+
+        notes_buffer = notes_view.get_buffer()
+        notes = notes_buffer.get_text(
+            notes_buffer.get_start_iter(),
+            notes_buffer.get_end_iter(),
+            True,
+        )
+
+        token_to_save: str | None = token or None
+        if not self.is_creating_new and self.current_entry_id is not None:
+            current_item = self._secret_item_by_ui_id.get(self.current_entry_id)
+            if current_item is not None:
+                current_hint = str(current_item.metadata.get("token_hint", "")).strip()
+                if current_hint and token == current_hint:
+                    token_to_save = None
+
+        metadata: dict[str, object] = {
+            "provider": provider,
+            "environment": environment,
+            "scopes": scopes,
+            "expiration_warning_days": int(validity_row.get_value()),
+            "notes": notes,
+        }
+        return (title, token_to_save, metadata)
+
+    def _populate_api_token_detail_from_ui_id(self, ui_id: int | None) -> None:
+        if ui_id is None:
+            return
+        item = self._secret_item_by_ui_id.get(ui_id)
+        if item is None:
+            return
+
+        rows = self._require_detail_rows()
+        if not rows:
+            return
+
+        self._set_detail_mode(SECRET_TYPE_API_TOKEN)
+        self._updating_detail = True
+        self._set_detail_sensitive(True)
+
+        (
+            title_row,
+            provider_row,
+            token_row,
+            environment_row,
+            _category_row,
+            scopes_row,
+            validity_row,
+            notes_view,
+        ) = rows
+
+        title_row.set_text(item.title)
+        provider_row.set_text(str(item.metadata.get("provider", "")))
+        token_row.set_text(str(item.metadata.get("token_hint", "")))
+        environment_row.set_text(str(item.metadata.get("environment", "other")))
+
+        scopes_raw = item.metadata.get("scopes", [])
+        scopes = [str(scope) for scope in scopes_raw] if isinstance(scopes_raw, list) else []
+        scopes_row.set_text(", ".join(scopes))
+
+        warning_days = item.metadata.get("expiration_warning_days")
+        validity_row.set_value(float(int(warning_days) if warning_days is not None else 30))
+        notes_view.get_buffer().set_text(str(item.metadata.get("notes", "")))
+
+        if self.detail_header_title:
+            self.detail_header_title.set_label(item.title)
+        if self.detail_meta_label:
+            modified = (
+                item.modified_at.strftime("%Y-%m-%d %H:%M")
+                if item.modified_at
+                else _("Unknown")
+            )
+            self.detail_meta_label.set_label(_("API token · Last modified: %s") % modified)
+
+        self._update_detail_strength_indicator("")
+        self._updating_detail = False
+
+    def _set_detail_mode(self, mode: str) -> None:
+        self.current_detail_mode = mode
+        rows = self._require_detail_rows()
+        if rows is None:
+            return
+        (
+            _title_row,
+            username_row,
+            password_row,
+            url_row,
+            category_row,
+            tags_row,
+            validity_row,
+            _notes_view,
+        ) = rows
+
+        if mode == SECRET_TYPE_API_TOKEN:
+            username_row.set_title(_("Provider"))
+            password_row.set_title(_("API token"))
+            url_row.set_title(_("Environment"))
+            tags_row.set_title(_("Scopes (comma-separated)"))
+            category_row.set_visible(False)
+            validity_row.set_title(_("Expiration warning (days)"))
+            validity_row.set_value(30)
+            if self.detail_password_strength_inline_label:
+                self.detail_password_strength_inline_label.set_visible(False)
+            if self.detail_password_copy_button:
+                self.detail_password_copy_button.set_tooltip_text(_("Copy token"))
+            if self.detail_password_generate_button:
+                self.detail_password_generate_button.set_visible(False)
+        else:
+            username_row.set_title(_("Username"))
+            password_row.set_title(_("Password"))
+            url_row.set_title(_("URL"))
+            tags_row.set_title(_("Tags"))
+            category_row.set_visible(True)
+            validity_row.set_title(_("Password validity (days)"))
+            if self.detail_password_strength_inline_label:
+                self.detail_password_strength_inline_label.set_visible(True)
+            if self.detail_password_copy_button:
+                self.detail_password_copy_button.set_tooltip_text(_("Copy password"))
+            if self.detail_password_generate_button:
+                self.detail_password_generate_button.set_visible(True)
+
+    @staticmethod
+    def _to_secret_ui_id(secret_item_id: int) -> int:
+        return -1_000_000 - secret_item_id
+
+    @staticmethod
+    def _from_secret_ui_id(ui_id: int) -> int:
+        return -1_000_000 - ui_id
+
     def _connect_detail_change_signals(self) -> None:
         rows = self._require_detail_rows()
         if not rows:
@@ -1585,10 +2231,20 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         password_row: Adw.PasswordEntryRow,
         _param: object,
     ) -> None:
+        if self.current_detail_mode == SECRET_TYPE_API_TOKEN:
+            return
         self._update_detail_strength_indicator(password_row.get_text())
 
     def _update_detail_strength_indicator(self, password: str) -> None:
         if not self.detail_password_row or not self.detail_password_strength_inline_label:
+            return
+
+        for level in range(5):
+            self.detail_password_row.remove_css_class(f"password-row-strength-{level}")
+            self.detail_password_strength_inline_label.remove_css_class(f"strength-{level}")
+
+        if self.current_detail_mode == SECRET_TYPE_API_TOKEN:
+            self.detail_password_strength_inline_label.set_label("")
             return
 
         result = self.strength_service.evaluate(password)
@@ -1596,10 +2252,6 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         score = score_raw if isinstance(score_raw, int) else 0
         label = str(result.get("label", ""))
         crack_time = str(result.get("crack_time", ""))
-
-        for level in range(5):
-            self.detail_password_row.remove_css_class(f"password-row-strength-{level}")
-            self.detail_password_strength_inline_label.remove_css_class(f"strength-{level}")
 
         normalized_score = max(0, min(score, 4))
         self.detail_password_row.add_css_class(f"password-row-strength-{normalized_score}")
@@ -1786,6 +2438,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         text_col.append(count_lbl)
 
         line.append(text_col)
+
+        entry_chip = Gtk.Label(label=str(entry_count))
+        entry_chip.add_css_class("vault-entry-chip")
+        entry_chip.set_valign(Gtk.Align.CENTER)
+        line.append(entry_chip)
 
         if vault.is_default:
             badge = Gtk.Label(label=_("default"))
@@ -1992,6 +2649,12 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def _delete_confirmed(self, response: str, entry_id: int) -> None:
         if response != "delete":
             return
+        if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
+            self.secret_service.delete_secret(self._from_secret_ui_id(entry_id))
+            self.current_entry_id = None
+            self.load_entries()
+            self.show_toast(_("API token deleted"))
+            return
         self.password_service.delete_entry(entry_id)
         self.current_entry_id = None
         self.load_tags()
@@ -2093,6 +2756,62 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         content.append(Gtk.Label(label=label, xalign=0))
         row.set_child(content)
         return row
+
+    @staticmethod
+    def _build_filter_row(label: str, icon_name: str) -> Gtk.ListBoxRow:
+        row = Gtk.ListBoxRow()
+        row.add_css_class("secret-subfilter-row")
+
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=8)
+        content.set_margin_top(6)
+        content.set_margin_bottom(6)
+        content.set_margin_start(10)
+        content.set_margin_end(10)
+
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.add_css_class("secret-subfilter-icon")
+        content.append(icon)
+
+        text = Gtk.Label(label=label, xalign=0)
+        text.add_css_class("secret-subfilter-label")
+        text.set_hexpand(True)
+        content.append(text)
+
+        row.set_child(content)
+        return row
+
+    @staticmethod
+    def _build_secret_mode_button(
+        label: str,
+        icon_name: str,
+        tooltip: str,
+    ) -> tuple[Gtk.ToggleButton, Gtk.Label]:
+        button = Gtk.ToggleButton()
+        button.add_css_class("secret-mode-btn")
+        button.set_tooltip_text(tooltip)
+        button.set_hexpand(True)
+        button.set_halign(Gtk.Align.FILL)
+
+        content = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        content.set_halign(Gtk.Align.FILL)
+        content.set_valign(Gtk.Align.CENTER)
+        content.set_hexpand(True)
+
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.add_css_class("secret-mode-icon")
+        content.append(icon)
+
+        text = Gtk.Label(label=label, xalign=0)
+        text.add_css_class("secret-mode-label")
+        text.set_hexpand(True)
+        content.append(text)
+
+        chip = Gtk.Label(label="0", xalign=0)
+        chip.add_css_class("secret-mode-chip")
+        content.append(chip)
+
+        button.set_child(content)
+        return button, chip
 
     def _require_detail_rows(
         self,
