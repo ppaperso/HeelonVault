@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import logging
 import sqlite3
 from collections.abc import Iterator
 from pathlib import Path
@@ -9,10 +10,22 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from src.models.secret_types import SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY
 from src.repositories.migrations.migrate_v1_to_v2 import run as migrate_v1_to_v2
 from src.repositories.secret_repository import SecretRepository
 from src.services.crypto_service import CryptoService
 from src.services.secret_service import SecretService
+from src.services.ssh_key_utils import PassphraseMismatch, UnsupportedKeyFormat
+from tests.fixtures.ssh_fixture_data import (
+    ED25519_FINGERPRINT_SHA256,
+    ED25519_PRIVATE_PATH,
+    ED25519_PUBLIC_PATH,
+    RSA_4096_FINGERPRINT_SHA256,
+    RSA_4096_PASSPHRASE,
+    RSA_4096_PRIVATE_PATH,
+    RSA_4096_PUBLIC_PATH,
+    read_text,
+)
 
 
 @pytest.fixture()
@@ -224,3 +237,283 @@ def test_update_api_token_without_new_token_preserves_payload(service: SecretSer
     assert updated.metadata["environment"] == "prod"
     assert updated.metadata["notes"] == "updated note"
     assert service.reveal_api_token(created.id or -1) == "token_initial_value"
+
+
+def test_create_ssh_key_and_reveal_private_key(service: SecretService) -> None:
+    created = service.create_ssh_key(
+        title="Deploy key",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+        metadata={"tags": ["infra", "prod"]},
+    )
+
+    assert created.id is not None
+    assert created.secret_type == SECRET_TYPE_SSH_KEY
+    assert created.payload == ""
+
+    item = service.get_item(created.id or -1)
+    assert item is not None
+    assert item.metadata["algorithm"] == "ed25519"
+    assert item.metadata["fingerprint"] == ED25519_FINGERPRINT_SHA256
+    assert item.metadata["has_passphrase"] is False
+
+    private_key = service.reveal_ssh_private_key(created.id or -1)
+    assert private_key.startswith("-----BEGIN OPENSSH PRIVATE KEY-----")
+
+
+def test_mixed_types_coexist_with_password_entries_without_interference(
+    service: SecretService,
+) -> None:
+    # Insert a legacy password row directly to validate table coexistence.
+    service.repository.conn.execute(
+        "INSERT INTO passwords (title, password_data, deleted_at) VALUES (?, ?, NULL)",
+        ("Ops Login", "enc_pwd_blob"),
+    )
+    service.repository.conn.commit()
+
+    api_item = service.create_api_token(
+        title="Ops API",
+        token="ops_token_123",
+        metadata={"provider": "ops", "environment": "prod", "scopes": ["read"]},
+    )
+    ssh_item = service.create_ssh_key(
+        title="Ops SSH",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+        metadata={"tags": ["infra"]},
+    )
+
+    mixed_search = service.list_items(search_text="Ops")
+    assert len(mixed_search) == 2
+    assert {item.secret_type for item in mixed_search} == {
+        SECRET_TYPE_API_TOKEN,
+        SECRET_TYPE_SSH_KEY,
+    }
+
+    api_only = service.list_items(secret_type=SECRET_TYPE_API_TOKEN)
+    ssh_only = service.list_items(secret_type=SECRET_TYPE_SSH_KEY)
+    assert [item.id for item in api_only] == [api_item.id]
+    assert [item.id for item in ssh_only] == [ssh_item.id]
+
+    assert service.reveal_api_token(api_item.id or -1) == "ops_token_123"
+    assert service.reveal_ssh_private_key(ssh_item.id or -1).startswith(
+        "-----BEGIN OPENSSH PRIVATE KEY-----"
+    )
+
+    legacy_password_row = service.repository.conn.execute(
+        "SELECT title, password_data FROM passwords WHERE title = ?",
+        ("Ops Login",),
+    ).fetchone()
+    assert legacy_password_row is not None
+    assert legacy_password_row["title"] == "Ops Login"
+    assert legacy_password_row["password_data"] == "enc_pwd_blob"
+
+
+def test_mixed_types_usage_count_is_isolated(service: SecretService) -> None:
+    api_item = service.create_api_token(
+        title="Usage API",
+        token="usage_api",
+        metadata={"provider": "usage", "environment": "prod", "scopes": []},
+    )
+    ssh_item = service.create_ssh_key(
+        title="Usage SSH",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+        metadata={},
+    )
+
+    service.reveal_api_token(api_item.id or -1)
+    service.reveal_api_token(api_item.id or -1)
+    service.reveal_ssh_private_key(ssh_item.id or -1)
+
+    api_after = service.get_item(api_item.id or -1)
+    ssh_after = service.get_item(ssh_item.id or -1)
+    assert api_after is not None
+    assert ssh_after is not None
+    assert api_after.usage_count == 2
+    assert ssh_after.usage_count == 1
+
+
+def test_create_ssh_key_with_rsa_passphrase(service: SecretService) -> None:
+    created = service.create_ssh_key(
+        title="Legacy RSA",
+        private_key=read_text(RSA_4096_PRIVATE_PATH),
+        public_key=read_text(RSA_4096_PUBLIC_PATH),
+        metadata={},
+        passphrase=RSA_4096_PASSPHRASE,
+    )
+
+    item = service.get_item(created.id or -1)
+    assert item is not None
+    assert item.metadata["algorithm"] == "rsa"
+    assert item.metadata["fingerprint"] == RSA_4096_FINGERPRINT_SHA256
+    assert item.metadata["has_passphrase"] is True
+    assert item.metadata["key_size"] == 4096
+
+
+def test_update_ssh_key_is_metadata_only(service: SecretService) -> None:
+    created = service.create_ssh_key(
+        title="Server key",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+        metadata={"comment": "initial", "tags": ["old"]},
+    )
+
+    original_private_key = service.reveal_ssh_private_key(created.id or -1)
+
+    updated = service.update_ssh_key(
+        item_id=created.id or -1,
+        title="Server key renamed",
+        metadata={"comment": "rotated metadata", "tags": ["infra", "prod"]},
+    )
+
+    assert updated.title == "Server key renamed"
+    assert updated.metadata["comment"] == "rotated metadata"
+
+    private_key_after_update = service.reveal_ssh_private_key(created.id or -1)
+    assert private_key_after_update == original_private_key
+
+
+# ── PR2 : Import / Export ────────────────────────────────────────────────────
+
+def test_import_ssh_key_from_file_ed25519(service: SecretService) -> None:
+    result = service.import_ssh_key_from_file(ED25519_PRIVATE_PATH)
+
+    assert result.id is not None
+    assert result.secret_type == SECRET_TYPE_SSH_KEY
+    assert result.payload == ""
+    assert result.metadata["algorithm"] == "ed25519"
+    assert result.metadata["fingerprint"] == ED25519_FINGERPRINT_SHA256
+    assert result.metadata["has_passphrase"] is False
+
+
+def test_import_ssh_key_from_file_rsa_with_passphrase(service: SecretService) -> None:
+    result = service.import_ssh_key_from_file(
+        RSA_4096_PRIVATE_PATH,
+        passphrase=RSA_4096_PASSPHRASE,
+    )
+
+    assert result.id is not None
+    assert result.metadata["algorithm"] == "rsa"
+    assert result.metadata["fingerprint"] == RSA_4096_FINGERPRINT_SHA256
+    assert result.metadata["has_passphrase"] is True
+    assert result.metadata["key_size"] == 4096
+
+
+def test_import_ssh_key_wrong_passphrase_raises_passphrase_mismatch(service: SecretService) -> None:
+    with pytest.raises(PassphraseMismatch, match="passphrase"):
+        service.import_ssh_key_from_file(RSA_4096_PRIVATE_PATH, passphrase="wrong!")
+
+
+def test_ssh_operations_do_not_log_private_material(
+    service: SecretService,
+    caplog: pytest.LogCaptureFixture,
+) -> None:
+    caplog.set_level(logging.DEBUG)
+    private_key = read_text(ED25519_PRIVATE_PATH)
+
+    created = service.create_ssh_key(
+        title="Log hygiene",
+        private_key=private_key,
+        public_key=read_text(ED25519_PUBLIC_PATH),
+        metadata={},
+    )
+    service.reveal_ssh_private_key(created.id or -1)
+
+    with pytest.raises(PassphraseMismatch):
+        service.import_ssh_key_from_file(RSA_4096_PRIVATE_PATH, passphrase="not-the-right-one")
+
+    logged = caplog.text
+    assert "BEGIN OPENSSH PRIVATE KEY" not in logged
+    assert private_key[:80] not in logged
+    assert "not-the-right-one" not in logged
+
+
+def test_import_ssh_key_unsupported_format_raises_unsupported_key_format(
+    service: SecretService,
+    tmp_path: Path,
+) -> None:
+    bad_key = tmp_path / "garbage_key"
+    bad_key.write_text(
+        "-----BEGIN GARBAGE KEY-----\nABCDEFGHIJKLMNOP\n-----END GARBAGE KEY-----\n"
+    )
+    (tmp_path / "garbage_key.pub").write_text(read_text(ED25519_PUBLIC_PATH))
+
+    with pytest.raises(UnsupportedKeyFormat):
+        service.import_ssh_key_from_file(bad_key)
+
+
+def test_export_ssh_key_creates_file_with_correct_permissions(
+    service: SecretService,
+    tmp_path: Path,
+) -> None:
+    created = service.create_ssh_key(
+        title="Export test key",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+    )
+
+    dest = tmp_path / "exported_ed25519"
+    service.export_ssh_key(created.id or -1, dest)
+
+    assert dest.exists()
+    mode_octal = oct(dest.stat().st_mode)
+    assert mode_octal.endswith("600"), f"Expected 0o600 permissions, got {mode_octal}"
+    content = dest.read_text("utf-8")
+    assert "OPENSSH PRIVATE KEY" in content
+
+
+def test_export_ssh_key_refuses_overwrite(service: SecretService, tmp_path: Path) -> None:
+    created = service.create_ssh_key(
+        title="Overwrite test key",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+    )
+
+    dest = tmp_path / "existing_key"
+    dest.write_text("original content here")
+
+    with pytest.raises(FileExistsError):
+        service.export_ssh_key(created.id or -1, dest)
+
+    assert dest.read_text() == "original content here"
+
+
+def test_reveal_ssh_key_increments_usage_count(service: SecretService) -> None:
+    created = service.create_ssh_key(
+        title="Usage count test",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+    )
+
+    item = service.get_item(created.id or -1)
+    assert item is not None
+    assert item.usage_count == 0
+
+    service.reveal_ssh_private_key(created.id or -1)
+    item = service.get_item(created.id or -1)
+    assert item is not None
+    assert item.usage_count == 1
+
+    service.reveal_ssh_private_key(created.id or -1)
+    item = service.get_item(created.id or -1)
+    assert item is not None
+    assert item.usage_count == 2
+
+
+def test_repr_does_not_leak_payload(service: SecretService) -> None:
+    created = service.create_ssh_key(
+        title="Repr leak test",
+        private_key=read_text(ED25519_PRIVATE_PATH),
+        public_key=read_text(ED25519_PUBLIC_PATH),
+    )
+
+    # Get item directly from repository (payload still set as encrypted bytes)
+    raw_item = service.repository.get_item(created.id or -1)
+    assert raw_item is not None
+    assert raw_item.payload  # encrypted payload is present
+
+    repr_str = repr(raw_item)
+    assert "PRIVATE" not in repr_str
+    assert "OPENSSH" not in repr_str
+    assert "BEGIN" not in repr_str

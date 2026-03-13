@@ -12,3 +12,4 @@ reportlab>=4.2.0
 # Qualité statique : stubs GI pour Pylance/Pylint (sans masquer les erreurs).
 PyGObject-stubs>=2.13.0
 pylint>=3.2.0
+bcrypt>=4.0.0

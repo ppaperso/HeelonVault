@@ -110,6 +110,100 @@ def test_list_items_filters_by_type_and_search(repo: SecretRepository) -> None:
     assert search[0].title == "Serveur SSH"
 
 
+def test_list_items_mixed_types_coexist_without_interference(repo: SecretRepository) -> None:
+    api = repo.create_item(
+        _make_item(
+            title="Zeta API",
+            secret_type="api_token",
+            metadata={"provider": "zeta", "environment": "prod", "scopes": ["rw"]},
+            payload=b"enc_api",
+            tags=["api", "prod"],
+        )
+    )
+    ssh = repo.create_item(
+        _make_item(
+            title="Alpha SSH",
+            secret_type="ssh_key",
+            metadata={
+                "algorithm": "ed25519",
+                "fingerprint": "SHA256:abc",
+                "public_key_preview": "ssh-ed25519 AAA...",
+                "has_passphrase": False,
+            },
+            payload=b"enc_ssh",
+            tags=["infra"],
+        )
+    )
+    document = repo.create_item(
+        _make_item(
+            title="Bravo Document",
+            secret_type="secure_document",
+            metadata={
+                "filename": "secrets.pdf",
+                "mime_type": "application/pdf",
+                "size_bytes": 1234,
+                "sha256": "00" * 32,
+                "blob_path": "vault/file.bin",
+            },
+            payload=b"enc_doc",
+            tags=["doc"],
+        )
+    )
+
+    all_items = repo.list_items()
+    # Repository sorting contract is case-insensitive by title.
+    assert [item.title for item in all_items] == ["Alpha SSH", "Bravo Document", "Zeta API"]
+
+    ssh_only = repo.list_items(secret_type="ssh_key")
+    assert [item.id for item in ssh_only] == [ssh.id]
+
+    api_search = repo.list_items(search_text="API")
+    assert [item.id for item in api_search] == [api.id]
+
+    doc_search = repo.list_items(search_text="Document")
+    assert [item.id for item in doc_search] == [document.id]
+
+
+def test_mixed_type_usage_and_details_remain_isolated(repo: SecretRepository) -> None:
+    api = repo.create_item(
+        _make_item(
+            title="API isolated",
+            secret_type="api_token",
+            metadata={"provider": "acme", "environment": "prod", "scopes": ["repo"]},
+            payload=b"enc_api",
+        )
+    )
+    ssh = repo.create_item(
+        _make_item(
+            title="SSH isolated",
+            secret_type="ssh_key",
+            metadata={
+                "algorithm": "rsa",
+                "fingerprint": "SHA256:xyz",
+                "public_key_preview": "ssh-rsa AAA...",
+                "has_passphrase": True,
+                "key_size": 4096,
+            },
+            payload=b"enc_ssh",
+        )
+    )
+
+    repo.record_usage(api.id or -1, amount=2)
+    repo.record_usage(ssh.id or -1, amount=1)
+
+    fetched_api = repo.get_item(api.id or -1)
+    fetched_ssh = repo.get_item(ssh.id or -1)
+    assert fetched_api is not None
+    assert fetched_ssh is not None
+
+    assert fetched_api.secret_type == "api_token"
+    assert fetched_ssh.secret_type == "ssh_key"
+    assert fetched_api.usage_count == 2
+    assert fetched_ssh.usage_count == 1
+    assert fetched_api.metadata.get("provider") == "acme"
+    assert fetched_ssh.metadata.get("algorithm") == "rsa"
+
+
 def test_update_item_persists_changes(repo: SecretRepository) -> None:
     created = repo.create_item(_make_item())
     created.title = "GitHub Token Updated"

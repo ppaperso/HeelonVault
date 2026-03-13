@@ -14,6 +14,15 @@ Transformer HeelonVault d'un password manager en un **personal & professional se
 
 Ce spec est orienté implémentation pour la prochaine session de développement.
 
+### État d'avancement (PR4)
+
+- Phase 1 (API tokens): complète
+- Phase 2 (SSH keys): complète et stabilisée
+- Phase 3 (secure documents): planifiée, non démarrée
+
+Phase 2 est clôturée avec couverture de régression inter-types, non-régression sécurité,
+et checklist de release validée.
+
 ---
 
 ## 2. Périmètre
@@ -437,7 +446,107 @@ SecretService.delete_secret(item_id) -> None
 1. Ajouter les `TypedDict` pour `SshKeyMetadata` et les formulaires
 2. Ajouter l'import de clé depuis fichier + export sécurisé
 3. Ajouter les helpers fingerprint et validation de format
-4. Décision à prendre : **import-only en Phase 2** (génération in-app reportée à Phase 2.1)
+4. Statut PR4 : **complet en mode import-only**
+
+#### Flux utilisateur SSH validé (Phase 2)
+
+- Import d'une clé privée OpenSSH depuis fichier avec détection de `.pub` associé
+- Gestion des clés chiffrées par passphrase (prompt + erreurs métier explicites)
+- Reveal temporisé (30s) en UI, puis remasquage automatique
+- Copy via clipboard avec auto-clear à 30 secondes
+- Export sécurisé (écriture atomique, permissions `0o600`, confirmation overwrite)
+- Filtres UI algorithme + commentaire/tags
+
+#### Reports explicites hors scope PR4
+
+- Génération de clés in-app: reportée à **Phase 2.1**
+- Support additionnel PEM/PPK: reporté **après stabilisation PR4**
+
+#### Phase 2.1 — Suite recommandée après stabilisation PR4
+
+Objectif : étendre la gestion SSH sans casser la stabilité atteinte en PR4.
+
+Périmètre recommandé Phase 2.1 :
+
+- Génération de clés SSH in-app avec assistant dédié
+- Support initial de génération `ED25519` et `RSA 4096`
+- Passphrase optionnelle à la génération
+- Affichage immédiat des métadonnées calculées après génération
+- Proposition d'export immédiat du couple généré
+
+Périmètre explicitement exclu de la première itération 2.1 :
+
+- Agent SSH / intégration `ssh-agent`
+- Rotation distante de clés sur serveurs
+- Import PKCS#11 / HSM / smartcard
+- Conversion avancée multi-format pendant la génération
+
+Flux utilisateur cible Phase 2.1 :
+
+1. L'utilisateur clique sur `Générer une clé SSH`
+2. Il choisit l'algorithme (`ED25519` par défaut, `RSA 4096` en option)
+3. Il renseigne un titre, un commentaire et éventuellement une passphrase
+4. L'application génère la paire en mémoire, calcule fingerprint / preview / key size
+5. L'utilisateur peut enregistrer dans le vault puis exporter la clé privée et la `.pub`
+6. L'UI revient sur le détail SSH existant avec les mêmes garde-fous PR4
+
+Découpage technique recommandé :
+
+- 2.1.a : service de génération SSH pur domaine
+    - nouvelle API `SecretService.generate_ssh_key(...)`
+    - génération OpenSSH stable et déterministe côté tests
+    - réutilisation stricte de `_normalize_ssh_metadata` et du pipeline de stockage existant
+- 2.1.b : dialogue UI de génération
+    - formulaire minimal avec algorithme, titre, commentaire, passphrase, confirmation passphrase
+    - pas d'édition libre du payload après génération
+    - pas de copie persistante non chiffrée en UI hors reveal/export déjà existants
+- 2.1.c : export post-génération
+    - export de la clé privée en `.key`
+    - export de la clé publique en `.pub`
+    - confirmation overwrite inchangée
+
+Formats recommandés pour la génération 2.1 :
+
+- Format privé : **OpenSSH** en priorité
+- Format public : **OpenSSH `.pub`**
+- PEM privé : option ultérieure, pas en premier incrément 2.1
+- PPK : reste hors scope tant qu'aucun besoin utilisateur fort n'est validé
+
+Pourquoi cette séquence :
+
+- la génération in-app apporte une vraie valeur utilisateur sans réouvrir le chantier import/export déjà stabilisé
+- `ED25519` couvre le cas moderne par défaut avec une UX simple
+- `RSA 4096` couvre la compatibilité legacy la plus fréquente
+- repousser PEM/PPK évite de multiplier les branches de validation, les messages d'erreur et la surface de test trop tôt
+
+Critères d'acceptance proposés pour Phase 2.1 :
+
+- génération réussie d'une paire `ED25519` sans passphrase
+- génération réussie d'une paire `RSA 4096` avec passphrase
+- fingerprint, key size, commentaire, preview et indicateur `Protected/Unprotected` correctement dérivés
+- export privé + public sans fuite en logs
+- aucun secret en clair dans `repr`, tracebacks ou toasts
+- aucune régression sur import/export/reveal/copy/filtres de la Phase 2
+
+Tests à prévoir pour 2.1 :
+
+- tests unitaires de génération pour `ED25519` et `RSA 4096`
+- tests de validation passphrase / confirmation passphrase
+- tests de non-régression service sur `create_ssh_key` vs `generate_ssh_key`
+- tests UI du dialogue de génération
+- tests sécurité sur absence de fuite dans logs / clipboard / panic lock après génération
+
+Risques techniques à surveiller :
+
+- divergence entre formats générés et formats attendus par le pipeline d'import existant
+- complexité UX si trop d'options cryptographiques sont exposées trop tôt
+- couverture de tests insuffisante si PEM/PPK est introduit en même temps que la génération
+
+Recommandation de planning :
+
+- itération 1 : génération `ED25519` seule
+- itération 2 : ajout `RSA 4096` avec passphrase
+- itération 3 : réévaluation du besoin PEM/PPK selon retours terrain
 
 ### Phase 3 : Secure Documents
 
@@ -452,11 +561,12 @@ SecretService.delete_secret(item_id) -> None
 
 ### 11.1 Tests unitaires
 
-- `test_secret_repository.py` — CRUD + filtres + usage_count
-- `test_secret_service.py` — validation metadata, encrypt/decrypt, politiques de sécurité
+- `test_secret_repository.py` — CRUD + filtres + usage_count + coexistence inter-types
+- `test_secret_service.py` — validation metadata, encrypt/decrypt, politiques de sécurité + coexistence password/api_token/ssh_key
 - `test_document_encryption.py` — écriture atomique, intégrité SHA-256, rollback si hash invalide
 - `test_ssh_metadata_parsing.py` — parsing fingerprint, algorithme, détection passphrase
 - `test_migration.py` — migration depuis DB v1 (password-only) vers v2 (mixed)
+- `test_main_window_security_regression.py` — clipboard auto-clear API/SSH + panic/soft lock avec détail SSH ouvert
 
 ### 11.2 Tests d'intégration
 
@@ -468,6 +578,7 @@ SecretService.delete_secret(item_id) -> None
 
 - Aucun secret en clair dans les logs (analyse des outputs de log)
 - Auto-clear clipboard pour copy token/clé
+- Panic lock / soft lock validés avec un item SSH ouvert
 - Fichier document chiffré : absence de patterns plaintext dans le binaire
 - Vérification que `slots=True` empêche bien l'injection d'attributs dynamiques sur `SecretItem`
 
@@ -493,6 +604,7 @@ SecretService.delete_secret(item_id) -> None
 | 1 | Garder la table `passwords` legacy long terme ou converger en v2 ? | **Converger en v2** post-stabilisation Phase 3. Pas de dette technique urgente. | Post-Phase 3 |
 | 2 | Taille max document Phase 3 initiale ? | **25 Mo** — couvre la majorité des usages (PDF, certificats, archives légères) sans complexifier la gestion mémoire | Avant Phase 3 |
 | 3 | Génération SSH in-app en Phase 2 ou import-only d'abord ? | **Import-only Phase 2**, génération in-app en Phase 2.1 — réduit la surface d'attaque au démarrage | Avant Phase 2 |
+| 4 | Support PEM/PPK en Phase 2 ? | **Non** : reporté après stabilisation PR4 pour éviter l'élargissement du scope Phase 2 | Post-PR4 |
 
 ---
 
@@ -524,3 +636,32 @@ heelonvault/
 ```
 
 Le module `core` ne doit contenir **aucune** référence directe à `ee`. Les points d'extension (hooks, event bus) sont définis dans `core` mais leur implémentation EE est injectée au démarrage.
+
+---
+
+## 16. Release Checklist — Clôture Phase 2 (PR4)
+
+### 16.1 Garde-fous scope
+
+- Scope Phase 2 figé : aucune nouvelle fonctionnalité ajoutée en PR4
+- Toute anomalie détectée en régression corrigée dans PR4 et tracée dans ce spec
+
+### 16.2 Validation qualité
+
+- Suite `pytest` complète: zéro régression inter-PR
+- `ruff` vert sur tous les fichiers modifiés en Phase 2
+- Non-régression API token confirmée (coexistence + reveal + usage)
+
+### 16.3 Validation sécurité
+
+- Aucun secret SSH en clair dans `repr`, logs, tracebacks de tests
+- Clipboard auto-clear 30s identique pour API token et SSH
+- Panic lock et soft lock validés avec item SSH ouvert
+
+### 16.4 Parcours manuel UX (à exécuter avant gel)
+
+- Import ED25519 sans passphrase
+- Import RSA avec passphrase
+- Reveal temporisé, copy auto-clear 30s, export
+- Filtres algorithme/commentaire-taggés
+- Panic lock avec détail SSH affiché

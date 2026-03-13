@@ -5,7 +5,8 @@ from __future__ import annotations
 import logging
 import subprocess
 from datetime import datetime
-from typing import TYPE_CHECKING, cast
+from pathlib import Path
+from typing import TYPE_CHECKING, Any, cast
 
 import gi  # type: ignore[import]
 
@@ -14,13 +15,23 @@ from src.i18n import _, ngettext
 from src.models.category import Category
 from src.models.password_entry import PasswordEntry
 from src.models.secret_item import SecretItem
-from src.models.secret_types import SECRET_TYPE_API_TOKEN, SECRET_TYPE_PASSWORD
+from src.models.secret_types import (
+    SECRET_TYPE_API_TOKEN,
+    SECRET_TYPE_PASSWORD,
+    SECRET_TYPE_SSH_KEY,
+)
 from src.models.user_info import UserInfo, UserInfoUpdate
 from src.repositories.password_repository import PasswordRepository
 from src.services.password_service import PasswordService
 from src.services.password_strength_service import PasswordStrengthService
 from src.services.secret_service import SecretService
 from src.services.security_audit_service import SecurityAuditService
+from src.services.ssh_key_utils import (
+    InvalidSSHKeyFormat,
+    PassphraseMismatch,
+    PublicKeyMismatch,
+    UnsupportedKeyFormat,
+)
 from src.ui.dialogs.create_vault_dialog import CreateVaultDialog
 from src.ui.dialogs.helpers import present_alert
 from src.ui.dialogs.manage_categories_dialog import ManageCategoriesDialog
@@ -197,6 +208,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._updating_detail = False
         self._clipboard_clear_source_id: int | None = None
         self._clipboard_token = 0
+        self._ssh_reveal_source_id: int | None = None
 
         self._category_by_row: dict[Gtk.ListBoxRow, str] = {}
         self._secret_type_by_row: dict[Gtk.ListBoxRow, str] = {}
@@ -225,8 +237,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.user_name_label: Gtk.Label | None = None
         self.secret_mode_password_button: Gtk.ToggleButton | None = None
         self.secret_mode_api_button: Gtk.ToggleButton | None = None
+        self.secret_mode_ssh_button: Gtk.ToggleButton | None = None
         self.secret_mode_password_count_label: Gtk.Label | None = None
         self.secret_mode_api_count_label: Gtk.Label | None = None
+        self.secret_mode_ssh_count_label: Gtk.Label | None = None
         self.category_group: Adw.PreferencesGroup | None = None
         self.tags_group: Adw.PreferencesGroup | None = None
         self.provider_group: Adw.PreferencesGroup | None = None
@@ -244,6 +258,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         self.detail_header_title: Gtk.Label | None = None
         self.detail_meta_label: Gtk.Label | None = None
+        self.detail_badges_box: Gtk.Box | None = None
+        self.detail_ssh_reveal_label: Gtk.Label | None = None
         self.detail_revert_button: Gtk.Button | None = None
         self.detail_delete_button: Gtk.Button | None = None
 
@@ -253,12 +269,17 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_password_strength_inline_label: Gtk.Label | None = None
         self.detail_password_copy_button: Gtk.Button | None = None
         self.detail_password_generate_button: Gtk.Button | None = None
+        self.detail_password_reveal_button: Gtk.Button | None = None
+        self.detail_password_import_button: Gtk.Button | None = None
+        self.detail_password_export_button: Gtk.Button | None = None
         self.detail_url_row: Adw.EntryRow | None = None
         self.detail_category_row: Adw.ComboRow | None = None
         self.detail_category_model: Gtk.StringList | None = None
         self._category_names: list[str] = []
         self.detail_tags_row: Adw.EntryRow | None = None
         self.detail_validity_row: Adw.SpinRow | None = None
+        self.detail_validity_display_row: Adw.ActionRow | None = None
+        self.detail_validity_display_value_label: Gtk.Label | None = None
         self.detail_notes_view: Gtk.TextView | None = None
 
         self._init_layout()
@@ -467,6 +488,20 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         )
         secrets_switch.append(self.secret_mode_api_button)
 
+        (
+            self.secret_mode_ssh_button,
+            self.secret_mode_ssh_count_label,
+        ) = self._build_secret_mode_button(
+            label=_("SSH Keys"),
+            icon_name="dialog-password-symbolic",
+            tooltip=_("Switch to SSH key vault view"),
+        )
+        self.secret_mode_ssh_button.connect(
+            "toggled",
+            lambda btn: self._on_secret_mode_toggled(btn, SECRET_TYPE_SSH_KEY),
+        )
+        secrets_switch.append(self.secret_mode_ssh_button)
+
         secrets_panel.append(secrets_switch)
         root.append(secrets_panel)
 
@@ -624,6 +659,18 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_meta_label.set_css_classes(["caption", "dim-label"])
         header_box.append(self.detail_meta_label)
 
+        self.detail_badges_box = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=6)
+        self.detail_badges_box.set_visible(False)
+        header_box.append(self.detail_badges_box)
+
+        self.detail_ssh_reveal_label = Gtk.Label(label="", xalign=0)
+        self.detail_ssh_reveal_label.set_selectable(True)
+        self.detail_ssh_reveal_label.set_wrap(True)
+        self.detail_ssh_reveal_label.set_max_width_chars(90)
+        self.detail_ssh_reveal_label.set_css_classes(["caption", "dim-label"])
+        self.detail_ssh_reveal_label.set_visible(False)
+        header_box.append(self.detail_ssh_reveal_label)
+
         root.append(header_box)
 
         identifiers_group = Adw.PreferencesGroup.new()
@@ -644,6 +691,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_password_row = Adw.PasswordEntryRow.new()
         self.detail_password_row.set_title(_("Password"))
         self.detail_password_row.add_css_class("detail-field")
+        if hasattr(self.detail_password_row, "set_show_peek_icon"):
+            cast(Any, self.detail_password_row).set_show_peek_icon(True)
 
         self.detail_password_strength_inline_label = Gtk.Label(label="", xalign=0)
         self.detail_password_strength_inline_label.set_css_classes(
@@ -659,6 +708,30 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_password_copy_button.set_tooltip_text(_("Copy password"))
         self.detail_password_copy_button.connect("clicked", self._on_copy_password_clicked)
         self.detail_password_row.add_suffix(self.detail_password_copy_button)
+
+        self.detail_password_reveal_button = Gtk.Button(icon_name="view-reveal-symbolic")
+        self.detail_password_reveal_button.set_css_classes(
+            ["flat", "circular", "card-action-btn", "password-action-btn"]
+        )
+        self.detail_password_reveal_button.set_tooltip_text(_("Reveal secret"))
+        self.detail_password_reveal_button.connect("clicked", self._on_reveal_ssh_key_clicked)
+        self.detail_password_row.add_suffix(self.detail_password_reveal_button)
+
+        self.detail_password_import_button = Gtk.Button(icon_name="document-open-symbolic")
+        self.detail_password_import_button.set_css_classes(
+            ["flat", "circular", "card-action-btn", "password-action-btn"]
+        )
+        self.detail_password_import_button.set_tooltip_text(_("Import SSH key"))
+        self.detail_password_import_button.connect("clicked", self._on_import_ssh_clicked)
+        self.detail_password_row.add_suffix(self.detail_password_import_button)
+
+        self.detail_password_export_button = Gtk.Button(icon_name="document-save-symbolic")
+        self.detail_password_export_button.set_css_classes(
+            ["flat", "circular", "card-action-btn", "password-action-btn"]
+        )
+        self.detail_password_export_button.set_tooltip_text(_("Export SSH key"))
+        self.detail_password_export_button.connect("clicked", self._on_export_ssh_clicked)
+        self.detail_password_row.add_suffix(self.detail_password_export_button)
 
         self.detail_password_generate_button = Gtk.Button(icon_name="view-refresh-symbolic")
         self.detail_password_generate_button.set_css_classes(
@@ -719,6 +792,16 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.detail_validity_row.set_adjustment(validity_adjustment)
         self.detail_validity_row.add_css_class("detail-field")
         security_group.add(self.detail_validity_row)
+
+        self.detail_validity_display_row = Adw.ActionRow.new()
+        self.detail_validity_display_row.set_title(_("Password validity (days)"))
+        self.detail_validity_display_row.add_css_class("detail-field")
+        self.detail_validity_display_row.set_visible(False)
+
+        self.detail_validity_display_value_label = Gtk.Label(label="", xalign=1)
+        self.detail_validity_display_value_label.set_css_classes(["card-tag-pill"])
+        self.detail_validity_display_row.add_suffix(self.detail_validity_display_value_label)
+        security_group.add(self.detail_validity_display_row)
 
         root.append(security_group)
 
@@ -944,6 +1027,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._clipboard_token += 1
         self._clear_clipboard_now()
 
+        self._hide_ssh_reveal_value()
         self._clear_detail()
         self._set_detail_sensitive(False)
 
@@ -1025,7 +1109,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._suppress_filter_signals = False
 
     def load_secret_type_filters(self) -> None:
-        if not self.secret_mode_password_button or not self.secret_mode_api_button:
+        if (
+            not self.secret_mode_password_button
+            or not self.secret_mode_api_button
+            or not self.secret_mode_ssh_button
+        ):
             return
 
         selected_value = self.current_secret_type_filter or SECRET_TYPE_PASSWORD
@@ -1033,6 +1121,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         try:
             self.secret_mode_password_button.set_active(selected_value == SECRET_TYPE_PASSWORD)
             self.secret_mode_api_button.set_active(selected_value == SECRET_TYPE_API_TOKEN)
+            self.secret_mode_ssh_button.set_active(selected_value == SECRET_TYPE_SSH_KEY)
         finally:
             self._suppress_filter_signals = False
 
@@ -1047,11 +1136,14 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             )
         )
         api_count = len(self.secret_service.list_items(secret_type=SECRET_TYPE_API_TOKEN))
+        ssh_count = len(self.secret_service.list_items(secret_type=SECRET_TYPE_SSH_KEY))
 
         if self.secret_mode_password_count_label:
             self.secret_mode_password_count_label.set_label(str(password_count))
         if self.secret_mode_api_count_label:
             self.secret_mode_api_count_label.set_label(str(api_count))
+        if self.secret_mode_ssh_count_label:
+            self.secret_mode_ssh_count_label.set_label(str(ssh_count))
 
     def _on_secret_mode_toggled(self, button: Gtk.ToggleButton, secret_type: str) -> None:
         if self._suppress_filter_signals:
@@ -1070,23 +1162,32 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         if self.security_bar:
             self.security_bar.set_active_filter(None)
 
-        if self.secret_mode_password_button and self.secret_mode_api_button:
+        if (
+            self.secret_mode_password_button
+            and self.secret_mode_api_button
+            and self.secret_mode_ssh_button
+        ):
             self._suppress_filter_signals = True
             try:
                 self.secret_mode_password_button.set_active(
                     secret_type == SECRET_TYPE_PASSWORD
                 )
                 self.secret_mode_api_button.set_active(secret_type == SECRET_TYPE_API_TOKEN)
+                self.secret_mode_ssh_button.set_active(secret_type == SECRET_TYPE_SSH_KEY)
             finally:
                 self._suppress_filter_signals = False
 
         self._apply_sidebar_visibility_by_secret_type(secret_type)
         if secret_type == SECRET_TYPE_API_TOKEN:
             self.load_api_token_filters()
+        elif secret_type == SECRET_TYPE_SSH_KEY:
+            self.load_ssh_key_filters()
 
         self._set_detail_mode(
             SECRET_TYPE_API_TOKEN
             if secret_type == SECRET_TYPE_API_TOKEN
+            else SECRET_TYPE_SSH_KEY
+            if secret_type == SECRET_TYPE_SSH_KEY
             else SECRET_TYPE_PASSWORD
         )
         self.load_entries()
@@ -1100,15 +1201,15 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._set_secret_type_filter(secret_type)
 
     def _apply_sidebar_visibility_by_secret_type(self, secret_type: str) -> None:
-        is_api = secret_type == SECRET_TYPE_API_TOKEN
+        is_secret = secret_type in {SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY}
         if self.category_group:
-            self.category_group.set_visible(not is_api)
+            self.category_group.set_visible(not is_secret)
         if self.tags_group:
-            self.tags_group.set_visible(not is_api)
+            self.tags_group.set_visible(not is_secret)
         if self.provider_group:
-            self.provider_group.set_visible(is_api)
+            self.provider_group.set_visible(is_secret)
         if self.organization_group:
-            self.organization_group.set_visible(is_api)
+            self.organization_group.set_visible(is_secret)
 
     def load_api_token_filters(self) -> None:
         if not self.provider_listbox or not self.organization_listbox:
@@ -1191,10 +1292,95 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         finally:
             self._suppress_filter_signals = False
 
+    def load_ssh_key_filters(self) -> None:
+        if not self.provider_listbox or not self.organization_listbox:
+            return
+
+        items = self.secret_service.list_items(secret_type=SECRET_TYPE_SSH_KEY)
+        algorithms = sorted(
+            {
+                str(item.metadata.get("algorithm", "")).strip().upper()
+                for item in items
+                if str(item.metadata.get("algorithm", "")).strip()
+            },
+            key=str.lower,
+        )
+        comments_and_tags = sorted(
+            {
+                str(value).strip()
+                for item in items
+                for value in [
+                    str(item.metadata.get("comment", "")).strip(),
+                    *[
+                        str(tag).strip()
+                        for tag in (item.tags if isinstance(item.tags, list) else [])
+                    ],
+                ]
+                if str(value).strip()
+            },
+            key=str.lower,
+        )
+
+        if self.provider_group:
+            self.provider_group.set_title(f"{_('Algorithms')} [{len(algorithms)}]")
+        if self.organization_group:
+            self.organization_group.set_title(
+                f"{_('Comments / Tags')} [{len(comments_and_tags)}]"
+            )
+
+        self._clear_listbox(self.provider_listbox)
+        self._clear_listbox(self.organization_listbox)
+        self._provider_by_row.clear()
+        self._organization_by_row.clear()
+
+        alg_all_row = self._build_filter_row(
+            _("All algorithms"),
+            "dialog-password-symbolic",
+        )
+        self.provider_listbox.append(alg_all_row)
+        self._provider_by_row[alg_all_row] = None
+        for algorithm in algorithms:
+            row = self._build_filter_row(algorithm, "dialog-password-symbolic")
+            self.provider_listbox.append(row)
+            self._provider_by_row[row] = algorithm
+
+        tags_all_row = self._build_filter_row(
+            _("All comments and tags"),
+            "tag-symbolic",
+        )
+        self.organization_listbox.append(tags_all_row)
+        self._organization_by_row[tags_all_row] = None
+        for value in comments_and_tags:
+            row = self._build_filter_row(value, "tag-symbolic")
+            self.organization_listbox.append(row)
+            self._organization_by_row[row] = value
+
+        self._suppress_filter_signals = True
+        try:
+            selected_algorithm = False
+            for row, value in self._provider_by_row.items():
+                if value == self.current_provider_filter:
+                    self.provider_listbox.select_row(row)
+                    selected_algorithm = True
+                    break
+            if not selected_algorithm:
+                self.provider_listbox.select_row(alg_all_row)
+
+            selected_comment_or_tag = False
+            for row, value in self._organization_by_row.items():
+                if value == self.current_organization_filter:
+                    self.organization_listbox.select_row(row)
+                    selected_comment_or_tag = True
+                    break
+            if not selected_comment_or_tag:
+                self.organization_listbox.select_row(tags_all_row)
+        finally:
+            self._suppress_filter_signals = False
+
     def on_provider_selected(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
         if self._suppress_filter_signals or row is None:
             return
-        if self.current_secret_type_filter != SECRET_TYPE_API_TOKEN:
+        if self.current_secret_type_filter not in {SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY}:
             return
 
         self.current_provider_filter = self._provider_by_row.get(row)
@@ -1203,7 +1389,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def on_organization_selected(self, _listbox: Gtk.ListBox, row: Gtk.ListBoxRow | None) -> None:
         if self._suppress_filter_signals or row is None:
             return
-        if self.current_secret_type_filter != SECRET_TYPE_API_TOKEN:
+        if self.current_secret_type_filter not in {SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY}:
             return
 
         self.current_organization_filter = self._organization_by_row.get(row)
@@ -1351,6 +1537,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
         if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
             self._load_api_token_entries()
+            self._refresh_secret_mode_chips()
+            return
+
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            self._load_ssh_key_entries()
             self._refresh_secret_mode_chips()
             return
 
@@ -1586,6 +1777,125 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._clear_detail()
             self._set_detail_sensitive(False)
 
+    def _load_ssh_key_entries(self) -> None:
+        if not self.entry_flowbox:
+            return
+
+        self._set_detail_mode(SECRET_TYPE_SSH_KEY)
+        self.load_ssh_key_filters()
+        if self.security_bar:
+            self.security_bar.set_visible(False)
+
+        secret_items = self.secret_service.list_items(
+            secret_type=SECRET_TYPE_SSH_KEY,
+            search_text=self.current_search_text or None,
+        )
+
+        if self.current_provider_filter:
+            secret_items = [
+                item
+                for item in secret_items
+                if str(item.metadata.get("algorithm", "")).strip().upper()
+                == self.current_provider_filter
+            ]
+
+        if self.current_organization_filter:
+            secret_items = [
+                item
+                for item in secret_items
+                if self.current_organization_filter
+                in {
+                    str(item.metadata.get("comment", "")).strip(),
+                    *[
+                        str(tag).strip()
+                        for tag in (item.tags if isinstance(item.tags, list) else [])
+                    ],
+                }
+            ]
+
+        entries: list[PasswordEntry] = []
+        for item in secret_items:
+            if item.id is None:
+                continue
+            ui_id = self._to_secret_ui_id(item.id)
+            self._secret_item_by_ui_id[ui_id] = item
+
+            algorithm = str(item.metadata.get("algorithm", "")).upper()
+            fingerprint = str(item.metadata.get("fingerprint", ""))
+            preview = str(item.metadata.get("public_key_preview", ""))
+            comment = str(item.metadata.get("comment", "")).strip()
+            key_size = item.metadata.get("key_size")
+
+            tags = [f"{algorithm}"] if algorithm else []
+            if key_size:
+                tags.append(f"{key_size}b")
+            if bool(item.metadata.get("has_passphrase", False)):
+                tags.append(_("protected"))
+            if comment:
+                tags.append(comment)
+
+            entries.append(
+                PasswordEntry(
+                    id=ui_id,
+                    title=item.title,
+                    username=algorithm,
+                    password="••••••••",  # noqa: S106 - masked UI placeholder
+                    url=fingerprint,
+                    notes=preview,
+                    category=_("SSH key"),
+                    tags=tags,
+                    password_validity_days=90,
+                    created_at=item.created_at,
+                    modified_at=item.modified_at,
+                    usage_count=item.usage_count,
+                )
+            )
+
+        self._suppress_entry_selection = True
+        for entry in self._sorted_entries(entries):
+            child = Gtk.FlowBoxChild()
+            child.add_css_class("entry-card-child")
+            card = EntryCard(entry, self.strength_service)
+            child.set_child(card)
+            self.entry_flowbox.append(child)
+            self._entry_by_child[child] = entry
+            if entry.id is not None:
+                self._entry_child_by_id[entry.id] = child
+                self._entry_card_by_id[entry.id] = card
+        self._suppress_entry_selection = False
+
+        if self.entry_counter_label:
+            self.entry_counter_label.set_label(
+                _("%(count)s SSH keys shown") % {"count": len(entries)}
+            )
+
+        if self.empty_state_label:
+            self.empty_state_label.set_label(_("No SSH keys for current filters"))
+            self.empty_state_label.set_visible(len(entries) == 0)
+
+        if self.zero_usage_label:
+            self.zero_usage_label.set_visible(False)
+
+        if entries:
+            child = self._entry_child_by_id.get(self.current_entry_id or -1)
+            if child is None:
+                child = self.entry_flowbox.get_child_at_index(0)
+            if child:
+                self._suppress_entry_selection = True
+                self.entry_flowbox.select_child(child)
+                self._suppress_entry_selection = False
+                entry = self._entry_by_child.get(child)
+                if entry:
+                    self.current_entry_id = entry.id
+                    self.is_creating_new = False
+                    self._populate_ssh_key_detail_from_ui_id(entry.id)
+                    self._mark_dirty(False)
+        else:
+            self.current_entry_id = None
+            self.is_creating_new = False
+            self._clear_detail()
+            self._set_detail_sensitive(False)
+
     # ------------------------------------------------------------------
     # Filters / sorting / selection
     # ------------------------------------------------------------------
@@ -1667,6 +1977,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self.current_entry_id = entry.id
         if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
             self._populate_api_token_detail_from_ui_id(entry.id)
+        elif self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            self._populate_ssh_key_detail_from_ui_id(entry.id)
         else:
             self._populate_detail(entry)
         self._mark_dirty(False)
@@ -1686,6 +1998,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     # Detail pane actions
     # ------------------------------------------------------------------
     def on_add_clicked(self, _button: Gtk.Button) -> None:
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            self._on_import_ssh_clicked(_button)
+            return
+
         self.current_entry_id = None
         self.is_creating_new = True
         if self.current_secret_type_filter == SECRET_TYPE_API_TOKEN:
@@ -1746,6 +2062,10 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
 
                 show_error(self, _("Unable to save API token: %s") % str(exc))
                 return False
+
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            # PR3 keeps SSH flow action-driven (import/export/reveal/copy) and not form-edited.
+            return True
 
         payload = self._collect_detail_entry()
         if payload is None:
@@ -1813,6 +2133,11 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self._mark_dirty(False)
             return
 
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            self._populate_ssh_key_detail_from_ui_id(self.current_entry_id)
+            self._mark_dirty(False)
+            return
+
         entry = self.password_service.get_entry(self.current_entry_id)
         if not entry:
             return
@@ -1838,6 +2163,20 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.copy_to_clipboard(token, _("API token copied"))
             if self.current_sort_mode == "usage_desc":
                 self.load_entries()
+            return
+
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            if self.current_entry_id is None:
+                self.show_toast(_("SSH key is required"))
+                return
+            real_id = self._from_secret_ui_id(self.current_entry_id)
+            try:
+                private_key = self.secret_service.reveal_ssh_private_key(real_id)
+            except Exception:
+                self.show_toast(_("Unable to reveal SSH key"))
+                return
+            self.copy_to_clipboard(private_key, _("SSH private key copied"))
+            self._refresh_secret_usage_after_access(self.current_entry_id)
             return
 
         password = ""
@@ -1964,7 +2303,13 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.detail_header_title.set_label(_("Select an entry"))
         if self.detail_meta_label:
             self.detail_meta_label.set_label("")
+        if self.detail_validity_display_value_label:
+            self.detail_validity_display_value_label.set_label("")
 
+        self._clear_detail_badges()
+        self._hide_ssh_reveal_value()
+        if self.detail_validity_display_row:
+            self.detail_validity_display_row.set_visible(False)
         self._updating_detail = False
 
     def _collect_detail_entry(self) -> PasswordEntry | None:
@@ -2124,23 +2469,117 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         self._update_detail_strength_indicator("")
         self._updating_detail = False
 
+    def _populate_ssh_key_detail_from_ui_id(self, ui_id: int | None) -> None:
+        if ui_id is None:
+            return
+        item = self._secret_item_by_ui_id.get(ui_id)
+        if item is None:
+            return
+
+        rows = self._require_detail_rows()
+        if not rows:
+            return
+
+        self._set_detail_mode(SECRET_TYPE_SSH_KEY)
+        self._updating_detail = True
+        self._set_detail_sensitive(True)
+
+        (
+            title_row,
+            algorithm_row,
+            private_key_row,
+            fingerprint_row,
+            _category_row,
+            comment_row,
+            key_size_row,
+            notes_view,
+        ) = rows
+
+        algorithm = str(item.metadata.get("algorithm", "")).strip().upper()
+        fingerprint = str(item.metadata.get("fingerprint", "")).strip()
+        comment = str(item.metadata.get("comment", "")).strip()
+        public_preview = str(item.metadata.get("public_key_preview", "")).strip()
+        has_passphrase = bool(item.metadata.get("has_passphrase", False))
+        key_size = item.metadata.get("key_size")
+        key_size_value = int(key_size) if key_size else (255 if algorithm == "ED25519" else 1)
+
+        title_row.set_text(item.title)
+        algorithm_row.set_text(algorithm)
+        private_key_row.set_text("••••••••")
+        fingerprint_row.set_text(fingerprint)
+        comment_row.set_text(comment)
+        key_size_row.set_value(float(key_size_value))
+        if self.detail_validity_display_value_label:
+            self.detail_validity_display_value_label.set_label(str(key_size_value))
+        notes_view.get_buffer().set_text(public_preview)
+
+        if self.detail_header_title:
+            self.detail_header_title.set_label(item.title)
+        if self.detail_meta_label:
+            modified = (
+                item.modified_at.strftime("%Y-%m-%d %H:%M")
+                if item.modified_at
+                else _("Unknown")
+            )
+            self.detail_meta_label.set_label(_("SSH key · Last modified: %s") % modified)
+
+        self._clear_detail_badges()
+        if algorithm:
+            self._add_detail_badge(algorithm, ["card-tag-pill"])
+        self._add_detail_icon_badge(
+            "changes-prevent-symbolic",
+            _("Read-only (SSH metadata)"),
+            ["card-tag-pill", "ssh-readonly-badge"],
+        )
+        if key_size_value > 1:
+            self._add_detail_badge(
+                _("%(size)s bits") % {"size": key_size_value},
+                ["card-tag-pill"],
+            )
+        if has_passphrase:
+            self._add_detail_badge(_("Protected"), ["card-alert-badge", "card-alert-warning"])
+        else:
+            self._add_detail_badge(
+                _("Unprotected"),
+                ["card-alert-badge", "card-alert-error"],
+            )
+        if item.expires_at is not None:
+            self._add_detail_badge(_("Expires"), ["card-alert-badge", "card-alert-warning"])
+
+        self._hide_ssh_reveal_value()
+        self._update_detail_strength_indicator("")
+        self._updating_detail = False
+
     def _set_detail_mode(self, mode: str) -> None:
         self.current_detail_mode = mode
         rows = self._require_detail_rows()
         if rows is None:
             return
         (
-            _title_row,
+            title_row,
             username_row,
             password_row,
             url_row,
             category_row,
             tags_row,
             validity_row,
-            _notes_view,
+            notes_view,
         ) = rows
 
         if mode == SECRET_TYPE_API_TOKEN:
+            title_row.set_editable(True)
+            username_row.set_editable(True)
+            password_row.set_editable(True)
+            url_row.set_editable(True)
+            tags_row.set_editable(True)
+            validity_row.set_sensitive(True)
+            validity_row.set_visible(True)
+            if self.detail_validity_display_row:
+                self.detail_validity_display_row.set_visible(False)
+            notes_view.set_editable(True)
+            notes_view.set_cursor_visible(True)
+            if hasattr(password_row, "set_show_peek_icon"):
+                cast(Any, password_row).set_show_peek_icon(False)
             username_row.set_title(_("Provider"))
             password_row.set_title(_("API token"))
             url_row.set_title(_("Environment"))
@@ -2152,9 +2591,68 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
                 self.detail_password_strength_inline_label.set_visible(False)
             if self.detail_password_copy_button:
                 self.detail_password_copy_button.set_tooltip_text(_("Copy token"))
+                self.detail_password_copy_button.set_visible(True)
             if self.detail_password_generate_button:
                 self.detail_password_generate_button.set_visible(False)
+            if self.detail_password_reveal_button:
+                self.detail_password_reveal_button.set_visible(False)
+            if self.detail_password_import_button:
+                self.detail_password_import_button.set_visible(False)
+            if self.detail_password_export_button:
+                self.detail_password_export_button.set_visible(False)
+            self._clear_detail_badges()
+            if self.detail_ssh_reveal_label:
+                self.detail_ssh_reveal_label.set_visible(False)
+
+        elif mode == SECRET_TYPE_SSH_KEY:
+            title_row.set_editable(True)
+            username_row.set_editable(False)
+            password_row.set_editable(False)
+            url_row.set_editable(False)
+            tags_row.set_editable(False)
+            validity_row.set_sensitive(False)
+            validity_row.set_visible(False)
+            if self.detail_validity_display_row:
+                self.detail_validity_display_row.set_title(_("Key size (bits)"))
+                self.detail_validity_display_row.set_visible(True)
+            notes_view.set_editable(False)
+            notes_view.set_cursor_visible(False)
+            if hasattr(password_row, "set_show_peek_icon"):
+                cast(Any, password_row).set_show_peek_icon(False)
+            username_row.set_title(_("Algorithm"))
+            password_row.set_title(_("SSH private key"))
+            url_row.set_title(_("Fingerprint"))
+            tags_row.set_title(_("Comment"))
+            category_row.set_visible(False)
+            validity_row.set_title(_("Key size (bits)"))
+            validity_row.set_value(1)
+            if self.detail_password_strength_inline_label:
+                self.detail_password_strength_inline_label.set_visible(False)
+            if self.detail_password_copy_button:
+                self.detail_password_copy_button.set_visible(False)
+            if self.detail_password_generate_button:
+                self.detail_password_generate_button.set_visible(False)
+            if self.detail_password_reveal_button:
+                self.detail_password_reveal_button.set_visible(False)
+            if self.detail_password_import_button:
+                self.detail_password_import_button.set_visible(True)
+            if self.detail_password_export_button:
+                self.detail_password_export_button.set_visible(True)
+
         else:
+            title_row.set_editable(True)
+            username_row.set_editable(True)
+            password_row.set_editable(True)
+            url_row.set_editable(True)
+            tags_row.set_editable(True)
+            validity_row.set_sensitive(True)
+            validity_row.set_visible(True)
+            if self.detail_validity_display_row:
+                self.detail_validity_display_row.set_visible(False)
+            notes_view.set_editable(True)
+            notes_view.set_cursor_visible(True)
+            if hasattr(password_row, "set_show_peek_icon"):
+                cast(Any, password_row).set_show_peek_icon(True)
             username_row.set_title(_("Username"))
             password_row.set_title(_("Password"))
             url_row.set_title(_("URL"))
@@ -2165,8 +2663,18 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
                 self.detail_password_strength_inline_label.set_visible(True)
             if self.detail_password_copy_button:
                 self.detail_password_copy_button.set_tooltip_text(_("Copy password"))
+                self.detail_password_copy_button.set_visible(True)
             if self.detail_password_generate_button:
                 self.detail_password_generate_button.set_visible(True)
+            if self.detail_password_reveal_button:
+                self.detail_password_reveal_button.set_visible(False)
+            if self.detail_password_import_button:
+                self.detail_password_import_button.set_visible(False)
+            if self.detail_password_export_button:
+                self.detail_password_export_button.set_visible(False)
+            self._clear_detail_badges()
+            if self.detail_ssh_reveal_label:
+                self.detail_ssh_reveal_label.set_visible(False)
 
     @staticmethod
     def _to_secret_ui_id(secret_item_id: int) -> int:
@@ -2175,6 +2683,265 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     @staticmethod
     def _from_secret_ui_id(ui_id: int) -> int:
         return -1_000_000 - ui_id
+
+    def _clear_detail_badges(self) -> None:
+        if not self.detail_badges_box:
+            return
+        while (child := self.detail_badges_box.get_first_child()) is not None:
+            self.detail_badges_box.remove(child)
+        self.detail_badges_box.set_visible(False)
+
+    def _add_detail_badge(self, label: str, css_classes: list[str]) -> None:
+        if not self.detail_badges_box:
+            return
+        badge = Gtk.Label(label=label)
+        badge.set_valign(Gtk.Align.CENTER)
+        for css_class in css_classes:
+            badge.add_css_class(css_class)
+        self.detail_badges_box.append(badge)
+        self.detail_badges_box.set_visible(True)
+
+    def _add_detail_icon_badge(
+        self,
+        icon_name: str,
+        tooltip: str,
+        css_classes: list[str],
+    ) -> None:
+        if not self.detail_badges_box:
+            return
+        badge = Gtk.Box(orientation=Gtk.Orientation.HORIZONTAL, spacing=0)
+        badge.set_valign(Gtk.Align.CENTER)
+        badge.set_tooltip_text(tooltip)
+        for css_class in css_classes:
+            badge.add_css_class(css_class)
+
+        icon = Gtk.Image.new_from_icon_name(icon_name)
+        icon.set_pixel_size(12)
+        badge.append(icon)
+
+        self.detail_badges_box.append(badge)
+        self.detail_badges_box.set_visible(True)
+
+    def _hide_ssh_reveal_value(self) -> None:
+        if self._ssh_reveal_source_id:
+            GLib.source_remove(self._ssh_reveal_source_id)
+            self._ssh_reveal_source_id = None
+
+        if self.detail_ssh_reveal_label:
+            self.detail_ssh_reveal_label.set_label("")
+            self.detail_ssh_reveal_label.set_visible(False)
+
+        if self.detail_password_row and self.current_detail_mode == SECRET_TYPE_SSH_KEY:
+            self._updating_detail = True
+            self.detail_password_row.set_text("••••••••")
+            self._updating_detail = False
+
+    def _refresh_secret_usage_after_access(self, ui_id: int) -> None:
+        if self.current_sort_mode == "usage_desc":
+            self.load_entries()
+            return
+
+        item = self._secret_item_by_ui_id.get(ui_id)
+        if item is not None:
+            item.usage_count += 1
+
+        card = self._entry_card_by_id.get(ui_id)
+        if card:
+            card.bump_usage()
+
+    def _on_reveal_ssh_key_clicked(self, _button: Gtk.Button) -> None:
+        if self.current_secret_type_filter != SECRET_TYPE_SSH_KEY or self.current_entry_id is None:
+            self.show_toast(_("SSH key is required"))
+            return
+
+        real_id = self._from_secret_ui_id(self.current_entry_id)
+        try:
+            private_key = self.secret_service.reveal_ssh_private_key(real_id)
+        except Exception:
+            self.show_toast(_("Unable to reveal SSH key"))
+            return
+
+        if self.detail_ssh_reveal_label:
+            self.detail_ssh_reveal_label.set_label(private_key)
+            self.detail_ssh_reveal_label.set_visible(True)
+
+        if self.detail_password_row:
+            self._updating_detail = True
+            self.detail_password_row.set_text(_("Revealed below for 30s"))
+            self._updating_detail = False
+
+        if self._ssh_reveal_source_id:
+            GLib.source_remove(self._ssh_reveal_source_id)
+
+        self._ssh_reveal_source_id = GLib.timeout_add_seconds(
+            30,
+            self._on_ssh_reveal_timeout,
+        )
+        self._refresh_secret_usage_after_access(self.current_entry_id)
+
+    def _on_ssh_reveal_timeout(self) -> bool:
+        self._hide_ssh_reveal_value()
+        self.show_toast(_("SSH key hidden"))
+        return False
+
+    def _on_import_ssh_clicked(self, _button: Gtk.Button) -> None:
+        chooser = Gtk.FileChooserNative.new(
+            _("Import SSH private key"),
+            self,
+            Gtk.FileChooserAction.OPEN,
+            _("Import"),
+            _("Cancel"),
+        )
+
+        def on_response(native: Gtk.FileChooserNative, response: int) -> None:
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            selected = native.get_file()
+            if not selected:
+                return
+            path = selected.get_path()
+            if not path:
+                return
+            self._import_ssh_key_from_path(Path(path), passphrase=None)
+
+        chooser.connect("response", on_response)
+        chooser.show()
+
+    def _import_ssh_key_from_path(self, path: Path, passphrase: str | None) -> None:
+        try:
+            created = self.secret_service.import_ssh_key_from_file(path, passphrase=passphrase)
+        except PassphraseMismatch:
+            if passphrase:
+                self.show_toast(_("SSH passphrase is incorrect"))
+            else:
+                self._prompt_ssh_passphrase(path)
+            return
+        except PublicKeyMismatch:
+            self.show_toast(_("SSH public/private keys do not match"))
+            return
+        except InvalidSSHKeyFormat:
+            self.show_toast(_("SSH key format is invalid"))
+            return
+        except UnsupportedKeyFormat:
+            self.show_toast(_("SSH key format is not supported"))
+            return
+        except Exception:
+            self.show_toast(_("Unable to import SSH key"))
+            return
+
+        if created.id is not None:
+            self.current_entry_id = self._to_secret_ui_id(created.id)
+        self.is_creating_new = False
+        self.load_entries()
+        self.show_toast(_("SSH key imported"))
+
+    def _prompt_ssh_passphrase(self, path: Path) -> None:
+        dialog = Adw.MessageDialog.new(
+            self,
+            _("Passphrase required"),
+            _("Enter the SSH key passphrase to continue import."),
+        )
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("import", _("Import"))
+        dialog.set_default_response("import")
+        dialog.set_close_response("cancel")
+
+        entry = Gtk.PasswordEntry()
+        cast(Any, entry).set_show_peek_icon(True)
+        entry.set_hexpand(True)
+        entry.set_margin_top(8)
+        entry.set_margin_bottom(8)
+        entry.set_margin_start(8)
+        entry.set_margin_end(8)
+        dialog.set_extra_child(entry)
+
+        def on_response(_dialog: Adw.MessageDialog, response: str) -> None:
+            if response != "import":
+                return
+            self._import_ssh_key_from_path(path, entry.get_text())
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _on_export_ssh_clicked(self, _button: Gtk.Button) -> None:
+        if self.current_secret_type_filter != SECRET_TYPE_SSH_KEY or self.current_entry_id is None:
+            self.show_toast(_("SSH key is required"))
+            return
+
+        chooser = Gtk.FileChooserNative.new(
+            _("Choose export folder"),
+            self,
+            Gtk.FileChooserAction.SELECT_FOLDER,
+            _("Select"),
+            _("Cancel"),
+        )
+
+        def on_response(native: Gtk.FileChooserNative, response: int) -> None:
+            if response != Gtk.ResponseType.ACCEPT:
+                return
+            selected = native.get_file()
+            if not selected:
+                return
+            folder_path = selected.get_path()
+            if not folder_path:
+                return
+
+            item = self._secret_item_by_ui_id.get(self.current_entry_id or 0)
+            export_name = self._build_ssh_export_filename(item.title if item else "ssh-key")
+            destination = Path(folder_path) / export_name
+
+            if destination.exists():
+                self._prompt_overwrite_and_export(destination, self.current_entry_id or 0)
+            else:
+                self._do_export_ssh_key(destination, self.current_entry_id or 0, overwrite=False)
+
+        chooser.connect("response", on_response)
+        chooser.show()
+
+    def _prompt_overwrite_and_export(self, destination: Path, ui_id: int) -> None:
+        dialog = Adw.MessageDialog.new(
+            self,
+            _("Overwrite existing file?"),
+            _("The destination file already exists. Replace it?"),
+        )
+        dialog.add_response("cancel", _("Cancel"))
+        dialog.add_response("overwrite", _("Overwrite"))
+        dialog.set_response_appearance("overwrite", Adw.ResponseAppearance.DESTRUCTIVE)
+        dialog.set_default_response("cancel")
+        dialog.set_close_response("cancel")
+
+        def on_response(_dialog: Adw.MessageDialog, response: str) -> None:
+            if response != "overwrite":
+                return
+            self._do_export_ssh_key(destination, ui_id, overwrite=True)
+
+        dialog.connect("response", on_response)
+        dialog.present()
+
+    def _do_export_ssh_key(self, destination: Path, ui_id: int, overwrite: bool) -> None:
+        try:
+            self.secret_service.export_ssh_key(
+                item_id=self._from_secret_ui_id(ui_id),
+                dest_path=destination,
+                overwrite=overwrite,
+            )
+        except FileExistsError:
+            self.show_toast(_("Export refused: destination already exists"))
+            return
+        except Exception:
+            self.show_toast(_("Unable to export SSH key"))
+            return
+
+        self.show_toast(_("SSH key exported"))
+
+    @staticmethod
+    def _build_ssh_export_filename(title: str) -> str:
+        clean = "".join(ch if ch.isalnum() or ch in {"-", "_"} else "-" for ch in title).strip(
+            "-"
+        )
+        if not clean:
+            clean = "ssh-key"
+        return f"{clean}.key"
 
     def _connect_detail_change_signals(self) -> None:
         rows = self._require_detail_rows()
@@ -2224,6 +2991,8 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
     def _on_detail_changed(self, *_args) -> None:
         if self._updating_detail:
             return
+        if self.current_detail_mode == SECRET_TYPE_SSH_KEY:
+            return
         self._mark_dirty(True)
 
     def _on_detail_password_text_changed(
@@ -2231,7 +3000,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
         password_row: Adw.PasswordEntryRow,
         _param: object,
     ) -> None:
-        if self.current_detail_mode == SECRET_TYPE_API_TOKEN:
+        if self.current_detail_mode in {SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY}:
             return
         self._update_detail_strength_indicator(password_row.get_text())
 
@@ -2243,7 +3012,7 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.detail_password_row.remove_css_class(f"password-row-strength-{level}")
             self.detail_password_strength_inline_label.remove_css_class(f"strength-{level}")
 
-        if self.current_detail_mode == SECRET_TYPE_API_TOKEN:
+        if self.current_detail_mode in {SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY}:
             self.detail_password_strength_inline_label.set_label("")
             return
 
@@ -2335,9 +3104,16 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.detail_password_row,
             self.detail_url_row,
             self.detail_password_strength_inline_label,
+            self.detail_password_copy_button,
+            self.detail_password_generate_button,
+            self.detail_password_reveal_button,
+            self.detail_password_import_button,
+            self.detail_password_export_button,
             self.detail_category_row,
             self.detail_tags_row,
             self.detail_validity_row,
+            self.detail_validity_display_row,
+            self.detail_validity_display_value_label,
             self.detail_notes_view,
             self.detail_delete_button,
         ]
@@ -2654,6 +3430,12 @@ class PasswordManagerWindow(Adw.ApplicationWindow):
             self.current_entry_id = None
             self.load_entries()
             self.show_toast(_("API token deleted"))
+            return
+        if self.current_secret_type_filter == SECRET_TYPE_SSH_KEY:
+            self.secret_service.delete_secret(self._from_secret_ui_id(entry_id))
+            self.current_entry_id = None
+            self.load_entries()
+            self.show_toast(_("SSH key deleted"))
             return
         self.password_service.delete_entry(entry_id)
         self.current_entry_id = None

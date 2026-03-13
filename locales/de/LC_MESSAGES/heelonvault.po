@@ -2418,3 +2418,246 @@ msgstr "API-Token · Zuletzt geändert: %s"
 #: src/ui/windows/main_window.py
 msgid "Copy token"
 msgstr "Token kopieren"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key is required"
+msgstr "Öffentlicher SSH-Schlüssel ist erforderlich"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key format is invalid"
+msgstr "Format des öffentlichen SSH-Schlüssels ist ungültig"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key algorithm is not supported"
+msgstr "Algorithmus des öffentlichen SSH-Schlüssels wird nicht unterstützt"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key is required"
+msgstr "Privater SSH-Schlüssel ist erforderlich"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key and public key do not match"
+msgstr "Privater SSH-Schlüssel und öffentlicher Schlüssel stimmen nicht überein"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key format is not supported"
+msgstr "Format des privaten SSH-Schlüssels wird nicht unterstützt"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key requires a passphrase"
+msgstr "Privater SSH-Schlüssel erfordert eine Passphrase"
+
+#: src/services/ssh_key_utils.py
+msgid "Encrypted OpenSSH private key requires the bcrypt module"
+msgstr "Verschlüsselter OpenSSH-Private-Key erfordert das bcrypt-Modul"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key passphrase is incorrect"
+msgstr "Passphrase des privaten SSH-Schlüssels ist falsch"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key format is invalid"
+msgstr "Format des privaten SSH-Schlüssels ist ungültig"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH private key file not found: %(path)s"
+msgstr "Private SSH-Schlüsseldatei nicht gefunden: %(path)s"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH public key file not found: %(path)s"
+msgstr "Öffentliche SSH-Schlüsseldatei nicht gefunden: %(path)s"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH key export refused: destination file already exists: %(path)s"
+msgstr "SSH-Schlüsselexport abgelehnt: Zieldatei existiert bereits: %(path)s"
+
+#: src/ui/windows/main_window.py
+msgid "SSH Keys"
+msgstr "SSH-Schlüssel"
+
+#: src/ui/windows/main_window.py
+msgid "Switch to SSH key vault view"
+msgstr "Zur SSH-Schlüssel-Tresoransicht wechseln"
+
+#: src/ui/windows/main_window.py
+msgid "Reveal secret"
+msgstr "Geheimnis anzeigen"
+
+#: src/ui/windows/main_window.py
+msgid "Import SSH key"
+msgstr "SSH-Schlüssel importieren"
+
+#: src/ui/windows/main_window.py
+msgid "Export SSH key"
+msgstr "SSH-Schlüssel exportieren"
+
+#: src/ui/windows/main_window.py
+msgid "Algorithms"
+msgstr "Algorithmen"
+
+#: src/ui/windows/main_window.py
+msgid "Comments / Tags"
+msgstr "Kommentare / Tags"
+
+#: src/ui/windows/main_window.py
+msgid "All algorithms"
+msgstr "Alle Algorithmen"
+
+#: src/ui/windows/main_window.py
+msgid "All comments and tags"
+msgstr "Alle Kommentare und Tags"
+
+#: src/ui/windows/main_window.py
+msgid "Algorithm"
+msgstr "Algorithmus"
+
+#: src/ui/windows/main_window.py
+msgid "SSH private key"
+msgstr "Privater SSH-Schlüssel"
+
+#: src/ui/windows/main_window.py
+msgid "Fingerprint"
+msgstr "Fingerabdruck"
+
+#: src/ui/windows/main_window.py
+msgid "Comment"
+msgstr "Kommentar"
+
+#: src/ui/windows/main_window.py
+msgid "Key size (bits)"
+msgstr "Schlüsselgröße (Bit)"
+
+#: src/ui/windows/main_window.py
+msgid "Copy SSH key"
+msgstr "SSH-Schlüssel kopieren"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key"
+msgstr "SSH-Schlüssel"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s SSH keys shown"
+msgstr "%(count)s SSH-Schlüssel angezeigt"
+
+#: src/ui/windows/main_window.py
+msgid "No SSH keys for current filters"
+msgstr "Keine SSH-Schlüssel für die aktuellen Filter"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "SSH key · Last modified: %s"
+msgstr "SSH-Schlüssel · Zuletzt geändert: %s"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(size)s bits"
+msgstr "%(size)s Bit"
+
+#: src/ui/windows/main_window.py
+msgid "Protected"
+msgstr "Geschützt"
+
+#: src/ui/windows/main_window.py
+msgid "Unprotected"
+msgstr "Ungeschützt"
+
+
+#: src/ui/windows/main_window.py
+msgid "SSH key is required"
+msgstr "SSH-Schlüssel ist erforderlich"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to reveal SSH key"
+msgstr "SSH-Schlüssel kann nicht angezeigt werden"
+
+#: src/ui/windows/main_window.py
+msgid "SSH private key copied"
+msgstr "Privater SSH-Schlüssel kopiert"
+
+#: src/ui/windows/main_window.py
+msgid "Revealed below for 30s"
+msgstr "Unten für 30 Sek. sichtbar"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key hidden"
+msgstr "SSH-Schlüssel ausgeblendet"
+
+#: src/ui/windows/main_window.py
+msgid "Import SSH private key"
+msgstr "Privaten SSH-Schlüssel importieren"
+
+#: src/ui/windows/main_window.py
+msgid "SSH passphrase is incorrect"
+msgstr "SSH-Passphrase ist falsch"
+
+#: src/ui/windows/main_window.py
+msgid "SSH public/private keys do not match"
+msgstr "Öffentlicher und privater SSH-Schlüssel stimmen nicht überein"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key format is invalid"
+msgstr "SSH-Schlüsselformat ist ungültig"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key format is not supported"
+msgstr "SSH-Schlüsselformat wird nicht unterstützt"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to import SSH key"
+msgstr "SSH-Schlüssel kann nicht importiert werden"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key imported"
+msgstr "SSH-Schlüssel importiert"
+
+#: src/ui/windows/main_window.py
+msgid "Passphrase required"
+msgstr "Passphrase erforderlich"
+
+#: src/ui/windows/main_window.py
+msgid "Enter the SSH key passphrase to continue import."
+msgstr "Geben Sie die Passphrase des SSH-Schlüssels ein, um den Import fortzusetzen."
+
+#: src/ui/windows/main_window.py
+msgid "Choose export folder"
+msgstr "Exportordner auswählen"
+
+#: src/ui/windows/main_window.py
+msgid "Select"
+msgstr "Auswählen"
+
+#: src/ui/windows/main_window.py
+msgid "Overwrite existing file?"
+msgstr "Vorhandene Datei überschreiben?"
+
+#: src/ui/windows/main_window.py
+msgid "The destination file already exists. Replace it?"
+msgstr "Die Zieldatei ist bereits vorhanden. Ersetzen?"
+
+#: src/ui/windows/main_window.py
+msgid "Overwrite"
+msgstr "Überschreiben"
+
+#: src/ui/windows/main_window.py
+msgid "Export refused: destination already exists"
+msgstr "Export abgelehnt: Zieldatei ist bereits vorhanden"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to export SSH key"
+msgstr "SSH-Schlüssel kann nicht exportiert werden"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key exported"
+msgstr "SSH-Schlüssel exportiert"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key deleted"
+msgstr "SSH-Schlüssel gelöscht"
+
+#: src/ui/windows/main_window.py
+msgid "Read-only (SSH metadata)"
+msgstr "Schreibgeschützt (SSH-Metadaten)"

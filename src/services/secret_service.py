@@ -4,13 +4,24 @@ from __future__ import annotations
 
 import json
 import logging
+import os
+import tempfile
 from datetime import datetime, timedelta
+from pathlib import Path
 from typing import Any
 
+from src.i18n import _
 from src.models.secret_item import SecretItem
-from src.models.secret_types import SECRET_TYPE_API_TOKEN
+from src.models.secret_types import SECRET_TYPE_API_TOKEN, SECRET_TYPE_SSH_KEY
 from src.repositories.secret_repository import SecretRepository
 from src.services.crypto_service import CryptoService
+from src.services.ssh_key_utils import (
+    InvalidSSHKeyFormat,
+    build_ssh_payload,
+    normalize_ssh_public_key,
+    parse_ssh_payload,
+    validate_private_key_and_match_public,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -112,6 +123,166 @@ class SecretService:
         logger.info("SecretService: API token updated (%s)", item_id)
         return updated
 
+    def create_ssh_key(
+        self,
+        title: str,
+        private_key: str,
+        public_key: str,
+        metadata: dict[str, Any] | None = None,
+        passphrase: str | None = None,
+    ) -> SecretItem:
+        """Crée un secret SSH à partir d'une paire privée/publique OpenSSH."""
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("title is required")
+
+        parsed_public = normalize_ssh_public_key(public_key)
+        has_passphrase, private_key_size = validate_private_key_and_match_public(
+            private_key,
+            parsed_public,
+            passphrase,
+        )
+
+        normalized_metadata = self._normalize_ssh_metadata(
+            metadata or {},
+            parsed_public.algorithm,
+            parsed_public.fingerprint,
+            parsed_public.preview,
+            has_passphrase,
+            parsed_public.comment,
+            private_key_size,
+        )
+
+        item = SecretItem(
+            secret_type=SECRET_TYPE_SSH_KEY,
+            title=clean_title,
+            metadata=normalized_metadata,
+            payload=self._encrypt_payload(build_ssh_payload(private_key, parsed_public.openssh)),
+            tags=[str(tag) for tag in metadata.get("tags", [])] if metadata else [],
+        )
+        created = self.repository.create_item(item)
+        created.clear_payload()
+        logger.info("SecretService: SSH key created (%s)", created.id)
+        return created
+
+    def reveal_ssh_private_key(self, item_id: int) -> str:
+        """Déchiffre et retourne la clé privée SSH."""
+        item = self.repository.get_item(item_id)
+        if item is None:
+            raise ValueError(f"Secret item {item_id} not found")
+        if item.secret_type != SECRET_TYPE_SSH_KEY:
+            raise ValueError("Secret item is not an SSH key")
+
+        payload_text = self._decrypt_payload(item.payload)
+        private_key, _public_key = parse_ssh_payload(payload_text)
+        self.repository.record_usage(item_id, amount=1)
+        return private_key
+
+    def update_ssh_key(
+        self,
+        item_id: int,
+        title: str,
+        metadata: dict[str, Any],
+    ) -> SecretItem:
+        """Met à jour uniquement le titre + métadonnées SSH (payload immuable)."""
+        current = self.repository.get_item(item_id)
+        if current is None:
+            raise ValueError(f"Secret item {item_id} not found")
+        if current.secret_type != SECRET_TYPE_SSH_KEY:
+            raise ValueError("Secret item is not an SSH key")
+
+        clean_title = title.strip()
+        if not clean_title:
+            raise ValueError("title is required")
+
+        normalized_metadata = self._normalize_ssh_metadata(
+            metadata,
+            algorithm=str(current.metadata.get("algorithm", "")).strip(),
+            fingerprint=str(current.metadata.get("fingerprint", "")).strip(),
+            public_key_preview=str(current.metadata.get("public_key_preview", "")).strip(),
+            has_passphrase=bool(current.metadata.get("has_passphrase", False)),
+            default_comment=current.metadata.get("comment"),
+            default_key_size=current.metadata.get("key_size"),
+        )
+
+        current.title = clean_title
+        current.metadata = normalized_metadata
+        current.tags = [str(tag) for tag in metadata.get("tags", []) if str(tag).strip()]
+
+        updated = self.repository.update_item(current)
+        updated.clear_payload()
+        logger.info("SecretService: SSH key metadata updated (%s)", item_id)
+        return updated
+
+    def import_ssh_key_from_file(
+        self,
+        path: Path,
+        title: str | None = None,
+        passphrase: str | None = None,
+        metadata: dict[str, Any] | None = None,
+    ) -> SecretItem:
+        """Importe une clé SSH depuis le système de fichiers (paire privée + .pub)."""
+        if not path.exists():
+            raise FileNotFoundError(
+                _("SSH private key file not found: %(path)s") % {"path": str(path)}
+            )
+
+        pub_path = path.parent / (path.name + ".pub")
+        if not pub_path.exists():
+            raise InvalidSSHKeyFormat(
+                _("SSH public key file not found: %(path)s") % {"path": str(pub_path)}
+            )
+
+        private_key_text = path.read_text(encoding="utf-8")
+        public_key_text = pub_path.read_text(encoding="utf-8")
+        clean_title = (title or path.stem).strip() or path.name
+
+        result = self.create_ssh_key(
+            title=clean_title,
+            private_key=private_key_text,
+            public_key=public_key_text,
+            metadata=metadata,
+            passphrase=passphrase,
+        )
+        logger.info("SecretService: SSH key imported from file (%s)", clean_title)
+        return result
+
+    def export_ssh_key(
+        self,
+        item_id: int,
+        dest_path: Path,
+        overwrite: bool = False,
+    ) -> None:
+        """Exporte la clé privée SSH vers le système de fichiers (0o600, atomique)."""
+        if dest_path.exists() and not overwrite:
+            raise FileExistsError(
+                _("SSH key export refused: destination file already exists: %(path)s")
+                % {"path": str(dest_path)}
+            )
+
+        private_key = self.reveal_ssh_private_key(item_id)
+
+        dest_dir = dest_path.parent
+        fd, tmp_str = tempfile.mkstemp(dir=dest_dir, prefix=".ssh_export_")
+        tmp_path = Path(tmp_str)
+        success = False
+        try:
+            try:
+                os.write(fd, private_key.encode("utf-8"))
+            finally:
+                os.close(fd)
+            os.chmod(tmp_path, 0o600)
+            tmp_path.rename(dest_path)
+            success = True
+        finally:
+            if not success:
+                try:
+                    tmp_path.unlink()
+                except OSError:
+                    pass
+
+        logger.info("SecretService: SSH key exported (%s)", item_id)
+
     def reveal_api_token(self, item_id: int) -> str:
         """Déchiffre et retourne la valeur d'un token API."""
         item = self.repository.get_item(item_id)
@@ -212,6 +383,44 @@ class SecretService:
         notes = metadata.get("notes")
         if notes is not None:
             normalized["notes"] = str(notes)
+
+        return normalized
+
+    @staticmethod
+    def _normalize_ssh_metadata(
+        metadata: dict[str, Any],
+        algorithm: str,
+        fingerprint: str,
+        public_key_preview: str,
+        has_passphrase: bool,
+        default_comment: Any | None,
+        default_key_size: Any | None,
+    ) -> dict[str, Any]:
+        if algorithm not in {"ed25519", "rsa", "ecdsa", "dsa"}:
+            raise ValueError("metadata.algorithm is invalid")
+        if not fingerprint.startswith("SHA256:"):
+            raise ValueError("metadata.fingerprint is invalid")
+        if not public_key_preview.strip():
+            raise ValueError("metadata.public_key_preview is invalid")
+
+        normalized: dict[str, Any] = {
+            "algorithm": algorithm,
+            "fingerprint": fingerprint,
+            "public_key_preview": public_key_preview,
+            "has_passphrase": bool(has_passphrase),
+        }
+
+        raw_comment = metadata.get("comment")
+        if raw_comment is None:
+            raw_comment = default_comment
+        if raw_comment is not None and str(raw_comment).strip():
+            normalized["comment"] = str(raw_comment).strip()
+
+        key_size = default_key_size
+        if key_size is None:
+            key_size = metadata.get("key_size")
+        if key_size is not None:
+            normalized["key_size"] = int(key_size)
 
         return normalized
 

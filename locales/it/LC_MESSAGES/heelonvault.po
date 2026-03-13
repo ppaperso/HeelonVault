@@ -2418,3 +2418,246 @@ msgstr "Token API · Ultima modifica: %s"
 #: src/ui/windows/main_window.py
 msgid "Copy token"
 msgstr "Copia token"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key is required"
+msgstr "La chiave pubblica SSH è richiesta"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key format is invalid"
+msgstr "Il formato della chiave pubblica SSH non è valido"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH public key algorithm is not supported"
+msgstr "L'algoritmo della chiave pubblica SSH non è supportato"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key is required"
+msgstr "La chiave privata SSH è richiesta"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key and public key do not match"
+msgstr "La chiave privata SSH e la chiave pubblica non corrispondono"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key format is not supported"
+msgstr "Il formato della chiave privata SSH non è supportato"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key requires a passphrase"
+msgstr "La chiave privata SSH richiede una passphrase"
+
+#: src/services/ssh_key_utils.py
+msgid "Encrypted OpenSSH private key requires the bcrypt module"
+msgstr "La chiave privata OpenSSH cifrata richiede il modulo bcrypt"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key passphrase is incorrect"
+msgstr "La passphrase della chiave privata SSH non è corretta"
+
+#: src/services/ssh_key_utils.py
+msgid "SSH private key format is invalid"
+msgstr "Il formato della chiave privata SSH non è valido"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH private key file not found: %(path)s"
+msgstr "File della chiave privata SSH non trovato: %(path)s"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH public key file not found: %(path)s"
+msgstr "File della chiave pubblica SSH non trovato: %(path)s"
+
+#: src/services/secret_service.py
+#, python-format
+msgid "SSH key export refused: destination file already exists: %(path)s"
+msgstr "Esportazione della chiave SSH rifiutata: il file di destinazione esiste già: %(path)s"
+
+#: src/ui/windows/main_window.py
+msgid "SSH Keys"
+msgstr "Chiavi SSH"
+
+#: src/ui/windows/main_window.py
+msgid "Switch to SSH key vault view"
+msgstr "Passa alla visualizzazione del vault delle chiavi SSH"
+
+#: src/ui/windows/main_window.py
+msgid "Reveal secret"
+msgstr "Rivela il segreto"
+
+#: src/ui/windows/main_window.py
+msgid "Import SSH key"
+msgstr "Importa chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "Export SSH key"
+msgstr "Esporta chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "Algorithms"
+msgstr "Algoritmi"
+
+#: src/ui/windows/main_window.py
+msgid "Comments / Tags"
+msgstr "Commenti / Tag"
+
+#: src/ui/windows/main_window.py
+msgid "All algorithms"
+msgstr "Tutti gli algoritmi"
+
+#: src/ui/windows/main_window.py
+msgid "All comments and tags"
+msgstr "Tutti i commenti e tag"
+
+#: src/ui/windows/main_window.py
+msgid "Algorithm"
+msgstr "Algoritmo"
+
+#: src/ui/windows/main_window.py
+msgid "SSH private key"
+msgstr "Chiave privata SSH"
+
+#: src/ui/windows/main_window.py
+msgid "Fingerprint"
+msgstr "Impronta digitale"
+
+#: src/ui/windows/main_window.py
+msgid "Comment"
+msgstr "Commento"
+
+#: src/ui/windows/main_window.py
+msgid "Key size (bits)"
+msgstr "Dimensione chiave (bit)"
+
+#: src/ui/windows/main_window.py
+msgid "Copy SSH key"
+msgstr "Copia chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key"
+msgstr "Chiave SSH"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(count)s SSH keys shown"
+msgstr "%(count)s chiave/i SSH mostrata/e"
+
+#: src/ui/windows/main_window.py
+msgid "No SSH keys for current filters"
+msgstr "Nessuna chiave SSH per i filtri correnti"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "SSH key · Last modified: %s"
+msgstr "Chiave SSH · Ultima modifica: %s"
+
+#: src/ui/windows/main_window.py
+#, python-format
+msgid "%(size)s bits"
+msgstr "%(size)s bit"
+
+#: src/ui/windows/main_window.py
+msgid "Protected"
+msgstr "Protetta"
+
+#: src/ui/windows/main_window.py
+msgid "Unprotected"
+msgstr "Non protetta"
+
+
+#: src/ui/windows/main_window.py
+msgid "SSH key is required"
+msgstr "La chiave SSH è obbligatoria"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to reveal SSH key"
+msgstr "Impossibile rivelare la chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "SSH private key copied"
+msgstr "Chiave privata SSH copiata"
+
+#: src/ui/windows/main_window.py
+msgid "Revealed below for 30s"
+msgstr "Rivelata qui sotto per 30 s"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key hidden"
+msgstr "Chiave SSH nascosta"
+
+#: src/ui/windows/main_window.py
+msgid "Import SSH private key"
+msgstr "Importa chiave privata SSH"
+
+#: src/ui/windows/main_window.py
+msgid "SSH passphrase is incorrect"
+msgstr "La passphrase SSH non è corretta"
+
+#: src/ui/windows/main_window.py
+msgid "SSH public/private keys do not match"
+msgstr "Le chiavi SSH pubblica/privata non corrispondono"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key format is invalid"
+msgstr "Il formato della chiave SSH non è valido"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key format is not supported"
+msgstr "Il formato della chiave SSH non è supportato"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to import SSH key"
+msgstr "Impossibile importare la chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key imported"
+msgstr "Chiave SSH importata"
+
+#: src/ui/windows/main_window.py
+msgid "Passphrase required"
+msgstr "Passphrase richiesta"
+
+#: src/ui/windows/main_window.py
+msgid "Enter the SSH key passphrase to continue import."
+msgstr "Inserisci la passphrase della chiave SSH per continuare l'importazione."
+
+#: src/ui/windows/main_window.py
+msgid "Choose export folder"
+msgstr "Scegli la cartella di esportazione"
+
+#: src/ui/windows/main_window.py
+msgid "Select"
+msgstr "Seleziona"
+
+#: src/ui/windows/main_window.py
+msgid "Overwrite existing file?"
+msgstr "Sovrascrivere il file esistente?"
+
+#: src/ui/windows/main_window.py
+msgid "The destination file already exists. Replace it?"
+msgstr "Il file di destinazione esiste già. Sostituirlo?"
+
+#: src/ui/windows/main_window.py
+msgid "Overwrite"
+msgstr "Sovrascrivi"
+
+#: src/ui/windows/main_window.py
+msgid "Export refused: destination already exists"
+msgstr "Esportazione rifiutata: la destinazione esiste già"
+
+#: src/ui/windows/main_window.py
+msgid "Unable to export SSH key"
+msgstr "Impossibile esportare la chiave SSH"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key exported"
+msgstr "Chiave SSH esportata"
+
+#: src/ui/windows/main_window.py
+msgid "SSH key deleted"
+msgstr "Chiave SSH eliminata"
+
+#: src/ui/windows/main_window.py
+msgid "Read-only (SSH metadata)"
+msgstr "Sola lettura (metadati SSH)"
