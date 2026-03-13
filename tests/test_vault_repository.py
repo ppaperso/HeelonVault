@@ -16,7 +16,6 @@ import pytest
 from src.models.vault import Vault
 from src.repositories.vault_repository import VaultRepository
 
-
 # ---------------------------------------------------------------------------
 # Fixtures
 # ---------------------------------------------------------------------------
@@ -86,7 +85,7 @@ class TestCreate:
 
     def test_uuid_uniqueness_enforced(self, repo: VaultRepository) -> None:
         repo.create(user_id=1, name="V1", vault_uuid="duplicate-uuid")
-        with pytest.raises(Exception):
+        with pytest.raises(sqlite3.IntegrityError):
             repo.create(user_id=2, name="V2", vault_uuid="duplicate-uuid")
 
     def test_sequential_ids_differ(self, repo: VaultRepository) -> None:
@@ -111,7 +110,7 @@ class TestListForUser:
         assert result[0].name == "Alice Vault"
 
     def test_default_vault_listed_first(self, repo: VaultRepository) -> None:
-        v1 = repo.create(user_id=1, name="V1")
+        repo.create(user_id=1, name="V1")
         v2 = repo.create(user_id=1, name="V2")
         repo.set_default(v2.id, user_id=1)
         vaults = repo.list_for_user(user_id=1)

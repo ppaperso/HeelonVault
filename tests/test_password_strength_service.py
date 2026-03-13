@@ -3,9 +3,9 @@
 from __future__ import annotations
 
 from src.services.password_strength_service import (
-    PasswordStrengthService,
     STRENGTH_COLORS,
     STRENGTH_LABELS,
+    PasswordStrengthService,
 )
 
 
