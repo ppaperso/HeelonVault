@@ -1,0 +1,35 @@
+[package]
+name = "heelonvault-rust"
+version = "0.1.0"
+edition = "2021"
+license = "MIT"
+description = "HeelonVault Rust migration skeleton (security-first architecture)"
+repository = "<private>"
+
+[features]
+default = []
+
+[dependencies]
+anyhow = "1.0"
+aes-gcm = "0.10"
+argon2 = "0.5"
+getrandom = "0.3"
+gtk4 = "0.9"
+libadwaita = "0.7"
+secrecy = "0.10"
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sqlx = { version = "0.8", features = ["sqlite", "macros", "migrate", "runtime-tokio-rustls", "time", "uuid"] }
+thiserror = "2.0"
+time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
+tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "sync"] }
+totp-rs = "5.6"
+tracing = "0.1"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+uuid = { version = "1.16", features = ["serde", "v4"] }
+zeroize = "1.8"
+
+[dev-dependencies]
+criterion = "0.5"
+proptest = "1.6"
+rstest = "0.24"

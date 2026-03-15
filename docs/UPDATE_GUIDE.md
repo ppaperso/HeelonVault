@@ -46,7 +46,8 @@ sudo bash update.sh
 Le script va procéder en **12 étapes** avec validation utilisateur :
 
 ##### Étape 1-2 : Vérifications et Détection de Versions
-```
+
+```text
 🔍 Vérifications préliminaires
 ✅ Droits administrateur vérifiés
 ✅ Application installée détectée
@@ -59,7 +60,8 @@ Nouvelle version: 0.3.0-beta
 ```
 
 ##### Étape 3 : Analyse des Fichiers Modifiés
-```
+
+```text
 🔍 Analyse des fichiers à mettre à jour
 📊 Analyse des différences entre:
    Source: /home/user/Vscode/Gestionnaire_mot_passe
@@ -82,7 +84,8 @@ Fichiers à supprimer:
 ```
 
 ##### Étape 4 : Première Validation
-```
+
+```text
 ⚠️  ATTENTION: Une mise à jour va être effectuée
 
    1. Un backup complet sera créé en tar.gz
@@ -94,7 +97,8 @@ Voulez-vous effectuer la mise à jour? [o/N]
 ```
 
 ##### Étape 5 : Création du Backup
-```
+
+```text
 💾 Création du backup complet
 💾 Création du backup complet en tar.gz...
    📦 Fichier: password-manager_0.2.0-beta_20251121_150000.tar.gz
@@ -112,7 +116,8 @@ Continuer avec la mise à jour? [o/N]
 ```
 
 ##### Étapes 6-11 : Mise à Jour Automatique
-```
+
+```text
 ⏹️  Arrêt de l'application
    ✅ Processus arrêté via pkill
 
@@ -140,7 +145,7 @@ Continuer avec la mise à jour? [o/N]
 
 ##### Étape 12 : Résumé Final
 
-```
+```text
 ╔══════════════════════════════════════════════════════════════╗
 ║             ✅ MISE À JOUR RÉUSSIE !                         ║
 ╚══════════════════════════════════════════════════════════════╝
@@ -199,7 +204,7 @@ Le script `update.sh` garantit la sécurité de vos données :
 
 ### Format du Backup
 
-```
+```text
 /var/backups/password-manager/
 ├── password-manager_0.2.0-beta_20251121_150000.tar.gz  (12M)
 ├── password-manager_0.2.0-beta_20251120_143000.tar.gz  (11M)
@@ -208,7 +213,8 @@ Le script `update.sh` garantit la sécurité de vos données :
 ```
 
 **Contenu de l'archive tar.gz** :
-```
+
+```text
 password-manager_0.2.0-beta_20251121_150000.tar.gz
 ├── opt/password-manager/           # Application complète
 │   ├── password_manager.py
@@ -259,7 +265,8 @@ ls -lth /var/backups/password-manager/
 ```
 
 **Exemple de sortie** :
-```
+
+```text
 -rw-r--r-- 1 root root  12M nov. 21 15:00 password-manager_0.2.0-beta_20251121_150000.tar.gz
 -rw-r--r-- 1 root root  11M nov. 20 14:30 password-manager_0.2.0-beta_20251120_143000.tar.gz
 -rw-r--r-- 1 root root  9.5M nov. 15 09:00 password-manager_0.1.0-beta_20251115_090000.tar.gz
@@ -348,7 +355,7 @@ sudo bash update.sh
 ## 🔧 Différences install.sh vs update.sh
 
 | Aspect | install.sh | update.sh |
-|--------|-----------|-----------|
+| ------ | ---------- | --------- |
 | **Usage** | Installation initiale | Mise à jour existante |
 | **Source** | Clone git + copie | Copie locale directe |
 | **Backup automatique** | ❌ Non | ✅ Oui (tar.gz complet) |
@@ -366,17 +373,20 @@ sudo bash update.sh
 ### Avant la Mise à Jour
 
 1. **Vérifier l'espace disque** disponible pour les backups
+
    ```bash
    df -h /var/backups
    # Au minimum : 2x la taille de /opt/password-manager
    ```
 
 2. **Noter la version actuelle**
+
    ```bash
    python3 -c "import sys; sys.path.insert(0, '/opt/password-manager'); from src.version import __version__; print(__version__)"
    ```
 
 3. **Se placer dans le bon dossier**
+
    ```bash
    cd ~/Vscode/Gestionnaire_mot_passe  # Dossier source avec la nouvelle version
    pwd  # Vérifier le chemin
@@ -398,11 +408,13 @@ sudo bash update.sh
 ### Après la Mise à Jour
 
 1. **Tester l'application immédiatement**
+
    ```bash
    /opt/password-manager/run.sh
    ```
 
 2. **Vérifier les logs**
+
    ```bash
    tail -50 /tmp/update-password-manager.log
    ```
@@ -415,6 +427,7 @@ sudo bash update.sh
    - Backup manuel
 
 4. **Vérifier le backup créé**
+
    ```bash
    ls -lh /var/backups/password-manager/*.tar.gz | head -1
    tar -tzf /var/backups/password-manager/password-manager_*.tar.gz | wc -l
@@ -445,6 +458,7 @@ ls -t | tail -n +11 | xargs -r rm -rf  # 11 = garder 10 backups
 ## ✅ Checklist de Mise à Jour
 
 ### Préparation
+
 - [ ] Espace disque vérifié (`df -h /var/backups`)
 - [ ] Version actuelle notée
 - [ ] Code source de la nouvelle version téléchargé
@@ -452,6 +466,7 @@ ls -t | tail -n +11 | xargs -r rm -rf  # 11 = garder 10 backups
 - [ ] Version testée en dev (recommandé)
 
 ### Exécution
+
 - [ ] Lancer `sudo bash update.sh`
 - [ ] Vérifier l'analyse des fichiers modifiés
 - [ ] Confirmer la première validation
@@ -460,6 +475,7 @@ ls -t | tail -n +11 | xargs -r rm -rf  # 11 = garder 10 backups
 - [ ] Attendre la fin des 12 étapes
 
 ### Vérification
+
 - [ ] Application relancée avec succès
 - [ ] Version correcte installée
 - [ ] Connexion utilisateur fonctionnelle
@@ -470,6 +486,7 @@ ls -t | tail -n +11 | xargs -r rm -rf  # 11 = garder 10 backups
 - [ ] Backup tar.gz présent et intègre
 
 ### En Cas de Problème
+
 - [ ] Consulter `/tmp/update-password-manager.log`
 - [ ] Identifier le backup à restaurer
 - [ ] Suivre la procédure de rollback

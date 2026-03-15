@@ -11,6 +11,7 @@ Le champ URL permet de stocker l'adresse web associée à une entrée de mot de 
 **Emplacement** : Après le champ "Mot de passe"
 
 **Caractéristiques** :
+
 - 🌐 **Icône visuelle** pour identification rapide
 - 📝 **Label** : "🌐 URL (optionnel)"
 - 💡 **Placeholder** : `https://exemple.com`
@@ -18,7 +19,8 @@ Le champ URL permet de stocker l'adresse web associée à une entrée de mot de 
 - ✅ **Optionnel** : Pas de validation requise
 
 **Exemples d'utilisation** :
-```
+
+```text
 Gmail         : mail.google.com
 Facebook      : facebook.com
 GitHub        : github.com/login
@@ -30,11 +32,12 @@ Banque        : www.mabanque.fr/espace-client
 **Boutons disponibles** :
 
 | Icône | Tooltip | Fonction |
-|-------|---------|----------|
+| ----- | ------- | -------- |
 | 📋 | Copier dans le presse-papiers | Copie l'URL |
 | 🌐 | Ouvrir dans le navigateur | Ouvre l'URL avec xdg-open |
 
 **Comportement** :
+
 - L'URL n'est affichée que si elle est renseignée
 - Ajout automatique de `https://` si manquant lors de l'ouverture
 - Gestion d'erreur si impossible d'ouvrir
@@ -53,6 +56,7 @@ cursor.execute('''
 ```
 
 **Exemple** :
+
 - Recherche "google" → Trouve toutes les entrées avec "google" dans l'URL
 
 ## 🗄️ Structure de la base de données
@@ -158,7 +162,7 @@ if entry['url']:
 
 ### Cas d'usage 1 : Compte email
 
-```
+```text
 Titre: Gmail Personnel
 Catégorie: Email
 Nom d'utilisateur: john.doe@gmail.com
@@ -168,12 +172,13 @@ Notes: Compte principal
 ```
 
 **Avantages** :
+
 - Clic sur 🌐 → Ouvre Gmail directement
 - Pas besoin de chercher l'URL dans un navigateur
 
 ### Cas d'usage 2 : Réseau social
 
-```
+```text
 Titre: LinkedIn
 Catégorie: Réseaux sociaux
 Nom d'utilisateur: john.doe
@@ -184,7 +189,7 @@ Tags: professionnel, emploi
 
 ### Cas d'usage 3 : Banque en ligne
 
-```
+```text
 Titre: Crédit Agricole
 Catégorie: Banque
 Nom d'utilisateur: 123456789
@@ -195,7 +200,7 @@ Notes: Code carte : XXXX
 
 ### Cas d'usage 4 : Code PIN (sans URL)
 
-```
+```text
 Titre: Code PIN téléphone
 Catégorie: Personnel
 Mot de passe: 1234
@@ -208,11 +213,13 @@ Notes: Code de déverrouillage
 ## 🔒 Sécurité
 
 ### Stockage
+
 - ✅ **URL stockée en clair** (pas chiffrée)
 - ✅ **Raison** : Nécessaire pour la recherche et l'affichage
 - ⚠️ **Note** : Ne pas mettre d'informations sensibles dans l'URL
 
 ### Ouverture sécurisée
+
 - ✅ **Validation du protocole** : http:// ou https://
 - ✅ **Pas d'exécution de code** : Utilise xdg-open (safe)
 - ✅ **Gestion d'erreur** : Affichage à l'utilisateur si échec
@@ -221,7 +228,7 @@ Notes: Code de déverrouillage
 
 ### Formulaire
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │ 🌐 URL (optionnel)                      │
 │ ┌─────────────────────────────────────┐ │
@@ -234,7 +241,7 @@ Notes: Code de déverrouillage
 
 ### Vue détaillée
 
-```
+```text
 ┌─────────────────────────────────────────┐
 │ URL                                      │
 │ ┌──────────────────────────────┐ 📋 🌐 │
@@ -247,6 +254,7 @@ Notes: Code de déverrouillage
 ## 🧪 Tests
 
 ### Test 1 : Création avec URL complète
+
 ```bash
 1. Créer une entrée avec : https://mail.google.com
 2. Vérifier l'enregistrement
@@ -254,18 +262,21 @@ Notes: Code de déverrouillage
 ```
 
 ### Test 2 : Création avec URL partielle
+
 ```bash
 1. Créer une entrée avec : mail.google.com
 2. Cliquer sur 🌐 → Doit ouvrir https://mail.google.com
 ```
 
 ### Test 3 : Création sans URL
+
 ```bash
 1. Créer une entrée sans URL
 2. Vérifier que le champ URL n'apparaît pas dans les détails
 ```
 
 ### Test 4 : Recherche par URL
+
 ```bash
 1. Créer plusieurs entrées avec URLs différentes
 2. Rechercher "google"
@@ -273,6 +284,7 @@ Notes: Code de déverrouillage
 ```
 
 ### Test 5 : Copie de l'URL
+
 ```bash
 1. Afficher une entrée avec URL
 2. Cliquer sur 📋
@@ -293,7 +305,8 @@ Notes: Code de déverrouillage
 ## 📚 Ressources
 
 ### Fichiers concernés
-```
+
+```text
 password_manager.py
 ├── PasswordDatabase.add_entry()       (ligne 386)
 ├── PasswordDatabase.get_all_entries() (ligne 402)
@@ -306,6 +319,7 @@ src/models/password_entry.py
 ```
 
 ### Standards web
+
 - [URL Standard (WHATWG)](https://url.spec.whatwg.org/)
 - [RFC 3986 - URI Generic Syntax](https://www.rfc-editor.org/rfc/rfc3986)
 

@@ -493,17 +493,17 @@ Flux utilisateur cible Phase 2.1 :
 Découpage technique recommandé :
 
 - 2.1.a : service de génération SSH pur domaine
-    - nouvelle API `SecretService.generate_ssh_key(...)`
-    - génération OpenSSH stable et déterministe côté tests
-    - réutilisation stricte de `_normalize_ssh_metadata` et du pipeline de stockage existant
+    nouvelle API `SecretService.generate_ssh_key(...)`
+    génération OpenSSH stable et déterministe côté tests
+    réutilisation stricte de `_normalize_ssh_metadata` et du pipeline de stockage existant
 - 2.1.b : dialogue UI de génération
-    - formulaire minimal avec algorithme, titre, commentaire, passphrase, confirmation passphrase
-    - pas d'édition libre du payload après génération
-    - pas de copie persistante non chiffrée en UI hors reveal/export déjà existants
+    formulaire minimal avec algorithme, titre, commentaire, passphrase, confirmation passphrase
+    pas d'édition libre du payload après génération
+    pas de copie persistante non chiffrée en UI hors reveal/export déjà existants
 - 2.1.c : export post-génération
-    - export de la clé privée en `.key`
-    - export de la clé publique en `.pub`
-    - confirmation overwrite inchangée
+    export de la clé privée en `.key`
+    export de la clé publique en `.pub`
+    confirmation overwrite inchangée
 
 Formats recommandés pour la génération 2.1 :
 

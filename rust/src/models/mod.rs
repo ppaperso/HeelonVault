@@ -1,0 +1,9 @@
+pub mod password_entry;
+pub mod secret_item;
+pub mod user;
+pub mod vault;
+
+pub use password_entry::PasswordEntry;
+pub use secret_item::{BlobStorage, SecretItem, SecretType};
+pub use user::{User, UserRole};
+pub use vault::Vault;
