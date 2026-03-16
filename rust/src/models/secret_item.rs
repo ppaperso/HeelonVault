@@ -21,6 +21,11 @@ pub struct SecretItem {
     pub id: Uuid,
     pub vault_id: Uuid,
     pub secret_type: SecretType,
+    pub title: Option<String>,
+    pub metadata_json: Option<String>,
+    pub tags: Option<String>,
+    pub expires_at: Option<String>,
+    pub created_at: Option<String>,
     pub blob_storage: BlobStorage,
     pub secret_blob: SecretBox<Vec<u8>>,
 }

@@ -79,6 +79,21 @@ impl SqlxSecretRepository {
         let secret_type_raw: String = row
             .try_get("secret_type")
             .map_err(|err| Self::map_storage_err("read secret_type", err))?;
+        let title: Option<String> = row
+            .try_get("title")
+            .map_err(|err| Self::map_storage_err("read title", err))?;
+        let metadata_json: Option<String> = row
+            .try_get("metadata_json")
+            .map_err(|err| Self::map_storage_err("read metadata_json", err))?;
+        let tags: Option<String> = row
+            .try_get("tags")
+            .map_err(|err| Self::map_storage_err("read tags", err))?;
+        let expires_at: Option<String> = row
+            .try_get("expires_at")
+            .map_err(|err| Self::map_storage_err("read expires_at", err))?;
+        let created_at: Option<String> = row
+            .try_get("created_at")
+            .map_err(|err| Self::map_storage_err("read created_at", err))?;
         let blob_storage_raw: String = row
             .try_get("blob_storage")
             .map_err(|err| Self::map_storage_err("read blob_storage", err))?;
@@ -112,6 +127,11 @@ impl SqlxSecretRepository {
             id,
             vault_id,
             secret_type,
+            title,
+            metadata_json,
+            tags,
+            expires_at,
+            created_at,
             blob_storage,
             secret_blob: SecretBox::new(Box::new(secret_blob_bytes)),
         })
@@ -121,7 +141,7 @@ impl SqlxSecretRepository {
 impl SecretRepository for SqlxSecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError> {
         let row_opt = sqlx::query(
-            "SELECT id, vault_id, secret_type, blob_storage, secret_blob, file_blob_ref
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
              FROM secret_items
              WHERE id = ?1 AND deleted_at IS NULL",
         )
@@ -138,10 +158,10 @@ impl SecretRepository for SqlxSecretRepository {
 
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
-            "SELECT id, vault_id, secret_type, blob_storage, secret_blob, file_blob_ref
+              "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
              FROM secret_items
              WHERE vault_id = ?1 AND deleted_at IS NULL
-             ORDER BY id",
+               ORDER BY created_at DESC, id DESC",
         )
         .bind(vault_id.to_string())
         .fetch_all(&self.pool)
@@ -174,12 +194,16 @@ impl SecretRepository for SqlxSecretRepository {
 
         sqlx::query(
             "INSERT INTO secret_items (
-                id, vault_id, secret_type, blob_storage, secret_blob, file_blob_ref, deleted_at
-            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, NULL)",
+                id, vault_id, secret_type, title, metadata_json, tags, expires_at, blob_storage, secret_blob, file_blob_ref, deleted_at
+            ) VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, NULL)",
         )
         .bind(item.id.to_string())
         .bind(item.vault_id.to_string())
         .bind(Self::to_secret_type_db(item.secret_type))
+        .bind(item.title.as_deref())
+        .bind(item.metadata_json.as_deref())
+        .bind(item.tags.as_deref())
+        .bind(item.expires_at.as_deref())
         .bind(Self::to_blob_storage_db(item.blob_storage))
         .bind(secret_blob)
         .bind(file_blob_ref)
@@ -288,9 +312,14 @@ mod tests {
                 id TEXT PRIMARY KEY NOT NULL,
                 vault_id TEXT NOT NULL,
                 secret_type TEXT NOT NULL,
+                title TEXT,
+                metadata_json TEXT,
+                tags TEXT,
+                expires_at TEXT,
                 blob_storage TEXT NOT NULL,
                 secret_blob BLOB,
                 file_blob_ref BLOB,
+                created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 deleted_at TEXT
             )",
         )
@@ -306,6 +335,11 @@ mod tests {
             id: Uuid::new_v4(),
             vault_id,
             secret_type: SecretType::ApiToken,
+            title: Some("Item de test".to_string()),
+            metadata_json: None,
+            tags: None,
+            expires_at: None,
+            created_at: None,
             blob_storage: storage,
             secret_blob: SecretBox::new(Box::new(Vec::new())),
         }

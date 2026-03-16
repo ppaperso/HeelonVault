@@ -17,10 +17,15 @@ pub struct DecryptedSecret {
 
 #[allow(async_fn_in_trait)]
 pub trait SecretService {
+    #[allow(clippy::too_many_arguments)]
     async fn create_secret(
         &self,
         vault_id: Uuid,
         secret_type: SecretType,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
         plaintext_secret: SecretBox<Vec<u8>>,
         vault_key: SecretBox<Vec<u8>>,
     ) -> Result<SecretItem, AppError>;
@@ -105,6 +110,10 @@ where
         &self,
         vault_id: Uuid,
         secret_type: SecretType,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
         plaintext_secret: SecretBox<Vec<u8>>,
         vault_key: SecretBox<Vec<u8>>,
     ) -> Result<SecretItem, AppError> {
@@ -122,6 +131,11 @@ where
             id: Uuid::new_v4(),
             vault_id,
             secret_type,
+            title,
+            metadata_json,
+            tags,
+            expires_at,
+            created_at: None,
             blob_storage,
             secret_blob: stored_blob,
         };
@@ -211,6 +225,11 @@ mod tests {
                     id: item.id,
                     vault_id: item.vault_id,
                     secret_type: item.secret_type,
+                    title: None,
+                    metadata_json: None,
+                    tags: None,
+                    expires_at: None,
+                    created_at: None,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
                 })),
@@ -228,6 +247,11 @@ mod tests {
                     id: item.id,
                     vault_id: item.vault_id,
                     secret_type: item.secret_type,
+                    title: None,
+                    metadata_json: None,
+                    tags: None,
+                    expires_at: None,
+                    created_at: None,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
                 })
@@ -336,6 +360,10 @@ mod tests {
             .create_secret(
                 vault_id,
                 secret_type,
+                Some("Titre de test".to_string()),
+                None,
+                None,
+                None,
                 SecretBox::new(Box::new(plaintext.to_vec())),
                 SecretBox::new(Box::new(vault_key.expose_secret().clone())),
             )
@@ -425,6 +453,10 @@ mod tests {
             .create_secret(
                 vault_id,
                 SecretType::Password,
+                Some("Premier".to_string()),
+                None,
+                None,
+                None,
                 SecretBox::new(Box::new(b"first-secret".to_vec())),
                 SecretBox::new(Box::new(vault_key.expose_secret().clone())),
             )
@@ -433,6 +465,10 @@ mod tests {
             .create_secret(
                 vault_id,
                 SecretType::ApiToken,
+                Some("Second".to_string()),
+                None,
+                None,
+                None,
                 SecretBox::new(Box::new(b"second-secret".to_vec())),
                 SecretBox::new(Box::new(vault_key.expose_secret().clone())),
             )
@@ -441,6 +477,10 @@ mod tests {
             .create_secret(
                 other_vault_id,
                 SecretType::SshKey,
+                Some("Troisieme".to_string()),
+                None,
+                None,
+                None,
                 SecretBox::new(Box::new(b"third-secret".to_vec())),
                 vault_key,
             )

@@ -5,11 +5,16 @@ use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Align, Orientation};
 use libadwaita as adw;
-use secrecy::SecretBox;
+use secrecy::{ExposeSecret, SecretBox};
+use serde_json::{Map, Value};
+use time::Duration;
+use time::OffsetDateTime;
+use time::format_description::well_known::Rfc3339;
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
 use crate::models::SecretType;
+use crate::services::password_service::{PasswordService, PasswordServiceImpl};
 use crate::services::secret_service::SecretService;
 use crate::services::vault_service::VaultService;
 
@@ -83,7 +88,7 @@ impl AddEditDialog {
 		title.set_halign(Align::Start);
 
 		let subtitle = gtk4::Label::new(Some(
-			"Selectionnez un type puis renseignez les champs associes.",
+			"Sélectionnez un type puis renseignez les champs associés.",
 		));
 		subtitle.add_css_class("login-hero-copy");
 		subtitle.set_halign(Align::Start);
@@ -114,13 +119,13 @@ impl AddEditDialog {
 
 		let (title_row, title_entry) =
 			Self::build_labeled_entry("Titre *", "Nom lisible du secret", "dialog-title-entry");
-		let (category_row, _category_entry) = Self::build_labeled_entry(
-			"Categorie",
+		let (category_row, category_entry) = Self::build_labeled_entry(
+			"Catégorie",
 			"Personnel, Travail, Infrastructure...",
 			"dialog-category-entry",
 		);
-		let (tags_row, _tags_entry) = Self::build_labeled_entry(
-			"Tags (separes par des virgules)",
+		let (tags_row, tags_entry) = Self::build_labeled_entry(
+			"Tags (séparés par des virgules)",
 			"prod, client-a, finance",
 			"dialog-tags-entry",
 		);
@@ -148,13 +153,15 @@ impl AddEditDialog {
 		let (password_panel, password_entry) = Self::build_password_panel();
 		dynamic_stack.add_titled(&password_panel, Some("password"), "password");
 
-		let (api_token_panel, api_token_entry) = Self::build_api_token_panel();
+		let (api_token_panel, api_token_entry, api_provider_entry) = Self::build_api_token_panel();
 		dynamic_stack.add_titled(&api_token_panel, Some("api_token"), "api_token");
 
-		let (ssh_key_panel, ssh_private_text) = Self::build_ssh_key_panel();
+		let (ssh_key_panel, ssh_private_text, ssh_public_entry, ssh_passphrase_entry) =
+			Self::build_ssh_key_panel();
 		dynamic_stack.add_titled(&ssh_key_panel, Some("ssh_key"), "ssh_key");
 
-		let (secure_doc_panel, secure_doc_path_entry) = Self::build_secure_document_panel();
+		let (secure_doc_panel, secure_doc_path_entry, secure_doc_mime_entry) =
+			Self::build_secure_document_panel();
 		dynamic_stack.add_titled(
 			&secure_doc_panel,
 			Some("secure_document"),
@@ -174,12 +181,12 @@ impl AddEditDialog {
 			stack_for_type.set_visible_child_name(view_name);
 		});
 
-		let (username_row, _username_entry) = Self::build_labeled_entry(
+		let (username_row, username_entry) = Self::build_labeled_entry(
 			"Nom d'utilisateur / Login",
 			"alice@example.com",
 			"dialog-username-entry",
 		);
-		let (url_row, _url_entry) =
+		let (url_row, url_entry) =
 			Self::build_labeled_entry("URL", "https://example.com", "dialog-url-entry");
 
 		let notes_label = gtk4::Label::new(Some("Notes"));
@@ -201,7 +208,7 @@ impl AddEditDialog {
 		notes_text.add_css_class("dialog-notes-text");
 		notes_scrolled.set_child(Some(&notes_text));
 
-		let validity_label = gtk4::Label::new(Some("Validite"));
+		let validity_label = gtk4::Label::new(Some("Validité"));
 		validity_label.add_css_class("login-field-label");
 		validity_label.set_halign(Align::Start);
 
@@ -210,7 +217,7 @@ impl AddEditDialog {
 			.spacing(8)
 			.build();
 
-		let validity_unlimited = gtk4::CheckButton::with_label("Validite illimitee");
+		let validity_unlimited = gtk4::CheckButton::with_label("Validité illimitée");
 		validity_unlimited.add_css_class("dialog-validity-check");
 
 		let validity_adjustment = gtk4::Adjustment::new(90.0, 1.0, 3650.0, 1.0, 30.0, 0.0);
@@ -264,11 +271,22 @@ impl AddEditDialog {
 
 		let dialog_for_save = window.clone();
 		let title_for_save = title_entry.clone();
+		let category_for_save = category_entry.clone();
+		let tags_for_save = tags_entry.clone();
 		let type_for_save = type_dropdown.clone();
+		let username_for_save = username_entry.clone();
+		let url_for_save = url_entry.clone();
+		let notes_for_save = notes_text.buffer();
+		let validity_unlimited_for_save = validity_unlimited.clone();
+		let validity_days_for_save = validity_days.clone();
 		let password_for_save = password_entry.clone();
 		let api_token_for_save = api_token_entry.clone();
+		let api_provider_for_save = api_provider_entry.clone();
 		let ssh_private_for_save = ssh_private_text.clone();
+		let ssh_public_for_save = ssh_public_entry.clone();
+		let ssh_passphrase_for_save = ssh_passphrase_entry.clone();
 		let secure_doc_for_save = secure_doc_path_entry.clone();
+		let secure_doc_mime_for_save = secure_doc_mime_entry.clone();
 		let error_for_save = error_label.clone();
 		let spinner_for_save = save_spinner.clone();
 		let save_btn_for_save = save_button.clone();
@@ -288,6 +306,63 @@ impl AddEditDialog {
 			}
 
 			let selected_type = type_for_save.selected();
+			let category = category_for_save.text().trim().to_string();
+			let tags_value = tags_for_save.text().trim().to_string();
+			let username = username_for_save.text().trim().to_string();
+			let url = url_for_save.text().trim().to_string();
+			let notes = notes_for_save
+				.text(&notes_for_save.start_iter(), &notes_for_save.end_iter(), false)
+				.to_string();
+			let expires_at = if validity_unlimited_for_save.is_active() {
+				None
+			} else {
+				let days = i64::from(validity_days_for_save.value_as_int());
+				if days <= 0 {
+					None
+				} else {
+					let ts = OffsetDateTime::now_utc() + Duration::days(days);
+					ts.format(&Rfc3339).ok()
+				}
+			};
+			let metadata_json = {
+				let mut metadata = Map::new();
+				metadata.insert("category".to_string(), Value::String(category));
+				metadata.insert("notes".to_string(), Value::String(notes));
+				metadata.insert("login".to_string(), Value::String(username));
+				metadata.insert("url".to_string(), Value::String(url));
+				metadata.insert(
+					"validity_unlimited".to_string(),
+					Value::Bool(validity_unlimited_for_save.is_active()),
+				);
+				metadata.insert(
+					"validity_days".to_string(),
+					Value::Number(i64::from(validity_days_for_save.value_as_int()).into()),
+				);
+				if selected_type == 1 {
+					metadata.insert(
+						"provider".to_string(),
+						Value::String(api_provider_for_save.text().trim().to_string()),
+					);
+				}
+				if selected_type == 2 {
+					metadata.insert(
+						"ssh_public_key".to_string(),
+						Value::String(ssh_public_for_save.text().trim().to_string()),
+					);
+					metadata.insert(
+						"ssh_passphrase".to_string(),
+						Value::String(ssh_passphrase_for_save.text().trim().to_string()),
+					);
+				}
+				if selected_type == 3 {
+					metadata.insert(
+						"document_mime".to_string(),
+						Value::String(secure_doc_mime_for_save.text().trim().to_string()),
+					);
+				}
+				Some(Value::Object(metadata).to_string())
+			};
+
 			let (secret_type, secret_text) = match selected_type {
 				0 => (SecretType::Password, password_for_save.text().to_string()),
 				1 => (SecretType::ApiToken, api_token_for_save.text().to_string()),
@@ -320,6 +395,14 @@ impl AddEditDialog {
 			let vault_service_for_task = Arc::clone(&vault_for_save);
 			let runtime_for_task = runtime_for_save.clone();
 			let admin_master_for_task = admin_master_key.clone();
+			let title_for_task = title.clone();
+			let metadata_for_task = metadata_json.clone();
+			let tags_for_task = if tags_value.is_empty() {
+				None
+			} else {
+				Some(tags_value)
+			};
+			let expires_for_task = expires_at.clone();
 			let secret_payload = secret_text.into_bytes();
 			std::thread::spawn(move || {
 				let result = runtime_for_task.block_on(async move {
@@ -339,6 +422,10 @@ impl AddEditDialog {
 						.create_secret(
 							target_vault.id,
 							secret_type,
+							Some(title_for_task),
+							metadata_for_task,
+							tags_for_task,
+							expires_for_task,
 							SecretBox::new(Box::new(secret_payload)),
 							vault_key,
 						)
@@ -364,7 +451,7 @@ impl AddEditDialog {
 					}
 					Ok(Err(_)) | Err(_) => {
 						error_for_result.set_text(
-							"Impossible d'enregistrer le secret pour le moment. Reessayez.",
+							"Impossible d'enregistrer le secret pour le moment. Réessayez.",
 						);
 						error_for_result.set_visible(true);
 					}
@@ -444,19 +531,50 @@ impl AddEditDialog {
 		password_label.add_css_class("login-field-label");
 		password_label.set_halign(Align::Start);
 
+		let password_row = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+
 		let password_entry = gtk4::PasswordEntry::builder()
 			.placeholder_text("Saisissez un mot de passe")
 			.show_peek_icon(true)
+			.hexpand(true)
 			.build();
 		password_entry.add_css_class("login-entry");
 
+		let generate_button = gtk4::Button::with_label("Générer");
+		generate_button.add_css_class("secondary-pill");
+
+		let generated_password_entry = password_entry.clone();
+		generate_button.connect_clicked(move |_| {
+			let (sender, receiver) = tokio::sync::oneshot::channel();
+			std::thread::spawn(move || {
+				let service = PasswordServiceImpl::new();
+				let result = service.generate_password(24);
+				let _ = sender.send(result);
+			});
+
+			let entry_for_result = generated_password_entry.clone();
+			glib::MainContext::default().spawn_local(async move {
+				if let Ok(Ok(value)) = receiver.await {
+					if let Ok(text) = String::from_utf8(value.expose_secret().clone()) {
+						entry_for_result.set_text(&text);
+					}
+				}
+			});
+		});
+
+		password_row.append(&password_entry);
+		password_row.append(&generate_button);
+
 		box_widget.append(&password_label);
-		box_widget.append(&password_entry);
+		box_widget.append(&password_row);
 		frame.set_child(Some(&box_widget));
 		(frame, password_entry)
 	}
 
-	fn build_api_token_panel() -> (gtk4::Frame, gtk4::PasswordEntry) {
+	fn build_api_token_panel() -> (gtk4::Frame, gtk4::PasswordEntry, gtk4::Entry) {
 		let frame = gtk4::Frame::new(None);
 		frame.add_css_class("dialog-type-frame");
 
@@ -479,17 +597,17 @@ impl AddEditDialog {
 			.build();
 		token_entry.add_css_class("login-entry");
 
-		let (provider_row, _provider_entry) =
+		let (provider_row, provider_entry) =
 			Self::build_labeled_entry("Fournisseur", "GitHub, Stripe, OpenAI...", "dialog-api-provider-entry");
 
 		box_widget.append(&token_label);
 		box_widget.append(&token_entry);
 		box_widget.append(&provider_row);
 		frame.set_child(Some(&box_widget));
-		(frame, token_entry)
+		(frame, token_entry, provider_entry)
 	}
 
-	fn build_ssh_key_panel() -> (gtk4::Frame, gtk4::TextView) {
+	fn build_ssh_key_panel() -> (gtk4::Frame, gtk4::TextView, gtk4::Entry, gtk4::Entry) {
 		let frame = gtk4::Frame::new(None);
 		frame.add_css_class("dialog-type-frame");
 
@@ -502,7 +620,7 @@ impl AddEditDialog {
 			.margin_end(12)
 			.build();
 
-		let private_key_label = gtk4::Label::new(Some("Cle privee SSH *"));
+		let private_key_label = gtk4::Label::new(Some("Clé privée SSH *"));
 		private_key_label.add_css_class("login-field-label");
 		private_key_label.set_halign(Align::Start);
 
@@ -516,11 +634,11 @@ impl AddEditDialog {
 		private_key_text.add_css_class("dialog-ssh-private-key-text");
 		private_key_scrolled.set_child(Some(&private_key_text));
 
-		let (public_row, _public_entry) =
-			Self::build_labeled_entry("Cle publique", "ssh-ed25519 AAAA...", "dialog-ssh-public-entry");
-		let (passphrase_row, _passphrase_entry) = Self::build_labeled_entry(
+		let (public_row, public_entry) =
+			Self::build_labeled_entry("Clé publique", "ssh-ed25519 AAAA...", "dialog-ssh-public-entry");
+		let (passphrase_row, passphrase_entry) = Self::build_labeled_entry(
 			"Passphrase (optionnel)",
-			"Passphrase de protection de cle",
+			"Passphrase de protection de clé",
 			"dialog-ssh-passphrase-entry",
 		);
 
@@ -529,10 +647,10 @@ impl AddEditDialog {
 		box_widget.append(&public_row);
 		box_widget.append(&passphrase_row);
 		frame.set_child(Some(&box_widget));
-		(frame, private_key_text)
+		(frame, private_key_text, public_entry, passphrase_entry)
 	}
 
-	fn build_secure_document_panel() -> (gtk4::Frame, gtk4::Entry) {
+	fn build_secure_document_panel() -> (gtk4::Frame, gtk4::Entry, gtk4::Entry) {
 		let frame = gtk4::Frame::new(None);
 		frame.add_css_class("dialog-type-frame");
 
@@ -550,11 +668,11 @@ impl AddEditDialog {
 			"/home/user/Documents/contrat.pdf",
 			"dialog-document-path-entry",
 		);
-		let (mime_row, _mime_entry) =
+		let (mime_row, mime_entry) =
 			Self::build_labeled_entry("Type MIME", "application/pdf", "dialog-document-mime-entry");
 
 		let import_hint = gtk4::Label::new(Some(
-			"Import de fichier et chiffrement reel branches dans une etape suivante.",
+			"Import de fichier et chiffrement réel branchés dans une étape suivante.",
 		));
 		import_hint.add_css_class("login-support-copy");
 		import_hint.set_wrap(true);
@@ -564,7 +682,7 @@ impl AddEditDialog {
 		box_widget.append(&mime_row);
 		box_widget.append(&import_hint);
 		frame.set_child(Some(&box_widget));
-		(frame, path_entry)
+		(frame, path_entry, mime_entry)
 	}
 
 	fn install_local_css() {

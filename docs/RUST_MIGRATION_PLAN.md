@@ -1,6 +1,6 @@
 # Plan De Migration Rust
 
-Date de mise à jour : 15 mars 2026
+Date de mise à jour : 16 mars 2026
 
 ## Objectif
 
@@ -15,8 +15,8 @@ Créer un socle Rust sécurisé, testable et performant dans `rust/`, sans casse
 - Le socle sécurité repose sur Argon2id, AES-256-GCM, `secrecy`, `zeroize`, `thiserror` et l’interdiction de `unwrap()` / `expect()` sur les chemins sensibles.
 - `SecretService` est le service unique pour le stockage chiffré des secrets, y compris les secrets de type `password`.
 - `PasswordService` est requalifié en service auxiliaire spécialisé uniquement pour la politique de mot de passe : validation, scoring, génération, détection de réutilisation. Il ne fait ni CRUD, ni chiffrement, ni accès repository.
-- Les migrations SQL devaient être écrites avant l’UI car les repositories en dépendent au runtime. Cette étape est désormais réalisée.
-
+- Les migrations SQL devaient être écrites avant l’UI car les repositories en dépendent au runtime. Cette étape est désormais réalisée.- Le bootstrap runtime (`main.rs`) est en place : ouverture de la base SQLite fichier, application des migrations au démarrage via `sqlx::migrate!`, composition complète des services, cycle de vie GTK4/libadwaita.
+- L'UI démarre sur la base migrée réelle. Le contrat async est respecté : zéro accès DB/crypto sur le thread UI.
 ## Plan Global
 
 1. Cadrer l’architecture cible Rust et les frontières de couches.
@@ -103,35 +103,49 @@ Créer un socle Rust sécurisé, testable et performant dans `rust/`, sans casse
   - contraintes `secret_type` / `blob_storage`
   - index de recherche fréquente
 
-## Ce Qui Reste À Faire
-
 ### Runtime Et Wiring
 
-- Ajouter le point d’entrée runtime qui ouvre la base SQLite Rust et applique les migrations au démarrage.
-- Vérifier que le cycle complet migration -> ouverture DB -> repositories fonctionne sur une vraie base fichier, pas seulement en mémoire.
-- Connecter proprement les services entre eux dans une composition applicative claire.
+- Bootstrap complet dans `main.rs` : tokio multi-thread, ouverture SQLite fichier, application des migrations (`sqlx::migrate!`) au démarrage, gestion d'erreur sur base corrompue.
+- Composition applicative câblée : `CryptoServiceImpl`, `AuthServiceImpl`, `VaultServiceImpl`, `SecretServiceImpl`, `PasswordServiceImpl`, `BackupServiceImpl` instanciés et injectés.
+- `SqlxVaultEnvelopeRepository` implémenté inline dans `main.rs` pour le wiring de `VaultService`.
+- Ressources GTK4 compilées via `build.rs` et registrées au démarrage (`gio::resources_register_include!`).
+- Thème d'icônes, CSS applicatif et `APP_ID` en place.
 
-### UI Rust
+### UI Rust Partiellement Implémentée
 
-- Construire le squelette UI GTK4/libadwaita réel côté fenêtres, dialogues et widgets.
-- Définir les flux UI vers `AuthService`, `VaultService`, `SecretService`, `PasswordService` et `BackupService`.
-- Respecter le contrat UI async : pas de DB/crypto sur le thread UI, remontée d’état propre, fermeture contrôlée.
+- `MainWindow` (~550 lignes) : fenêtre principale, liste des secrets, barre de recherche, sélecteur de vault, actions (ajout, édition, suppression soft, copie), intégration `SecretService` et `VaultService`.
+- `LoginDialog` (~500 lignes) : dialogue d'authentification branché sur `AuthService`, gestion des callbacks succès/annulation, fermeture propre.
+- `AddEditDialog` (~730 lignes) : création et édition de secret, sélecteur de type, générateur de mot de passe intégré, branché sur `SecretService` et `PasswordService`.
+
+## Ce Qui Reste À Faire
+
+### UI Rust — Stubs À Implémenter
+
+Les composants suivants sont déclarés mais non implémentés (stub 1 ligne) :
+
+- `SecurityDashboardWindow` : fenêtre tableau de bord sécurité — statistiques santé des secrets (expiration, force, réutilisation), état des vaults, accès backup. **Priorité haute.**
+- `SecurityDashboardBar` : widget barre de statut sécurité pour la `MainWindow`.
+- `PasswordStrengthBar` : widget visuel de force de mot de passe pour `AddEditDialog` et `LoginDialog`.
+- `ManageUsersDialog` : dialogue de gestion des utilisateurs (création, suppression, changement de mot de passe) branché sur `AuthService`.
 
 ### Tests Et Validation Complémentaires
 
-- Ajouter des tests d’intégration qui utilisent les vraies migrations SQL au lieu de recréer les tables à la main dans chaque test.
+- Ajouter des tests d'intégration dans `tests/` qui utilisent les vraies migrations SQL au lieu de recréer les tables à la main dans chaque test.
 - Ajouter des tests de non-régression autour de la cohérence du schéma et des contraintes SQL.
-- Ajouter des tests bout-en-bout backend sur une base SQLite fichier.
+- Ajouter des tests bout-en-bout backend sur une base SQLite fichier (flux complet : migration → auth → vault → secret).
 - Ajouter les benchmarks prévus sur KDF, chiffrement et opérations courantes.
 
-### Points D’Attention
+### Points D'Attention
 
-- Les repositories implémentés supposent désormais un schéma réel. Toute exécution runtime doit passer par les migrations.
-- Le schéma SQL contient plus de colonnes que certains repositories n’utilisent encore. C’est acceptable, mais il faudra faire converger progressivement modèles, repositories et services.
-- L’UI ne doit commencer qu’en s’appuyant sur la base migrée réelle, pas sur des hypothèses implicites de schéma.
+- `app.rs` contient uniquement `pub struct HeelonVaultApplication;` — ce stub n'est pas utilisé par le runtime actuel. À conserver ou supprimer selon l'évolution du cycle de vie applicatif.
+- Le schéma SQL contient plus de colonnes que certains repositories n'utilisent encore. Faire converger progressivement modèles, repositories et services.
+- `PasswordStrengthBar` et `SecurityDashboardBar` doivent être implémentés avant ou en parallèle de leurs fenêtres parentes pour éviter des écrans vides.
 
-## Reprise Recommandée Demain
+## Prochaine Étape Recommandée
 
-1. Vérifier l’exécution réelle des migrations sur une base SQLite fichier.
-2. Ajouter le bootstrap runtime de la base et des services.
-3. Démarrer ensuite le squelette UI Rust et ses premiers écrans branchés sur les services.
+Implémenter `SecurityDashboardWindow` et les widgets associés :
+
+1. `PasswordStrengthBar` en widget autonome réutilisable (utilisé dans `AddEditDialog`).
+2. `SecurityDashboardWindow` branchée sur `SecretService`, `VaultService`, `BackupService` et `PasswordService` pour afficher les métriques de santé.
+3. `SecurityDashboardBar` comme widget résumé embeddable dans la `MainWindow`.
+4. `ManageUsersDialog` en dernier car c'est un flux admin moins critique pour valider l'architecture principale.

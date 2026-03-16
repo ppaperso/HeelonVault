@@ -6,7 +6,8 @@ use gtk4::prelude::*;
 use gtk4::{Align, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use secrecy::SecretBox;
+use secrecy::{ExposeSecret, SecretBox};
+use serde_json::Value;
 use tokio::runtime::Handle;
 use uuid::Uuid;
 
@@ -43,14 +44,13 @@ impl MainWindow {
 
 		let header_bar = adw::HeaderBar::new();
 		header_bar.add_css_class("main-headerbar");
+		header_bar.set_show_start_title_buttons(false);
+		header_bar.set_show_end_title_buttons(true);
+		header_bar.set_decoration_layout(Some(":close"));
 
 		let root = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
-			.spacing(12)
-			.margin_top(10)
-			.margin_bottom(10)
-			.margin_start(10)
-			.margin_end(10)
+			.spacing(0)
 			.build();
 
 		let title_label = gtk4::Label::new(Some("HeelonVault"));
@@ -58,10 +58,13 @@ impl MainWindow {
 		title_label.add_css_class("main-title");
 		header_bar.set_title_widget(Some(&title_label));
 
-		let add_button = gtk4::Button::with_label("Ajouter");
-		add_button.add_css_class("primary-pill");
+		let add_button = gtk4::Button::builder()
+			.icon_name("list-add-symbolic")
+			.build();
+		add_button.add_css_class("flat");
+		add_button.add_css_class("accent");
 		add_button.add_css_class("main-add-button");
-		add_button.set_tooltip_text(Some("Ajouter un secret"));
+		add_button.set_tooltip_text(Some("Ajouter"));
 
 		let app_for_add = application.clone();
 		let window_for_add = window.clone();
@@ -118,7 +121,7 @@ impl MainWindow {
 			);
 			dialog.present();
 		});
-		header_bar.pack_end(&add_button);
+		header_bar.pack_start(&add_button);
 		root.append(&header_bar);
 
 		let content = gtk4::Box::builder()
@@ -181,7 +184,7 @@ impl MainWindow {
 			.margin_end(14)
 			.build();
 
-		let sidebar_title = gtk4::Label::new(Some("Categories"));
+		let sidebar_title = gtk4::Label::new(Some("Catégories"));
 		sidebar_title.add_css_class("main-section-title");
 		sidebar_title.set_halign(Align::Start);
 		sidebar_box.append(&sidebar_title);
@@ -192,11 +195,11 @@ impl MainWindow {
 		category_list.set_selection_mode(gtk4::SelectionMode::Single);
 
 		let rows = [
-			("Toutes les categories", "view-grid-symbolic"),
+			("Toutes les catégories", "view-grid-symbolic"),
 			("Mots de passe", "dialog-password-symbolic"),
 			("Tokens API", "dialog-key-symbolic"),
-			("Cles SSH", "network-wired-symbolic"),
-			("Documents securises", "folder-documents-symbolic"),
+			("Clés SSH", "network-wired-symbolic"),
+			("Documents sécurisés", "folder-documents-symbolic"),
 		];
 
 		for (index, (title, icon_name)) in rows.into_iter().enumerate() {
@@ -326,21 +329,83 @@ impl MainWindow {
 
 		let (sender, receiver) = tokio::sync::oneshot::channel();
 		std::thread::spawn(move || {
-			let result = runtime_handle.block_on(async move {
+			let result: Result<Vec<SecretRowView>, crate::errors::AppError> =
+				runtime_handle.block_on(async move {
 				let vaults = vault_service.list_user_vaults(admin_user_id).await?;
 				let first_vault = match vaults.into_iter().next() {
 					Some(value) => value,
 					None => return Ok(Vec::new()),
 				};
 
-				let _vault_key = vault_service
+				let vault_key = vault_service
 					.open_vault(
 						first_vault.id,
 						SecretBox::new(Box::new(admin_master_key.clone())),
 					)
 					.await?;
 
-				secret_service.list_by_vault(first_vault.id).await
+				let items = secret_service.list_by_vault(first_vault.id).await?;
+				let mut rows = Vec::with_capacity(items.len());
+				for item in items {
+					let secret_result = secret_service
+						.get_secret(
+							item.id,
+							SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+						)
+						.await;
+					let secret_value = match secret_result {
+						Ok(secret) => {
+							String::from_utf8(secret.secret_value.expose_secret().clone()).unwrap_or_default()
+						}
+						Err(_) => String::new(),
+					};
+
+					let (login, url) = match item.metadata_json.as_deref() {
+						Some(raw) => match serde_json::from_str::<Value>(raw) {
+							Ok(value) => {
+								let login = value
+									.get("login")
+									.and_then(Value::as_str)
+									.unwrap_or_default()
+									.to_string();
+								let url = value
+									.get("url")
+									.and_then(Value::as_str)
+									.unwrap_or_default()
+									.to_string();
+								(login, url)
+							}
+							Err(_) => (String::new(), String::new()),
+						},
+						None => (String::new(), String::new()),
+					};
+
+					let (icon_name, type_label_text) = match item.secret_type {
+						crate::models::SecretType::Password => ("dialog-password-symbolic", "Mot de passe"),
+						crate::models::SecretType::ApiToken => ("dialog-key-symbolic", "Token API"),
+						crate::models::SecretType::SshKey => ("network-wired-symbolic", "Clé SSH"),
+						crate::models::SecretType::SecureDocument => {
+							("folder-documents-symbolic", "Document sécurisé")
+						}
+					};
+
+					let title = item.title.unwrap_or_else(|| type_label_text.to_string());
+					let created_at = item
+						.created_at
+						.unwrap_or_else(|| "date indisponible".to_string());
+
+					rows.push(SecretRowView {
+						icon_name: icon_name.to_string(),
+						type_label: type_label_text.to_string(),
+						title,
+						created_at,
+						login,
+						url,
+						secret_value,
+					});
+				}
+
+				Ok(rows)
 			});
 			let _ = sender.send(result);
 		});
@@ -364,32 +429,90 @@ impl MainWindow {
 					for item in items {
 						let row = gtk4::ListBoxRow::new();
 						let row_box = gtk4::Box::builder()
-							.orientation(Orientation::Vertical)
-							.spacing(4)
+							.orientation(Orientation::Horizontal)
+							.spacing(10)
 							.margin_top(10)
 							.margin_bottom(10)
 							.margin_start(12)
 							.margin_end(12)
 							.build();
 
-						let type_label = gtk4::Label::new(Some(&format!(
-							"Type: {}",
-							match item.secret_type {
-								crate::models::SecretType::Password => "password",
-								crate::models::SecretType::ApiToken => "api_token",
-								crate::models::SecretType::SshKey => "ssh_key",
-								crate::models::SecretType::SecureDocument => "secure_document",
-							}
+						let icon = gtk4::Image::from_icon_name(item.icon_name.as_str());
+						icon.set_pixel_size(20);
+						icon.add_css_class("main-sidebar-icon");
+
+						let text_box = gtk4::Box::builder()
+							.orientation(Orientation::Vertical)
+							.spacing(2)
+							.hexpand(true)
+							.build();
+
+						let title_label = gtk4::Label::new(Some(&item.title));
+						title_label.set_halign(Align::Start);
+						title_label.add_css_class("main-sidebar-label");
+
+						let meta_label = gtk4::Label::new(Some(&format!(
+							"{} • Créé le: {}",
+							item.type_label, item.created_at
 						)));
-						type_label.set_halign(Align::Start);
-						type_label.add_css_class("main-sidebar-label");
+						meta_label.set_halign(Align::Start);
+						meta_label.add_css_class("login-support-copy");
 
-						let id_label = gtk4::Label::new(Some(&format!("ID: {}", item.id)));
-						id_label.set_halign(Align::Start);
-						id_label.add_css_class("login-support-copy");
+						let actions_box = gtk4::Box::builder()
+							.orientation(Orientation::Horizontal)
+							.spacing(4)
+							.valign(Align::Center)
+							.build();
 
-						row_box.append(&type_label);
-						row_box.append(&id_label);
+						let copy_login_button = gtk4::Button::builder()
+							.icon_name("edit-copy-symbolic")
+							.build();
+						copy_login_button.add_css_class("flat");
+						copy_login_button.set_tooltip_text(Some("Copier le login"));
+						copy_login_button.set_sensitive(!item.login.is_empty());
+						let login_value = item.login.clone();
+						copy_login_button.connect_clicked(move |_| {
+							if let Some(display) = gtk4::gdk::Display::default() {
+								display.clipboard().set_text(&login_value);
+							}
+						});
+
+						let copy_secret_button = gtk4::Button::builder()
+							.icon_name("edit-copy-symbolic")
+							.build();
+						copy_secret_button.add_css_class("flat");
+						copy_secret_button.set_tooltip_text(Some("Copier le secret"));
+						copy_secret_button.set_sensitive(!item.secret_value.is_empty());
+						let secret_value = item.secret_value.clone();
+						copy_secret_button.connect_clicked(move |_| {
+							if let Some(display) = gtk4::gdk::Display::default() {
+								display.clipboard().set_text(&secret_value);
+							}
+						});
+
+						let open_url_button = gtk4::Button::builder()
+							.icon_name("applications-internet-symbolic")
+							.build();
+						open_url_button.add_css_class("flat");
+						open_url_button.set_tooltip_text(Some("Ouvrir l'URL"));
+						open_url_button.set_sensitive(!item.url.is_empty());
+						let url_value = item.url.clone();
+						open_url_button.connect_clicked(move |_| {
+							let _ = gtk4::gio::AppInfo::launch_default_for_uri(
+								url_value.as_str(),
+								None::<&gtk4::gio::AppLaunchContext>,
+							);
+						});
+
+						text_box.append(&title_label);
+						text_box.append(&meta_label);
+						actions_box.append(&copy_login_button);
+						actions_box.append(&copy_secret_button);
+						actions_box.append(&open_url_button);
+
+						row_box.append(&icon);
+						row_box.append(&text_box);
+						row_box.append(&actions_box);
 						row.set_child(Some(&row_box));
 						secret_list.append(&row);
 					}
@@ -399,7 +522,7 @@ impl MainWindow {
 				Ok(Err(_)) | Err(_) => {
 					empty_title.set_text("Liste indisponible");
 					empty_copy.set_text(
-						"Impossible de charger les secrets pour le moment. Reessayez dans un instant.",
+						"Impossible de charger les secrets pour le moment. Réessayez dans un instant.",
 					);
 					stack.set_visible_child_name("empty");
 				}
@@ -414,4 +537,14 @@ struct CenterPanelWidgets {
 	secret_list: gtk4::ListBox,
 	empty_title: gtk4::Label,
 	empty_copy: gtk4::Label,
+}
+
+struct SecretRowView {
+	icon_name: String,
+	type_label: String,
+	title: String,
+	created_at: String,
+	login: String,
+	url: String,
+	secret_value: String,
 }
