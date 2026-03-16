@@ -17,7 +17,7 @@ use heelonvault_rust::config::constants::APP_ID;
 use heelonvault_rust::errors::AppError;
 use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
 use heelonvault_rust::repositories::vault_repository::SqlxVaultRepository;
-use heelonvault_rust::services::auth_service::AuthServiceImpl;
+use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::BackupServiceImpl;
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
@@ -26,6 +26,7 @@ use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultServiceImpl,
 };
 use heelonvault_rust::ui::dialogs::login_dialog::LoginDialog;
+use heelonvault_rust::ui::windows::main_window::MainWindow;
 use uuid::Uuid;
 
 type VaultServiceHandle =
@@ -105,13 +106,7 @@ fn main() -> Result<()> {
 	application.connect_activate(move |app| {
 		let context = Arc::clone(&app_context_for_activate);
 
-		let window = adw::ApplicationWindow::builder()
-			.application(app)
-			.title("HeelonVault")
-			.default_width(960)
-			.default_height(640)
-			.build();
-		window.add_css_class("app-window");
+		let window = MainWindow::new(app).into_inner();
 		window.set_icon_name(Some("heelonvault"));
 		window.set_visible(false);
 
@@ -288,6 +283,82 @@ fn install_application_css() {
 		label.error {
 			color: #E74C3C;
 		}
+
+		.main-window {
+			background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #F3F6F3 42%);
+		}
+
+		headerbar.main-headerbar {
+			background: linear-gradient(120deg, #07393A, #0A5F5C);
+			color: #FFFFFF;
+			border-radius: 16px;
+			padding: 4px 6px;
+		}
+
+		.main-title {
+			color: #FFFFFF;
+			font-weight: 800;
+		}
+
+		button.main-add-button {
+			padding-left: 20px;
+			padding-right: 20px;
+		}
+
+		entry.main-search-entry,
+		searchentry.main-search-entry {
+			border-radius: 14px;
+			border: 1px solid rgba(164, 223, 207, 0.95);
+			background: rgba(255, 255, 255, 0.95);
+			padding: 10px 12px;
+		}
+
+		frame.main-sidebar,
+		frame.main-center-panel {
+			background: #FFFFFF;
+			border: 1px solid rgba(164, 223, 207, 0.95);
+			border-radius: 18px;
+			box-shadow: 0 14px 28px rgba(7, 57, 58, 0.08);
+		}
+
+		.main-section-title {
+			color: #07393A;
+			font-weight: 800;
+		}
+
+		list.main-category-list row {
+			border-radius: 12px;
+			margin: 2px 0;
+		}
+
+		list.main-category-list row:selected {
+			background: rgba(19, 161, 161, 0.16);
+		}
+
+		.main-sidebar-icon {
+			color: #0A5F5C;
+		}
+
+		.main-sidebar-label {
+			color: #2C3E50;
+			font-weight: 600;
+		}
+
+		.main-empty-state {
+			padding: 26px;
+		}
+
+		.main-empty-icon {
+			opacity: 0.95;
+		}
+
+		.main-empty-title {
+			color: #07393A;
+		}
+
+		.main-empty-copy {
+			color: #5B7580;
+		}
 		"#,
 	);
 
@@ -336,6 +407,19 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	let crypto_service = CryptoServiceImpl::default();
 	let auth_service = Arc::new(AuthServiceImpl::new(CryptoServiceImpl::default()));
+	let users_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
+		.fetch_one(&pool)
+		.await
+		.context("failed to count users in users table")?;
+	if users_count == 0 {
+		// TODO: remove before release
+		auth_service
+			.create_user("admin", SecretBox::new(Box::new(b"Admin1234!".to_vec())))
+			.await
+			.context("failed to create default development admin user")?;
+		info!("development admin user created: username=admin");
+	}
+
 	let vault_service = VaultServiceImpl::new(
 		SqlxVaultRepository::new(pool.clone()),
 		SqlxVaultEnvelopeRepository::new(pool.clone()),
