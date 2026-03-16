@@ -3,6 +3,8 @@ use gtk4::{Align, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
 
+use crate::ui::dialogs::add_edit_dialog::AddEditDialog;
+
 pub struct MainWindow {
 	window: adw::ApplicationWindow,
 }
@@ -40,6 +42,12 @@ impl MainWindow {
 		add_button.add_css_class("primary-pill");
 		add_button.add_css_class("main-add-button");
 		add_button.set_tooltip_text(Some("Ajouter un secret"));
+		let app_for_add = application.clone();
+		let window_for_add = window.clone();
+		add_button.connect_clicked(move |_| {
+			let dialog = AddEditDialog::new(&app_for_add, &window_for_add);
+			dialog.present();
+		});
 		header_bar.pack_end(&add_button);
 		root.append(&header_bar);
 
