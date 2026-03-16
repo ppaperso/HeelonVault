@@ -10,6 +10,7 @@ repository = "<private>"
 default = []
 
 [dependencies]
+gio = "0.20"
 anyhow = "1.0"
 aes-gcm = "0.10"
 argon2 = "0.5"
@@ -28,6 +29,9 @@ tracing = "0.1"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
 uuid = { version = "1.16", features = ["serde", "v4"] }
 zeroize = "1.8"
+
+[build-dependencies]
+glib-build-tools = "0.20"
 
 [dev-dependencies]
 criterion = "0.5"

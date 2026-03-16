@@ -2,6 +2,7 @@ use std::path::PathBuf;
 use std::sync::Arc;
 
 use anyhow::{anyhow, Context, Result};
+use gtk4::gdk;
 use gtk4::gio;
 use gtk4::prelude::*;
 use libadwaita as adw;
@@ -24,6 +25,7 @@ use heelonvault_rust::services::secret_service::SecretServiceImpl;
 use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultServiceImpl,
 };
+use heelonvault_rust::ui::dialogs::login_dialog::LoginDialog;
 use uuid::Uuid;
 
 type VaultServiceHandle =
@@ -70,7 +72,7 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
 struct AppContext {
 	_pool: SqlitePool,
 	_crypto_service: CryptoServiceImpl,
-	_auth_service: AuthServiceImpl<CryptoServiceImpl>,
+	auth_service: Arc<AuthServiceImpl<CryptoServiceImpl>>,
 	_vault_service: VaultServiceHandle,
 	_secret_service: SecretServiceHandle,
 	_password_service: PasswordServiceImpl,
@@ -79,6 +81,7 @@ struct AppContext {
 
 fn main() -> Result<()> {
 	initialize_tracing()?;
+	register_resources()?;
 
 	let runtime = Builder::new_multi_thread()
 		.enable_all()
@@ -92,10 +95,15 @@ fn main() -> Result<()> {
 		.application_id(APP_ID)
 		.flags(gio::ApplicationFlags::empty())
 		.build();
+	application.connect_startup(|_| {
+		install_application_css();
+		setup_icon_theme();
+	});
 
+	let runtime_handle = runtime.handle().clone();
 	let app_context_for_activate = Arc::clone(&app_context);
 	application.connect_activate(move |app| {
-		let _context = Arc::clone(&app_context_for_activate);
+		let context = Arc::clone(&app_context_for_activate);
 
 		let window = adw::ApplicationWindow::builder()
 			.application(app)
@@ -103,12 +111,193 @@ fn main() -> Result<()> {
 			.default_width(960)
 			.default_height(640)
 			.build();
+		window.add_css_class("app-window");
+		window.set_icon_name(Some("heelonvault"));
+		window.set_visible(false);
 
-		window.present();
+		let app_for_cancel = app.clone();
+		let window_for_success = window.clone();
+		let login_dialog = LoginDialog::new(
+			app,
+			&window,
+			runtime_handle.clone(),
+			Arc::clone(&context.auth_service),
+			false,
+			move || {
+				window_for_success.present();
+			},
+			move || {
+				app_for_cancel.quit();
+			},
+		);
+		login_dialog.present();
 	});
 
 	let _exit_code = application.run();
 	Ok(())
+}
+
+fn register_resources() -> Result<()> {
+	gio::resources_register_include!("heelonvault.gresource")
+		.context("failed to register compiled resources")?;
+	Ok(())
+}
+
+fn setup_icon_theme() {
+	gtk4::Window::set_default_icon_name("heelonvault");
+	if let Some(display) = gdk::Display::default() {
+		let theme = gtk4::IconTheme::for_display(&display);
+		theme.add_resource_path("/com/heelonvault/rust");
+	}
+}
+
+fn install_application_css() {
+	let provider = gtk4::CssProvider::new();
+	provider.load_from_data(
+		r#"
+		window.app-window,
+		window {
+			background:
+				radial-gradient(circle at top left, rgba(164, 223, 207, 0.55), transparent 42%),
+				radial-gradient(circle at top right, rgba(111, 211, 180, 0.22), transparent 36%),
+				#F3F6F3;
+			color: #2C3E50;
+		}
+
+		.login-shell {
+			min-width: 460px;
+		}
+
+		.login-panel {
+			padding: 12px;
+		}
+
+		.login-hero,
+		.login-card {
+			border-radius: 20px;
+			border: 1px solid rgba(164, 223, 207, 0.95);
+			box-shadow: 0 20px 40px rgba(7, 57, 58, 0.08);
+		}
+
+		.login-hero {
+			background: linear-gradient(135deg, #07393A, #0A5F5C);
+			color: #FFFFFF;
+		}
+
+		.login-hero-icon {
+			color: #FFFFFF;
+			opacity: 0.95;
+		}
+
+		.login-hero-title {
+			color: #FFFFFF;
+		}
+
+		.login-hero-copy,
+		.login-hero-meta {
+			color: rgba(255, 255, 255, 0.82);
+		}
+
+		.login-badge {
+			background: rgba(255, 255, 255, 0.14);
+			color: #A4DFCF;
+			border-radius: 999px;
+			padding: 6px 14px;
+			font-weight: 700;
+		}
+
+		.login-card {
+			background: linear-gradient(135deg, #FFFFFF, #F3F6F3);
+		}
+
+		.login-field-label {
+			color: #07393A;
+			font-weight: 700;
+		}
+
+		.login-support-copy,
+		.login-strength {
+			color: #7F8C9A;
+		}
+
+		entry.login-entry,
+		passwordentry.login-entry {
+			background: rgba(255, 255, 255, 0.92);
+			border-radius: 16px;
+			border: 1px solid rgba(164, 223, 207, 0.95);
+			padding: 12px 14px;
+			color: #2C3E50;
+			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
+		}
+
+		entry.login-entry:focus,
+		passwordentry.login-entry:focus {
+			border-color: #13A1A1;
+			box-shadow: 0 0 0 2px rgba(19, 161, 161, 0.18);
+		}
+
+		entry.login-totp-entry {
+			font-size: 1.15rem;
+			font-weight: 700;
+			letter-spacing: 0.18rem;
+		}
+
+		button.primary-pill,
+		button.secondary-pill {
+			border-radius: 999px;
+			padding: 12px 20px;
+			font-weight: 700;
+			transition: all 200ms ease;
+		}
+
+		button.primary-pill {
+			background: linear-gradient(120deg, #13A1A1, #1F8678);
+			color: #FFFFFF;
+			box-shadow: 0 12px 22px rgba(19, 161, 161, 0.24);
+		}
+
+		button.primary-pill:hover {
+			transform: translateY(-2px);
+			box-shadow: 0 16px 26px rgba(19, 161, 161, 0.32);
+		}
+
+		button.secondary-pill {
+			background: transparent;
+			color: #07393A;
+			border: 1px solid rgba(7, 57, 58, 0.28);
+		}
+
+		button.secondary-pill:hover {
+			background: rgba(164, 223, 207, 0.22);
+			transform: translateY(-2px);
+		}
+
+		label.login-error {
+			color: #E74C3C;
+			font-weight: 600;
+		}
+
+		label.success {
+			color: #1F8678;
+		}
+
+		label.warning {
+			color: #13A1A1;
+		}
+
+		label.error {
+			color: #E74C3C;
+		}
+		"#,
+	);
+
+	if let Some(display) = gdk::Display::default() {
+		gtk4::style_context_add_provider_for_display(
+			&display,
+			&provider,
+			gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
+		);
+	}
 }
 
 fn initialize_tracing() -> Result<()> {
@@ -146,7 +335,7 @@ async fn initialize_app_context() -> Result<AppContext> {
 	info!(database = %database_path.display(), "sqlx migrations applied successfully");
 
 	let crypto_service = CryptoServiceImpl::default();
-	let auth_service = AuthServiceImpl::new(CryptoServiceImpl::default());
+	let auth_service = Arc::new(AuthServiceImpl::new(CryptoServiceImpl::default()));
 	let vault_service = VaultServiceImpl::new(
 		SqlxVaultRepository::new(pool.clone()),
 		SqlxVaultEnvelopeRepository::new(pool.clone()),
@@ -162,7 +351,7 @@ async fn initialize_app_context() -> Result<AppContext> {
 	Ok(AppContext {
 		_pool: pool,
 		_crypto_service: crypto_service,
-		_auth_service: auth_service,
+		auth_service,
 		_vault_service: vault_service,
 		_secret_service: secret_service,
 		_password_service: password_service,
