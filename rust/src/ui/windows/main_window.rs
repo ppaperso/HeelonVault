@@ -1,8 +1,17 @@
+use std::rc::Rc;
+use std::sync::Arc;
+
+use gtk4::glib;
 use gtk4::prelude::*;
 use gtk4::{Align, Orientation};
 use libadwaita as adw;
 use libadwaita::prelude::*;
+use secrecy::SecretBox;
+use tokio::runtime::Handle;
+use uuid::Uuid;
 
+use crate::services::secret_service::SecretService;
+use crate::services::vault_service::VaultService;
 use crate::ui::dialogs::add_edit_dialog::AddEditDialog;
 
 pub struct MainWindow {
@@ -10,7 +19,18 @@ pub struct MainWindow {
 }
 
 impl MainWindow {
-	pub fn new(application: &adw::Application) -> Self {
+	pub fn new<TSecret, TVault>(
+		application: &adw::Application,
+		runtime_handle: Handle,
+		secret_service: Arc<TSecret>,
+		vault_service: Arc<TVault>,
+		admin_user_id: Uuid,
+		admin_master_key: Vec<u8>,
+	) -> Self
+	where
+		TSecret: SecretService + Send + Sync + 'static,
+		TVault: VaultService + Send + Sync + 'static,
+	{
 		let window = adw::ApplicationWindow::builder()
 			.application(application)
 			.title("HeelonVault")
@@ -42,10 +62,60 @@ impl MainWindow {
 		add_button.add_css_class("primary-pill");
 		add_button.add_css_class("main-add-button");
 		add_button.set_tooltip_text(Some("Ajouter un secret"));
+
 		let app_for_add = application.clone();
 		let window_for_add = window.clone();
+		let runtime_for_add = runtime_handle.clone();
+		let secret_for_add = Arc::clone(&secret_service);
+		let vault_for_add = Arc::clone(&vault_service);
+		let admin_user_for_add = admin_user_id;
+		let admin_master_for_add = admin_master_key.clone();
+
+		let center_panel = Self::build_center_panel();
+		let secret_list_for_refresh = center_panel.secret_list.clone();
+		let stack_for_refresh = center_panel.stack.clone();
+		let empty_title_for_refresh = center_panel.empty_title.clone();
+		let empty_copy_for_refresh = center_panel.empty_copy.clone();
+
+		let refresh_list: Rc<dyn Fn()> = {
+			let runtime = runtime_handle.clone();
+			let secret_service = Arc::clone(&secret_service);
+			let vault_service = Arc::clone(&vault_service);
+			let admin_master = admin_master_key.clone();
+			let secret_list = secret_list_for_refresh.clone();
+			let stack = stack_for_refresh.clone();
+			let empty_title = empty_title_for_refresh.clone();
+			let empty_copy = empty_copy_for_refresh.clone();
+			Rc::new(move || {
+				Self::refresh_secret_list(
+					runtime.clone(),
+					Arc::clone(&secret_service),
+					Arc::clone(&vault_service),
+					admin_user_id,
+					admin_master.clone(),
+					secret_list.clone(),
+					stack.clone(),
+					empty_title.clone(),
+					empty_copy.clone(),
+				);
+			})
+		};
+
+		let refresh_for_add = Rc::clone(&refresh_list);
 		add_button.connect_clicked(move |_| {
-			let dialog = AddEditDialog::new(&app_for_add, &window_for_add);
+			let refresh_after_save = Rc::clone(&refresh_for_add);
+			let dialog = AddEditDialog::new(
+				&app_for_add,
+				&window_for_add,
+				runtime_for_add.clone(),
+				Arc::clone(&secret_for_add),
+				Arc::clone(&vault_for_add),
+				admin_user_for_add,
+				admin_master_for_add.clone(),
+				move || {
+					refresh_after_save();
+				},
+			);
 			dialog.present();
 		});
 		header_bar.pack_end(&add_button);
@@ -82,13 +152,14 @@ impl MainWindow {
 		let sidebar_panel = Self::build_sidebar_panel();
 		split.set_start_child(Some(&sidebar_panel));
 
-		let center_panel = Self::build_center_panel();
-		split.set_end_child(Some(&center_panel));
+		split.set_end_child(Some(&center_panel.frame));
 
 		content.append(&actions_row);
 		content.append(&split);
 		root.append(&content);
 		window.set_content(Some(&root));
+
+		refresh_list();
 
 		Self { window }
 	}
@@ -167,7 +238,7 @@ impl MainWindow {
 		row
 	}
 
-	fn build_center_panel() -> gtk4::Frame {
+	fn build_center_panel() -> CenterPanelWidgets {
 		let center_frame = gtk4::Frame::new(None);
 		center_frame.add_css_class("main-center-panel");
 
@@ -225,6 +296,122 @@ impl MainWindow {
 		stack.set_visible_child_name("empty");
 
 		center_frame.set_child(Some(&stack));
-		center_frame
+		CenterPanelWidgets {
+			frame: center_frame,
+			stack,
+			secret_list,
+			empty_title,
+			empty_copy: empty_description,
+		}
 	}
+
+	#[allow(clippy::too_many_arguments)]
+	fn refresh_secret_list<TSecret, TVault>(
+		runtime_handle: Handle,
+		secret_service: Arc<TSecret>,
+		vault_service: Arc<TVault>,
+		admin_user_id: Uuid,
+		admin_master_key: Vec<u8>,
+		secret_list: gtk4::ListBox,
+		stack: gtk4::Stack,
+		empty_title: gtk4::Label,
+		empty_copy: gtk4::Label,
+	) where
+		TSecret: SecretService + Send + Sync + 'static,
+		TVault: VaultService + Send + Sync + 'static,
+	{
+		empty_title.set_text("Chargement des secrets...");
+		empty_copy.set_text("Veuillez patienter.");
+		stack.set_visible_child_name("empty");
+
+		let (sender, receiver) = tokio::sync::oneshot::channel();
+		std::thread::spawn(move || {
+			let result = runtime_handle.block_on(async move {
+				let vaults = vault_service.list_user_vaults(admin_user_id).await?;
+				let first_vault = match vaults.into_iter().next() {
+					Some(value) => value,
+					None => return Ok(Vec::new()),
+				};
+
+				let _vault_key = vault_service
+					.open_vault(
+						first_vault.id,
+						SecretBox::new(Box::new(admin_master_key.clone())),
+					)
+					.await?;
+
+				secret_service.list_by_vault(first_vault.id).await
+			});
+			let _ = sender.send(result);
+		});
+
+		glib::MainContext::default().spawn_local(async move {
+			match receiver.await {
+				Ok(Ok(items)) => {
+					while let Some(child) = secret_list.first_child() {
+						secret_list.remove(&child);
+					}
+
+					if items.is_empty() {
+						empty_title.set_text("Aucun secret pour le moment");
+						empty_copy.set_text(
+							"Utilisez le bouton Ajouter en haut a droite pour creer votre premier secret.",
+						);
+						stack.set_visible_child_name("empty");
+						return;
+					}
+
+					for item in items {
+						let row = gtk4::ListBoxRow::new();
+						let row_box = gtk4::Box::builder()
+							.orientation(Orientation::Vertical)
+							.spacing(4)
+							.margin_top(10)
+							.margin_bottom(10)
+							.margin_start(12)
+							.margin_end(12)
+							.build();
+
+						let type_label = gtk4::Label::new(Some(&format!(
+							"Type: {}",
+							match item.secret_type {
+								crate::models::SecretType::Password => "password",
+								crate::models::SecretType::ApiToken => "api_token",
+								crate::models::SecretType::SshKey => "ssh_key",
+								crate::models::SecretType::SecureDocument => "secure_document",
+							}
+						)));
+						type_label.set_halign(Align::Start);
+						type_label.add_css_class("main-sidebar-label");
+
+						let id_label = gtk4::Label::new(Some(&format!("ID: {}", item.id)));
+						id_label.set_halign(Align::Start);
+						id_label.add_css_class("login-support-copy");
+
+						row_box.append(&type_label);
+						row_box.append(&id_label);
+						row.set_child(Some(&row_box));
+						secret_list.append(&row);
+					}
+
+					stack.set_visible_child_name("list");
+				}
+				Ok(Err(_)) | Err(_) => {
+					empty_title.set_text("Liste indisponible");
+					empty_copy.set_text(
+						"Impossible de charger les secrets pour le moment. Reessayez dans un instant.",
+					);
+					stack.set_visible_child_name("empty");
+				}
+			}
+		});
+	}
+}
+
+struct CenterPanelWidgets {
+	frame: gtk4::Frame,
+	stack: gtk4::Stack,
+	secret_list: gtk4::ListBox,
+	empty_title: gtk4::Label,
+	empty_copy: gtk4::Label,
 }

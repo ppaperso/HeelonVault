@@ -23,7 +23,7 @@ use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
 use heelonvault_rust::services::vault_service::{
-	VaultKeyEnvelopeRepository, VaultServiceImpl,
+	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
 };
 use heelonvault_rust::ui::dialogs::login_dialog::LoginDialog;
 use heelonvault_rust::ui::windows::main_window::MainWindow;
@@ -74,8 +74,10 @@ struct AppContext {
 	_pool: SqlitePool,
 	_crypto_service: CryptoServiceImpl,
 	auth_service: Arc<AuthServiceImpl<CryptoServiceImpl>>,
-	_vault_service: VaultServiceHandle,
-	_secret_service: SecretServiceHandle,
+	vault_service: Arc<VaultServiceHandle>,
+	secret_service: Arc<SecretServiceHandle>,
+	admin_user_id: Uuid,
+	admin_master_key: Vec<u8>,
 	_password_service: PasswordServiceImpl,
 	_backup_service: BackupServiceImpl,
 }
@@ -106,7 +108,15 @@ fn main() -> Result<()> {
 	application.connect_activate(move |app| {
 		let context = Arc::clone(&app_context_for_activate);
 
-		let window = MainWindow::new(app).into_inner();
+		let window = MainWindow::new(
+			app,
+			runtime_handle.clone(),
+			Arc::clone(&context.secret_service),
+			Arc::clone(&context.vault_service),
+			context.admin_user_id,
+			context.admin_master_key.clone(),
+		)
+		.into_inner();
 		window.set_icon_name(Some("heelonvault"));
 		window.set_visible(false);
 
@@ -407,26 +417,28 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	let crypto_service = CryptoServiceImpl::default();
 	let auth_service = Arc::new(AuthServiceImpl::new(CryptoServiceImpl::default()));
+	let vault_service = Arc::new(VaultServiceImpl::new(
+		SqlxVaultRepository::new(pool.clone()),
+		SqlxVaultEnvelopeRepository::new(pool.clone()),
+		CryptoServiceImpl::default(),
+	));
+	let secret_service = Arc::new(SecretServiceImpl::new(
+		SqlxSecretRepository::new(pool.clone()),
+		CryptoServiceImpl::default(),
+	));
+
 	let users_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
 		.fetch_one(&pool)
 		.await
 		.context("failed to count users in users table")?;
-	if users_count == 0 {
-		// TODO: remove before release
-		auth_service
-			.create_user("admin", SecretBox::new(Box::new(b"Admin1234!".to_vec())))
-			.await
-			.context("failed to create default development admin user")?;
-		info!("development admin user created: username=admin");
-	}
+	let (admin_user_id, admin_master_key) = ensure_dev_admin_context(
+		&pool,
+		users_count,
+		&auth_service,
+		Arc::clone(&vault_service),
+	)
+	.await?;
 
-	let vault_service = VaultServiceImpl::new(
-		SqlxVaultRepository::new(pool.clone()),
-		SqlxVaultEnvelopeRepository::new(pool.clone()),
-		CryptoServiceImpl::default(),
-	);
-	let secret_service =
-		SecretServiceImpl::new(SqlxSecretRepository::new(pool.clone()), CryptoServiceImpl::default());
 	let password_service = PasswordServiceImpl::new();
 	let backup_service = BackupServiceImpl::new();
 
@@ -436,9 +448,84 @@ async fn initialize_app_context() -> Result<AppContext> {
 		_pool: pool,
 		_crypto_service: crypto_service,
 		auth_service,
-		_vault_service: vault_service,
-		_secret_service: secret_service,
+		vault_service,
+		secret_service,
+		admin_user_id,
+		admin_master_key,
 		_password_service: password_service,
 		_backup_service: backup_service,
 	})
+}
+
+async fn ensure_dev_admin_context(
+	pool: &SqlitePool,
+	users_count: i64,
+	auth_service: &Arc<AuthServiceImpl<CryptoServiceImpl>>,
+	vault_service: Arc<VaultServiceHandle>,
+) -> Result<(Uuid, Vec<u8>)> {
+	let admin_user_id = match sqlx::query("SELECT id FROM users WHERE username = ?1")
+		.bind("admin")
+		.fetch_optional(pool)
+		.await
+		.context("failed to query admin user")?
+	{
+		Some(row) => {
+			let id_raw: String = row
+				.try_get("id")
+				.context("failed to read admin user id")?;
+			Uuid::parse_str(&id_raw).context("failed to parse admin user id")?
+		}
+		None => {
+			let user_id = Uuid::new_v4();
+			sqlx::query("INSERT INTO users (id, username, role) VALUES (?1, ?2, ?3)")
+				.bind(user_id.to_string())
+				.bind("admin")
+				.bind("admin")
+				.execute(pool)
+				.await
+				.context("failed to insert admin user row")?;
+			user_id
+		}
+	};
+
+	if users_count == 0 {
+		// TODO: remove before release
+		match auth_service
+			.create_user("admin", SecretBox::new(Box::new(b"Admin1234!".to_vec())))
+			.await
+		{
+			Ok(()) => info!("development admin user created: username=admin"),
+			Err(AppError::Conflict(_)) => {}
+			Err(error) => return Err(anyhow!("failed to create default development admin user: {error}")),
+		}
+	} else {
+		match auth_service
+			.create_user("admin", SecretBox::new(Box::new(b"Admin1234!".to_vec())))
+			.await
+		{
+			Ok(()) => info!("development admin credentials loaded into auth service"),
+			Err(AppError::Conflict(_)) => {}
+			Err(error) => return Err(anyhow!("failed to prepare admin auth credentials: {error}")),
+		}
+	}
+
+	let admin_master_key = vec![0x41_u8; 32];
+	let vaults = vault_service
+		.list_user_vaults(admin_user_id)
+		.await
+		.context("failed to list admin vaults")?;
+	if vaults.is_empty() {
+		// TODO: remove before release
+		let _vault = vault_service
+			.create_vault(
+				admin_user_id,
+				"Admin",
+				SecretBox::new(Box::new(admin_master_key.clone())),
+			)
+			.await
+			.context("failed to create default admin vault")?;
+		info!("development admin vault created");
+	}
+
+	Ok((admin_user_id, admin_master_key))
 }
