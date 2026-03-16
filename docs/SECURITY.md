@@ -1,5 +1,8 @@
 # 🔒 Sécurité et Contrôle d'Accès
 
+> Note migration: ce document contient des références historiques de l'ancienne implémentation Python.
+> Le runtime actif du projet est désormais Rust (`rust/`).
+
 ## 📋 Restrictions implémentées
 
 ### ✅ Création de comptes (19 novembre 2025)

@@ -9,10 +9,19 @@ use uuid::Uuid;
 pub trait SecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError>;
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn insert_secret_blob(
         &self,
         item: &SecretItem,
         encrypted_secret_blob: SecretBox<Vec<u8>>,
+    ) -> Result<(), AppError>;
+    async fn update_secret_metadata(
+        &self,
+        secret_id: Uuid,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
     ) -> Result<(), AppError>;
     async fn update_secret_blob(
         &self,
@@ -20,6 +29,9 @@ pub trait SecretRepository {
         encrypted_secret_blob: SecretBox<Vec<u8>>,
     ) -> Result<(), AppError>;
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError>;
+    async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
+    async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
+    async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError>;
 }
 
 pub struct SqlxSecretRepository {
@@ -176,6 +188,26 @@ impl SecretRepository for SqlxSecretRepository {
         Ok(items)
     }
 
+    async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        let rows = sqlx::query(
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
+             FROM secret_items
+             WHERE vault_id = ?1 AND deleted_at IS NOT NULL
+             ORDER BY deleted_at DESC, id DESC",
+        )
+        .bind(vault_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list trashed secrets by vault", err))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            items.push(Self::row_to_secret_item(&row)?);
+        }
+
+        Ok(items)
+    }
+
     async fn insert_secret_blob(
         &self,
         item: &SecretItem,
@@ -210,6 +242,40 @@ impl SecretRepository for SqlxSecretRepository {
         .execute(&self.pool)
         .await
         .map_err(|err| Self::map_storage_err("insert secret item", err))?;
+
+        Ok(())
+    }
+
+    async fn update_secret_metadata(
+        &self,
+        secret_id: Uuid,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
+    ) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE secret_items
+             SET title = ?1,
+                 metadata_json = ?2,
+                 tags = ?3,
+                 expires_at = ?4
+             WHERE id = ?5 AND deleted_at IS NULL",
+        )
+        .bind(title)
+        .bind(metadata_json)
+        .bind(tags)
+        .bind(expires_at)
+        .bind(secret_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("update secret metadata", err))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Storage(
+                "secret not found for metadata update".to_string(),
+            ));
+        }
 
         Ok(())
     }
@@ -287,6 +353,58 @@ impl SecretRepository for SqlxSecretRepository {
         }
 
         Ok(())
+    }
+
+    async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE secret_items
+             SET deleted_at = NULL
+             WHERE id = ?1 AND vault_id = ?2 AND deleted_at IS NOT NULL",
+        )
+        .bind(secret_id.to_string())
+        .bind(vault_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("restore secret", err))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Storage("secret not found in trash".to_string()));
+        }
+
+        Ok(())
+    }
+
+    async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "DELETE FROM secret_items
+             WHERE id = ?1 AND vault_id = ?2 AND deleted_at IS NOT NULL",
+        )
+        .bind(secret_id.to_string())
+        .bind(vault_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("delete secret permanently", err))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Storage(
+                "secret not found for permanent delete".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
+    async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError> {
+        let result = sqlx::query(
+            "DELETE FROM secret_items
+             WHERE vault_id = ?1 AND deleted_at IS NOT NULL",
+        )
+        .bind(vault_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("empty trash", err))?;
+
+        Ok(result.rows_affected() as usize)
     }
 }
 
@@ -556,6 +674,52 @@ mod tests {
     }
 
     #[tokio::test]
+    async fn update_metadata_persists_title_and_fields() {
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "repo setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let vault_id = Uuid::new_v4();
+        let item = build_item(vault_id, BlobStorage::Inline);
+        let insert_result = repo
+            .insert_secret_blob(&item, SecretBox::new(Box::new(vec![4_u8, 2_u8])))
+            .await;
+        assert!(insert_result.is_ok(), "insert should succeed");
+        if insert_result.is_err() {
+            return;
+        }
+
+        let update_result = repo
+            .update_secret_metadata(
+                item.id,
+                Some("Titre modifie".to_string()),
+                Some("{\"category\":\"Infra\"}".to_string()),
+                Some("prod,urgent".to_string()),
+                Some("2026-12-24T00:00:00Z".to_string()),
+            )
+            .await;
+        assert!(update_result.is_ok(), "metadata update should succeed");
+        if update_result.is_err() {
+            return;
+        }
+
+        let found_result = repo.get_by_id(item.id).await;
+        assert!(found_result.is_ok(), "get should succeed");
+        let found = match found_result {
+            Ok(Some(value)) => value,
+            _ => return,
+        };
+
+        assert_eq!(found.title.as_deref(), Some("Titre modifie"));
+        assert_eq!(found.metadata_json.as_deref(), Some("{\"category\":\"Infra\"}"));
+        assert_eq!(found.tags.as_deref(), Some("prod,urgent"));
+        assert_eq!(found.expires_at.as_deref(), Some("2026-12-24T00:00:00Z"));
+    }
+
+    #[tokio::test]
     async fn soft_delete_hides_items() {
         let repo_result = setup_repo().await;
         assert!(repo_result.is_ok(), "repo setup should succeed");
@@ -595,6 +759,133 @@ mod tests {
             Err(_) => return,
         };
         assert!(list.is_empty());
+    }
+
+    #[tokio::test]
+    async fn trash_restore_and_permanent_delete_work() {
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "repo setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let vault_id = Uuid::new_v4();
+        let item = build_item(vault_id, BlobStorage::Inline);
+        let insert_result = repo
+            .insert_secret_blob(&item, SecretBox::new(Box::new(vec![8_u8, 8_u8])))
+            .await;
+        assert!(insert_result.is_ok(), "insert should succeed");
+        if insert_result.is_err() {
+            return;
+        }
+
+        let delete_result = repo.soft_delete(item.id).await;
+        assert!(delete_result.is_ok(), "soft delete should succeed");
+        if delete_result.is_err() {
+            return;
+        }
+
+        let trash_result = repo.list_trash_by_vault_id(vault_id).await;
+        assert!(trash_result.is_ok(), "trash list should succeed");
+        let trash_items = match trash_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(trash_items.len(), 1);
+        assert_eq!(trash_items[0].id, item.id);
+
+        let restore_result = repo.restore_secret(item.id, vault_id).await;
+        assert!(restore_result.is_ok(), "restore should succeed");
+        if restore_result.is_err() {
+            return;
+        }
+
+        let active_result = repo.list_by_vault_id(vault_id).await;
+        assert!(active_result.is_ok(), "active list should succeed");
+        let active_items = match active_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(active_items.len(), 1);
+
+        let second_delete_result = repo.soft_delete(item.id).await;
+        assert!(second_delete_result.is_ok(), "second soft delete should succeed");
+        if second_delete_result.is_err() {
+            return;
+        }
+
+        let permanent_result = repo.permanent_delete(item.id, vault_id).await;
+        assert!(permanent_result.is_ok(), "permanent delete should succeed");
+        if permanent_result.is_err() {
+            return;
+        }
+
+        let by_id_result = repo.get_by_id(item.id).await;
+        assert!(by_id_result.is_ok(), "get by id should succeed");
+        let by_id = match by_id_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert!(by_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn empty_trash_is_scoped_to_vault() {
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "repo setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let vault_a = Uuid::new_v4();
+        let vault_b = Uuid::new_v4();
+        let item_a = build_item(vault_a, BlobStorage::Inline);
+        let item_b = build_item(vault_b, BlobStorage::Inline);
+
+        let ins_a = repo
+            .insert_secret_blob(&item_a, SecretBox::new(Box::new(vec![1_u8])))
+            .await;
+        let ins_b = repo
+            .insert_secret_blob(&item_b, SecretBox::new(Box::new(vec![2_u8])))
+            .await;
+        assert!(ins_a.is_ok() && ins_b.is_ok(), "insert should succeed");
+        if ins_a.is_err() || ins_b.is_err() {
+            return;
+        }
+
+        let del_a = repo.soft_delete(item_a.id).await;
+        let del_b = repo.soft_delete(item_b.id).await;
+        assert!(del_a.is_ok() && del_b.is_ok(), "soft delete should succeed");
+        if del_a.is_err() || del_b.is_err() {
+            return;
+        }
+
+        let emptied_result = repo.empty_trash(vault_a).await;
+        assert!(emptied_result.is_ok(), "empty trash should succeed");
+        let emptied = match emptied_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(emptied, 1);
+
+        let remaining_a_result = repo.list_trash_by_vault_id(vault_a).await;
+        assert!(remaining_a_result.is_ok(), "vault a trash list should succeed");
+        let remaining_a = match remaining_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert!(remaining_a.is_empty());
+
+        let remaining_b_result = repo.list_trash_by_vault_id(vault_b).await;
+        assert!(remaining_b_result.is_ok(), "vault b trash list should succeed");
+        let remaining_b = match remaining_b_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(remaining_b.len(), 1);
+        assert_eq!(remaining_b[0].id, item_b.id);
     }
 
     #[tokio::test]

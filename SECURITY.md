@@ -39,7 +39,7 @@ La couche cryptographique a ete refondue autour de primitives modernes et d'une 
 | Confidentialite des emails | HMAC-SHA256 + pepper local (`.email_pepper`) |
 | Chiffrement secrets TOTP | AES-GCM avec cle systeme derivee (PBKDF2-SHA256, 100 000 iterations) |
 | Codes de secours 2FA | HMAC-SHA256 (pas de stockage en clair) |
-| Aleatoire cryptographique | `secrets` (Python) |
+| Aleatoire cryptographique | Aleatoire systeme securise |
 
 Points techniques importants :
 
@@ -104,7 +104,7 @@ Recommandation : ne pas stocker de donnees confidentielles dans les champs non c
 
 ## Audits et tests
 
-- Script de tests securite : `scripts/run-security-tests.sh`
+- Tests securite : executez les suites Rust sous `rust/tests/` via `cargo test`
 - Revue de code systematique sur les changements sensibles (auth, crypto, stockage).
 - Journalisation des evenements de securite sans exposition de secrets.
 

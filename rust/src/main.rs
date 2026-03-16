@@ -1,3 +1,5 @@
+use std::env;
+use std::fs;
 use std::path::PathBuf;
 use std::sync::Arc;
 
@@ -395,7 +397,15 @@ fn initialize_tracing() -> Result<()> {
 }
 
 async fn initialize_app_context() -> Result<AppContext> {
-	let database_path = PathBuf::from("heelonvault.db");
+	let database_path = resolve_database_path()?;
+	if let Some(parent) = database_path.parent() {
+		if !parent.as_os_str().is_empty() {
+			fs::create_dir_all(parent).with_context(|| {
+				format!("failed to create database directory {}", parent.display())
+			})?;
+		}
+	}
+
 	let connect_options = SqliteConnectOptions::new()
 		.filename(&database_path)
 		.create_if_missing(true);
@@ -455,6 +465,18 @@ async fn initialize_app_context() -> Result<AppContext> {
 		_password_service: password_service,
 		_backup_service: backup_service,
 	})
+}
+
+fn resolve_database_path() -> Result<PathBuf> {
+	if let Ok(path_raw) = env::var("HEELONVAULT_DB_PATH") {
+		let trimmed = path_raw.trim();
+		if !trimmed.is_empty() {
+			return Ok(PathBuf::from(trimmed));
+		}
+	}
+
+	let current_dir = env::current_dir().context("failed to resolve current directory")?;
+	Ok(current_dir.join("data").join("heelonvault-rust-dev.db"))
 }
 
 async fn ensure_dev_admin_context(

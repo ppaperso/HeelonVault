@@ -1,5 +1,8 @@
 # Système de corbeille
 
+> Note migration: ce document contient des références historiques de l'ancienne implémentation Python.
+> Le runtime actif du projet est désormais Rust (`rust/`).
+
 ## Vue d'ensemble
 
 Le gestionnaire de mots de passe dispose désormais d'un système de corbeille qui permet de récupérer des entrées supprimées accidentellement.

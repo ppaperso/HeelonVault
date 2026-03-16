@@ -1,31 +1,20 @@
-#!/bin/bash
-# Script de lancement de l'application HeelonVault (production)
+#!/usr/bin/env bash
+# Production launcher (Rust-only)
 
-set -e
-
-# Assurer que les fichiers créés sont group-writable
-umask 002
+set -euo pipefail
 
 APP_DIR="/opt/heelonvault"
-VENV_DIR="${APP_DIR}/venv"
-VENV_PYTHON="${VENV_DIR}/bin/python3"
-APP_FILE="${APP_DIR}/heelonvault.py"
-REQ_FILE="${APP_DIR}/requirements.txt"
+BIN_PATH="${APP_DIR}/rust/target/release/heelonvault-rust"
+PROD_DB_DIR="/var/lib/heelonvault-rust-shared"
+PROD_DB_PATH="${PROD_DB_DIR}/heelonvault.db"
 
-if [ ! -x "$VENV_PYTHON" ]; then
-	echo "❌ Environnement de production introuvable: ${VENV_PYTHON}"
-	exit 1
+if [[ ! -x "$BIN_PATH" ]]; then
+  echo "[ERROR] Rust binary not found: $BIN_PATH"
+  echo "Build it with: cd ${APP_DIR}/rust && cargo build --release"
+  exit 1
 fi
 
-if [ ! -f "$APP_FILE" ]; then
-	echo "❌ Fichier application introuvable: ${APP_FILE}"
-	exit 1
-fi
+mkdir -p "$PROD_DB_DIR"
+export HEELONVAULT_DB_PATH="$PROD_DB_PATH"
 
-if [ -f "$REQ_FILE" ]; then
-	echo "🔄 Synchronisation des dépendances de production..."
-	"$VENV_PYTHON" -m pip install --upgrade pip
-	"$VENV_PYTHON" -m pip install -r "$REQ_FILE"
-fi
-
-"$VENV_PYTHON" "$APP_FILE"
+exec "$BIN_PATH"

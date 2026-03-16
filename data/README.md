@@ -1,57 +1,21 @@
-# 📂 Répertoire de données de développement
+# Development Data Directory (Rust)
 
-Ce répertoire contient les données de **développement et de test uniquement**.
+This folder is used only for local Rust development data.
 
-## 🔐 Isolation Dev/Prod
+## Paths
 
-L'application utilise deux répertoires distincts selon le mode :
+- Dev database: `data/heelonvault-rust-dev.db`
+- Prod database: `/var/lib/heelonvault-rust-shared/heelonvault.db`
 
-| Mode | Variable | Emplacement | Usage |
-| ------ | ---------- | ------------- | ------- |
-| **DEV** | `DEV_MODE=1` | `./data/` | Développement et tests |
-| **PROD** | (par défaut) | `/var/lib/password-manager-shared/` | Production |
+## Legacy Data Protection
 
-## 🛡️ Sécurité
+Do not modify or delete `/var/lib/heelonvault-shared`.
+This path belongs to legacy Python data and must remain untouched.
 
-- ✅ Ce dossier est **ignoré par Git** (`.gitignore`)
-- ✅ Les données de dev **ne polluent jamais la prod**
-- ✅ Les données de prod **ne sont jamais modifiées en dev**
-- ✅ Vous pouvez **supprimer `./data/`** sans risque
-
-## 📦 Contenu
-
-```text
-data/
-├── users.db              # Comptes utilisateurs de test
-├── passwords_*.db        # Mots de passe de test chiffrés
-├── salt_*.bin           # Clés de chiffrement de test
-└── security.log         # Logs de test
-```
-
-## 🚀 Utilisation
-
-### Mode développement
+## Reset Local Dev Data
 
 ```bash
-./run-dev.sh              # Lance avec DEV_MODE=1 automatiquement
-# OU
-DEV_MODE=1 python3 password_manager.py
+rm -f data/heelonvault-rust-dev.db
 ```
 
-### Mode production
-
-```bash
-python3 password_manager.py    # Utilise /var/lib/password-manager-shared/
-# OU via l'icône du menu Applications
-```
-
-## 🗑️ Réinitialiser les données de test
-
-```bash
-rm -rf data/
-# Le dossier sera recréé au prochain lancement en mode dev
-```
-
----
-
-**⚠️ IMPORTANT** : Ne commitez JAMAIS ce dossier dans Git !
+The dev database will be recreated on next `./run-dev.sh` launch.

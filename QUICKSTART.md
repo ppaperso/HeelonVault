@@ -1,90 +1,45 @@
-# 🚀 Démarrage Rapide - Améliorations de Sécurité
+# Quickstart (Rust)
 
-## ✅ Statut Actuel
-
-- [x] Analyse de sécurité terminée
-- [x] Nouveaux fichiers créés et testés
-- [x] Liste de mots nettoyée (1053 mots)
-- [x] Tests réussis à 100%
-- [x] Code formaté avec Ruff
-- [x] Production protégée (jamais touchée)
-
-## 📚 Documentation
-
-| Fichier | Description |
-| --------- | ------------- |
-| `SECURITY_RECOMMENDATIONS.md` | 📊 Analyse complète + recommandations |
-| `IMPLEMENTATION_GUIDE.md` | 🔧 Guide d'implémentation détaillé |
-| `RAPPORT_TESTS_SECURITE.md` | ✅ Résultats des tests |
-| Ce fichier | ⚡ Démarrage rapide |
-
-## 🎯 Prochaine Étape
-
-### Option 1 : Lire et comprendre (recommandé)
+## 1. Build Check
 
 ```bash
-# Lire l'analyse
-cat SECURITY_RECOMMENDATIONS.md | less
-
-# Lire le guide d'implémentation
-cat IMPLEMENTATION_GUIDE.md | less
-
-# Lire les résultats des tests
-cat RAPPORT_TESTS_SECURITE.md | less
+cd rust
+cargo check
 ```
 
-### Option 2 : Implémenter immédiatement
+## 2. Run in Development
 
-**⚠️ ATTENTION** : Lisez au moins le résumé avant !
+From repository root:
 
 ```bash
-# Sauvegarder l'état actuel
-git add -A
-git commit -m "Avant améliorations sécurité - tests OK"
-
-# Appliquer les modifications (suivre IMPLEMENTATION_GUIDE.md)
-# 1. Modifier src/services/password_generator.py
-# 2. Modifier src/ui/dialogs/password_generator_dialog.py
-# 3. Modifier add_test_data.py
-# 4. Intégrer le validateur
-
-# Tester
 ./run-dev.sh
 ```
 
-## 🔐 Résumé 3 Lignes
+Development database path:
 
-1. **Avant** : Passphrases avec 42 mots (32 bits d'entropie) → FAIBLE
-2. **Après** : Passphrases avec 1053 mots (50-60 bits) → BON  
-3. **Action** : Intégrer les nouveaux fichiers (guide détaillé fourni)
+- `data/heelonvault-rust-dev.db`
 
-## 📞 En cas de question
+## 3. Run Tests
 
-- Documentation technique : `SECURITY_RECOMMENDATIONS.md`
-- Pas-à-pas : `IMPLEMENTATION_GUIDE.md`
-- Résultats tests : `RAPPORT_TESTS_SECURITE.md`
-- Tests automatisés : `./run-security-tests.sh`
+```bash
+cd rust
+cargo test secret_repository:: -- --nocapture
+cargo test secret_service:: -- --nocapture
+```
 
-## ✨ L'essentiel
+## 4. Production Build
 
-**Ce qui a été fait** :
+```bash
+cd rust
+cargo build --release
+```
 
-- ✅ Analyse de sécurité complète
-- ✅ Création de 1053 mots uniques (vs 42)
-- ✅ Validateur de mots de passe maîtres
-- ✅ Tests 100% réussis
-- ✅ Documentation complète
+The production launcher expects:
 
-**Ce qui reste à faire** :
+- Binary path: `/opt/heelonvault/rust/target/release/heelonvault-rust`
+- Launcher: `/opt/heelonvault/run.sh`
+- Production database path: `/var/lib/heelonvault-rust-shared/heelonvault.db`
 
-- [ ] Lire la documentation
-- [ ] Intégrer les modifications (30 min)
-- [ ] Tester en mode dev
-- [ ] Déployer en production
+Legacy path protection:
 
-**Score de sécurité** : 7.5/10 → **9/10** (après implémentation)
-
----
-
-**Prêt à améliorer la sécurité ?** 🚀
-Commencez par lire `SECURITY_RECOMMENDATIONS.md` !
+- Do not modify or delete `/var/lib/heelonvault-shared` (legacy Python data).

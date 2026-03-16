@@ -13,7 +13,8 @@ use uuid::Uuid;
 
 use crate::services::secret_service::SecretService;
 use crate::services::vault_service::VaultService;
-use crate::ui::dialogs::add_edit_dialog::AddEditDialog;
+use crate::ui::dialogs::add_edit_dialog::{AddEditDialog, DialogMode};
+use crate::ui::dialogs::trash_dialog::TrashDialog;
 
 pub struct MainWindow {
 	window: adw::ApplicationWindow,
@@ -66,6 +67,13 @@ impl MainWindow {
 		add_button.add_css_class("main-add-button");
 		add_button.set_tooltip_text(Some("Ajouter"));
 
+		let trash_button = gtk4::Button::builder()
+			.icon_name("user-trash-symbolic")
+			.build();
+		trash_button.add_css_class("flat");
+		trash_button.add_css_class("main-add-button");
+		trash_button.set_tooltip_text(Some("Corbeille"));
+
 		let app_for_add = application.clone();
 		let window_for_add = window.clone();
 		let runtime_for_add = runtime_handle.clone();
@@ -73,6 +81,13 @@ impl MainWindow {
 		let vault_for_add = Arc::clone(&vault_service);
 		let admin_user_for_add = admin_user_id;
 		let admin_master_for_add = admin_master_key.clone();
+		let app_for_trash = application.clone();
+		let window_for_trash = window.clone();
+		let runtime_for_trash = runtime_handle.clone();
+		let secret_for_trash = Arc::clone(&secret_service);
+		let vault_for_trash = Arc::clone(&vault_service);
+		let admin_user_for_trash = admin_user_id;
+		let admin_master_for_trash = admin_master_key.clone();
 
 		let center_panel = Self::build_center_panel();
 		let secret_list_for_refresh = center_panel.secret_list.clone();
@@ -81,6 +96,8 @@ impl MainWindow {
 		let empty_copy_for_refresh = center_panel.empty_copy.clone();
 
 		let refresh_list: Rc<dyn Fn()> = {
+			let app = application.clone();
+			let parent_window = window.clone();
 			let runtime = runtime_handle.clone();
 			let secret_service = Arc::clone(&secret_service);
 			let vault_service = Arc::clone(&vault_service);
@@ -91,6 +108,8 @@ impl MainWindow {
 			let empty_copy = empty_copy_for_refresh.clone();
 			Rc::new(move || {
 				Self::refresh_secret_list(
+					app.clone(),
+					parent_window.clone(),
 					runtime.clone(),
 					Arc::clone(&secret_service),
 					Arc::clone(&vault_service),
@@ -115,13 +134,32 @@ impl MainWindow {
 				Arc::clone(&vault_for_add),
 				admin_user_for_add,
 				admin_master_for_add.clone(),
+				DialogMode::Create,
 				move || {
 					refresh_after_save();
 				},
 			);
 			dialog.present();
 		});
+		let refresh_for_trash = Rc::clone(&refresh_list);
 		header_bar.pack_start(&add_button);
+		trash_button.connect_clicked(move |_| {
+			let refresh_after_trash = Rc::clone(&refresh_for_trash);
+			let dialog = TrashDialog::new(
+				&app_for_trash,
+				&window_for_trash,
+				runtime_for_trash.clone(),
+				Arc::clone(&secret_for_trash),
+				Arc::clone(&vault_for_trash),
+				admin_user_for_trash,
+				admin_master_for_trash.clone(),
+				move || {
+					refresh_after_trash();
+				},
+			);
+			dialog.present();
+		});
+		header_bar.pack_start(&trash_button);
 		root.append(&header_bar);
 
 		let content = gtk4::Box::builder()
@@ -310,6 +348,8 @@ impl MainWindow {
 
 	#[allow(clippy::too_many_arguments)]
 	fn refresh_secret_list<TSecret, TVault>(
+		application: adw::Application,
+		parent_window: adw::ApplicationWindow,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
@@ -327,27 +367,32 @@ impl MainWindow {
 		empty_copy.set_text("Veuillez patienter.");
 		stack.set_visible_child_name("empty");
 
+		let runtime_for_loader = runtime_handle.clone();
+		let secret_for_loader = Arc::clone(&secret_service);
+		let vault_for_loader = Arc::clone(&vault_service);
+		let admin_master_for_loader = admin_master_key.clone();
+
 		let (sender, receiver) = tokio::sync::oneshot::channel();
 		std::thread::spawn(move || {
 			let result: Result<Vec<SecretRowView>, crate::errors::AppError> =
-				runtime_handle.block_on(async move {
-				let vaults = vault_service.list_user_vaults(admin_user_id).await?;
+				runtime_for_loader.block_on(async move {
+				let vaults = vault_for_loader.list_user_vaults(admin_user_id).await?;
 				let first_vault = match vaults.into_iter().next() {
 					Some(value) => value,
 					None => return Ok(Vec::new()),
 				};
 
-				let vault_key = vault_service
+				let vault_key = vault_for_loader
 					.open_vault(
 						first_vault.id,
-						SecretBox::new(Box::new(admin_master_key.clone())),
+						SecretBox::new(Box::new(admin_master_for_loader.clone())),
 					)
 					.await?;
 
-				let items = secret_service.list_by_vault(first_vault.id).await?;
+				let items = secret_for_loader.list_by_vault(first_vault.id).await?;
 				let mut rows = Vec::with_capacity(items.len());
 				for item in items {
-					let secret_result = secret_service
+					let secret_result = secret_for_loader
 						.get_secret(
 							item.id,
 							SecretBox::new(Box::new(vault_key.expose_secret().clone())),
@@ -395,6 +440,7 @@ impl MainWindow {
 						.unwrap_or_else(|| "date indisponible".to_string());
 
 					rows.push(SecretRowView {
+						secret_id: item.id,
 						icon_name: icon_name.to_string(),
 						type_label: type_label_text.to_string(),
 						title,
@@ -464,6 +510,118 @@ impl MainWindow {
 							.valign(Align::Center)
 							.build();
 
+						let edit_button = gtk4::Button::builder()
+							.icon_name("document-edit-symbolic")
+							.build();
+						edit_button.add_css_class("flat");
+						edit_button.set_tooltip_text(Some("Modifier le secret"));
+						let app_for_edit = application.clone();
+						let parent_for_edit = parent_window.clone();
+						let runtime_for_edit = runtime_handle.clone();
+						let secret_for_edit = Arc::clone(&secret_service);
+						let vault_for_edit = Arc::clone(&vault_service);
+						let list_for_edit = secret_list.clone();
+						let stack_for_edit = stack.clone();
+						let empty_title_for_edit = empty_title.clone();
+						let empty_copy_for_edit = empty_copy.clone();
+						let master_for_edit = admin_master_key.clone();
+						let secret_id_for_edit = item.secret_id;
+						edit_button.connect_clicked(move |_| {
+							let app_for_refresh = app_for_edit.clone();
+							let parent_for_refresh = parent_for_edit.clone();
+							let runtime_for_refresh = runtime_for_edit.clone();
+							let secret_for_refresh = Arc::clone(&secret_for_edit);
+							let vault_for_refresh = Arc::clone(&vault_for_edit);
+							let list_for_refresh = list_for_edit.clone();
+							let stack_for_refresh = stack_for_edit.clone();
+							let empty_title_refresh = empty_title_for_edit.clone();
+							let empty_copy_refresh = empty_copy_for_edit.clone();
+							let master_for_refresh = master_for_edit.clone();
+
+							let dialog = AddEditDialog::new(
+								&app_for_edit,
+								&parent_for_edit,
+								runtime_for_edit.clone(),
+								Arc::clone(&secret_for_edit),
+								Arc::clone(&vault_for_edit),
+								admin_user_id,
+								master_for_edit.clone(),
+								DialogMode::Edit(secret_id_for_edit),
+								move || {
+									Self::refresh_secret_list(
+										app_for_refresh.clone(),
+										parent_for_refresh.clone(),
+										runtime_for_refresh.clone(),
+										Arc::clone(&secret_for_refresh),
+										Arc::clone(&vault_for_refresh),
+										admin_user_id,
+										master_for_refresh.clone(),
+										list_for_refresh.clone(),
+										stack_for_refresh.clone(),
+										empty_title_refresh.clone(),
+										empty_copy_refresh.clone(),
+									);
+								},
+							);
+							dialog.present();
+						});
+
+						let trash_button = gtk4::Button::builder()
+							.icon_name("user-trash-symbolic")
+							.build();
+						trash_button.add_css_class("flat");
+						trash_button.set_tooltip_text(Some("Deplacer vers la corbeille"));
+						let app_for_delete = application.clone();
+						let parent_for_delete = parent_window.clone();
+						let runtime_for_delete = runtime_handle.clone();
+						let secret_for_delete = Arc::clone(&secret_service);
+						let vault_for_delete = Arc::clone(&vault_service);
+						let list_for_delete = secret_list.clone();
+						let stack_for_delete = stack.clone();
+						let empty_title_for_delete = empty_title.clone();
+						let empty_copy_for_delete = empty_copy.clone();
+						let master_for_delete = admin_master_key.clone();
+						let secret_id_for_delete = item.secret_id;
+						trash_button.connect_clicked(move |_| {
+							let (sender, receiver) = tokio::sync::oneshot::channel();
+							let secret_service_for_task = Arc::clone(&secret_for_delete);
+							let runtime_for_task = runtime_for_delete.clone();
+							std::thread::spawn(move || {
+								let result = runtime_for_task.block_on(async move {
+									secret_service_for_task.soft_delete(secret_id_for_delete).await
+								});
+								let _ = sender.send(result);
+							});
+
+							let app_for_refresh = app_for_delete.clone();
+							let parent_for_refresh = parent_for_delete.clone();
+							let runtime_for_refresh = runtime_for_delete.clone();
+							let secret_for_refresh = Arc::clone(&secret_for_delete);
+							let vault_for_refresh = Arc::clone(&vault_for_delete);
+							let list_for_refresh = list_for_delete.clone();
+							let stack_for_refresh = stack_for_delete.clone();
+							let empty_title_refresh = empty_title_for_delete.clone();
+							let empty_copy_refresh = empty_copy_for_delete.clone();
+							let master_for_refresh = master_for_delete.clone();
+							glib::MainContext::default().spawn_local(async move {
+								if matches!(receiver.await, Ok(Ok(()))) {
+									Self::refresh_secret_list(
+										app_for_refresh.clone(),
+										parent_for_refresh.clone(),
+										runtime_for_refresh.clone(),
+										Arc::clone(&secret_for_refresh),
+										Arc::clone(&vault_for_refresh),
+										admin_user_id,
+										master_for_refresh.clone(),
+										list_for_refresh.clone(),
+										stack_for_refresh.clone(),
+										empty_title_refresh.clone(),
+										empty_copy_refresh.clone(),
+									);
+								}
+							});
+						});
+
 						let copy_login_button = gtk4::Button::builder()
 							.icon_name("edit-copy-symbolic")
 							.build();
@@ -509,6 +667,8 @@ impl MainWindow {
 						actions_box.append(&copy_login_button);
 						actions_box.append(&copy_secret_button);
 						actions_box.append(&open_url_button);
+						actions_box.append(&edit_button);
+						actions_box.append(&trash_button);
 
 						row_box.append(&icon);
 						row_box.append(&text_box);
@@ -540,6 +700,7 @@ struct CenterPanelWidgets {
 }
 
 struct SecretRowView {
+	secret_id: Uuid,
 	icon_name: String,
 	type_label: String,
 	title: String,

@@ -34,8 +34,23 @@ pub trait SecretService {
         secret_id: Uuid,
         vault_key: SecretBox<Vec<u8>>,
     ) -> Result<DecryptedSecret, AppError>;
+    #[allow(clippy::too_many_arguments)]
+    async fn update_secret(
+        &self,
+        secret_id: Uuid,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
+        plaintext_secret: Option<SecretBox<Vec<u8>>>,
+        vault_key: SecretBox<Vec<u8>>,
+    ) -> Result<(), AppError>;
     async fn list_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_trash_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError>;
+    async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
+    async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
+    async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError>;
 }
 
 pub struct SecretServiceImpl<TRepo, TCrypto>
@@ -170,12 +185,54 @@ where
         })
     }
 
+    async fn update_secret(
+        &self,
+        secret_id: Uuid,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
+        plaintext_secret: Option<SecretBox<Vec<u8>>>,
+        vault_key: SecretBox<Vec<u8>>,
+    ) -> Result<(), AppError> {
+        self.secret_repo
+            .update_secret_metadata(secret_id, title, metadata_json, tags, expires_at)
+            .await?;
+
+        if let Some(plaintext) = plaintext_secret {
+            Self::validate_plaintext_secret(&plaintext)?;
+            let encrypted_payload = self.crypto_service.encrypt(&plaintext, &vault_key).await?;
+            let serialized_payload = Self::serialize_payload(&encrypted_payload);
+            self.secret_repo
+                .update_secret_blob(secret_id, serialized_payload)
+                .await?;
+        }
+
+        Ok(())
+    }
+
     async fn list_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         self.secret_repo.list_by_vault_id(vault_id).await
     }
 
+    async fn list_trash_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        self.secret_repo.list_trash_by_vault_id(vault_id).await
+    }
+
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError> {
         self.secret_repo.soft_delete(secret_id).await
+    }
+
+    async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+        self.secret_repo.restore_secret(secret_id, vault_id).await
+    }
+
+    async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+        self.secret_repo.permanent_delete(secret_id, vault_id).await
+    }
+
+    async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError> {
+        self.secret_repo.empty_trash(vault_id).await
     }
 }
 
@@ -195,6 +252,10 @@ mod tests {
         id: Uuid,
         vault_id: Uuid,
         secret_type: SecretType,
+        title: Option<String>,
+        metadata_json: Option<String>,
+        tags: Option<String>,
+        expires_at: Option<String>,
         blob_storage: BlobStorage,
         blob: Vec<u8>,
         deleted: bool,
@@ -225,10 +286,10 @@ mod tests {
                     id: item.id,
                     vault_id: item.vault_id,
                     secret_type: item.secret_type,
-                    title: None,
-                    metadata_json: None,
-                    tags: None,
-                    expires_at: None,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
                     created_at: None,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
@@ -247,10 +308,32 @@ mod tests {
                     id: item.id,
                     vault_id: item.vault_id,
                     secret_type: item.secret_type,
-                    title: None,
-                    metadata_json: None,
-                    tags: None,
-                    expires_at: None,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
+                    created_at: None,
+                    blob_storage: item.blob_storage,
+                    secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                })
+                .collect();
+
+            Ok(listed)
+        }
+
+        async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+            let items = self.lock_items()?;
+            let listed = items
+                .values()
+                .filter(|item| item.vault_id == vault_id && item.deleted)
+                .map(|item| SecretItem {
+                    id: item.id,
+                    vault_id: item.vault_id,
+                    secret_type: item.secret_type,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
                     created_at: None,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
@@ -272,11 +355,39 @@ mod tests {
                     id: item.id,
                     vault_id: item.vault_id,
                     secret_type: item.secret_type,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
                     blob_storage: item.blob_storage,
                     blob: encrypted_secret_blob.expose_secret().clone(),
                     deleted: false,
                 },
             );
+            Ok(())
+        }
+
+        async fn update_secret_metadata(
+            &self,
+            secret_id: Uuid,
+            title: Option<String>,
+            metadata_json: Option<String>,
+            tags: Option<String>,
+            expires_at: Option<String>,
+        ) -> Result<(), AppError> {
+            let mut items = self.lock_items()?;
+            let item = items.get_mut(&secret_id).ok_or_else(|| {
+                AppError::Storage("secret not found for metadata update".to_string())
+            })?;
+            if item.deleted {
+                return Err(AppError::Storage(
+                    "secret not found for metadata update".to_string(),
+                ));
+            }
+            item.title = title;
+            item.metadata_json = metadata_json;
+            item.tags = tags;
+            item.expires_at = expires_at;
             Ok(())
         }
 
@@ -300,6 +411,42 @@ mod tests {
                 .ok_or_else(|| AppError::Storage("secret not found for delete".to_string()))?;
             item.deleted = true;
             Ok(())
+        }
+
+        async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+            let mut items = self.lock_items()?;
+            let item = items
+                .get_mut(&secret_id)
+                .ok_or_else(|| AppError::Storage("secret not found in trash".to_string()))?;
+            if item.vault_id != vault_id || !item.deleted {
+                return Err(AppError::Storage("secret not found in trash".to_string()));
+            }
+            item.deleted = false;
+            Ok(())
+        }
+
+        async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+            let mut items = self.lock_items()?;
+            let can_delete = items
+                .get(&secret_id)
+                .map(|item| item.vault_id == vault_id && item.deleted)
+                .unwrap_or(false);
+
+            if !can_delete {
+                return Err(AppError::Storage(
+                    "secret not found for permanent delete".to_string(),
+                ));
+            }
+
+            items.remove(&secret_id);
+            Ok(())
+        }
+
+        async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError> {
+            let mut items = self.lock_items()?;
+            let before = items.len();
+            items.retain(|_, item| !(item.vault_id == vault_id && item.deleted));
+            Ok(before.saturating_sub(items.len()))
         }
     }
 
@@ -520,5 +667,176 @@ mod tests {
         };
         assert_eq!(listed_after.len(), 1);
         assert_ne!(listed_after[0].id, first.id);
+    }
+
+    #[tokio::test]
+    async fn update_secret_without_new_payload_keeps_existing_blob() {
+        let repo = StubSecretRepository::default();
+        let service = SecretServiceImpl::new(repo, StubCryptoService);
+        let vault_id = Uuid::new_v4();
+        let vault_key = SecretBox::new(Box::new(vec![6_u8; 32]));
+
+        let created_result = service
+            .create_secret(
+                vault_id,
+                SecretType::Password,
+                Some("Avant".to_string()),
+                Some("{\"category\":\"Ops\"}".to_string()),
+                Some("init".to_string()),
+                None,
+                SecretBox::new(Box::new(b"unchanged-secret".to_vec())),
+                SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+            )
+            .await;
+        assert!(created_result.is_ok(), "create should succeed");
+        let created = match created_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let update_result = service
+            .update_secret(
+                created.id,
+                Some("Apres".to_string()),
+                Some("{\"category\":\"Infra\"}".to_string()),
+                Some("prod".to_string()),
+                Some("2026-12-24T00:00:00Z".to_string()),
+                None,
+                SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+            )
+            .await;
+        assert!(update_result.is_ok(), "update should succeed");
+        if update_result.is_err() {
+            return;
+        }
+
+        let decrypted_result = service
+            .get_secret(created.id, SecretBox::new(Box::new(vault_key.expose_secret().clone())))
+            .await;
+        assert!(decrypted_result.is_ok(), "get should succeed");
+        let decrypted = match decrypted_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(decrypted.secret_value.expose_secret().as_slice(), b"unchanged-secret");
+
+        let listed_result = service.list_by_vault(vault_id).await;
+        assert!(listed_result.is_ok(), "list should succeed");
+        let listed = match listed_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(listed.len(), 1);
+        assert_eq!(listed[0].title.as_deref(), Some("Apres"));
+        assert_eq!(listed[0].metadata_json.as_deref(), Some("{\"category\":\"Infra\"}"));
+    }
+
+    #[tokio::test]
+    async fn trash_lifecycle_and_empty_trash_are_scoped() {
+        let repo = StubSecretRepository::default();
+        let service = SecretServiceImpl::new(repo, StubCryptoService);
+        let vault_a = Uuid::new_v4();
+        let vault_b = Uuid::new_v4();
+        let vault_key = SecretBox::new(Box::new(vec![5_u8; 32]));
+
+        let item_a_result = service
+            .create_secret(
+                vault_a,
+                SecretType::Password,
+                Some("A".to_string()),
+                None,
+                None,
+                None,
+                SecretBox::new(Box::new(b"secret-a".to_vec())),
+                SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+            )
+            .await;
+        let item_b_result = service
+            .create_secret(
+                vault_b,
+                SecretType::Password,
+                Some("B".to_string()),
+                None,
+                None,
+                None,
+                SecretBox::new(Box::new(b"secret-b".to_vec())),
+                SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+            )
+            .await;
+        assert!(item_a_result.is_ok() && item_b_result.is_ok(), "create should succeed");
+        let item_a = match item_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        let item_b = match item_b_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let del_a = service.soft_delete(item_a.id).await;
+        let del_b = service.soft_delete(item_b.id).await;
+        assert!(del_a.is_ok() && del_b.is_ok(), "soft delete should succeed");
+        if del_a.is_err() || del_b.is_err() {
+            return;
+        }
+
+        let trash_a_result = service.list_trash_by_vault(vault_a).await;
+        assert!(trash_a_result.is_ok(), "trash list should succeed");
+        let trash_a = match trash_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(trash_a.len(), 1);
+        assert_eq!(trash_a[0].id, item_a.id);
+
+        let restore_result = service.restore_secret(item_a.id, vault_a).await;
+        assert!(restore_result.is_ok(), "restore should succeed");
+        if restore_result.is_err() {
+            return;
+        }
+
+        let active_a_result = service.list_by_vault(vault_a).await;
+        assert!(active_a_result.is_ok(), "active list should succeed");
+        let active_a = match active_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(active_a.len(), 1);
+
+        let del_a_again = service.soft_delete(item_a.id).await;
+        assert!(del_a_again.is_ok(), "soft delete should succeed again");
+        if del_a_again.is_err() {
+            return;
+        }
+
+        let empty_a_result = service.empty_trash(vault_a).await;
+        assert!(empty_a_result.is_ok(), "empty trash should succeed");
+        let empty_a = match empty_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(empty_a, 1);
+
+        let trash_b_result = service.list_trash_by_vault(vault_b).await;
+        assert!(trash_b_result.is_ok(), "vault b trash should remain");
+        let trash_b = match trash_b_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(trash_b.len(), 1);
+
+        let hard_delete_result = service.permanent_delete(item_b.id, vault_b).await;
+        assert!(hard_delete_result.is_ok(), "permanent delete should succeed");
+        if hard_delete_result.is_err() {
+            return;
+        }
+
+        let trash_b_after_result = service.list_trash_by_vault(vault_b).await;
+        assert!(trash_b_after_result.is_ok(), "vault b trash should be empty");
+        let trash_b_after = match trash_b_after_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert!(trash_b_after.is_empty());
     }
 }

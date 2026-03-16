@@ -4,7 +4,7 @@
 
 set -e
 
-DATA_DIR="/var/lib/heelonvault-shared"
+DATA_DIR="/var/lib/heelonvault-rust-shared"
 
 echo "🔧 Réparation des permissions et ACL..."
 echo ""

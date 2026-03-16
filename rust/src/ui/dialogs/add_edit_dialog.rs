@@ -18,6 +18,12 @@ use crate::services::password_service::{PasswordService, PasswordServiceImpl};
 use crate::services::secret_service::SecretService;
 use crate::services::vault_service::VaultService;
 
+#[derive(Clone, Copy, Debug)]
+pub enum DialogMode {
+	Create,
+	Edit(Uuid),
+}
+
 pub struct AddEditDialog {
 	window: gtk4::Window,
 }
@@ -32,6 +38,7 @@ impl AddEditDialog {
 		vault_service: Arc<TVault>,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
+		mode: DialogMode,
 		on_saved: impl Fn() + 'static,
 	) -> Self
 	where
@@ -42,7 +49,10 @@ impl AddEditDialog {
 		let window = gtk4::Window::builder()
 			.application(application)
 			.transient_for(parent)
-			.title("Nouveau secret")
+			.title(match mode {
+				DialogMode::Create => "Nouveau secret",
+				DialogMode::Edit(_) => "Modifier le secret",
+			})
 			.modal(true)
 			.default_width(660)
 			.default_height(760)
@@ -82,14 +92,20 @@ impl AddEditDialog {
 			.hexpand(true)
 			.build();
 
-		let title = gtk4::Label::new(Some("Ajouter un secret"));
+		let title = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Ajouter un secret",
+			DialogMode::Edit(_) => "Modifier le secret",
+		}));
 		title.add_css_class("title-2");
 		title.add_css_class("login-hero-title");
 		title.set_halign(Align::Start);
 
-		let subtitle = gtk4::Label::new(Some(
-			"Sélectionnez un type puis renseignez les champs associés.",
-		));
+		let subtitle = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Sélectionnez un type puis renseignez les champs associés.",
+			DialogMode::Edit(_) => {
+				"Mettez a jour les champs souhaites. Laissez le secret vide pour le conserver."
+			}
+		}));
 		subtitle.add_css_class("login-hero-copy");
 		subtitle.set_halign(Align::Start);
 		subtitle.set_wrap(true);
@@ -259,7 +275,10 @@ impl AddEditDialog {
 			.build();
 		let save_spinner = gtk4::Spinner::new();
 		save_spinner.set_visible(false);
-		let save_label = gtk4::Label::new(Some("Enregistrer"));
+		let save_label = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Enregistrer",
+			DialogMode::Edit(_) => "Mettre a jour",
+		}));
 		save_button_content.append(&save_spinner);
 		save_button_content.append(&save_label);
 		save_button.set_child(Some(&save_button_content));
@@ -294,6 +313,8 @@ impl AddEditDialog {
 		let vault_for_save = Arc::clone(&vault_service);
 		let runtime_for_save = runtime_handle.clone();
 		let on_saved_for_save = Rc::clone(&on_saved);
+		let mode_for_save = mode;
+		let admin_master_for_save_seed = admin_master_key.clone();
 		save_button.connect_clicked(move |_| {
 			error_for_save.set_visible(false);
 			error_for_save.set_text("");
@@ -380,7 +401,7 @@ impl AddEditDialog {
 				_ => (SecretType::Password, password_for_save.text().to_string()),
 			};
 
-			if secret_text.trim().is_empty() {
+			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
 				error_for_save.set_text("Le secret est obligatoire pour ce type.");
 				error_for_save.set_visible(true);
 				return;
@@ -394,7 +415,7 @@ impl AddEditDialog {
 			let secret_service_for_task = Arc::clone(&secret_for_save);
 			let vault_service_for_task = Arc::clone(&vault_for_save);
 			let runtime_for_task = runtime_for_save.clone();
-			let admin_master_for_task = admin_master_key.clone();
+			let admin_master_for_task = admin_master_for_save_seed.clone();
 			let title_for_task = title.clone();
 			let metadata_for_task = metadata_json.clone();
 			let tags_for_task = if tags_value.is_empty() {
@@ -418,18 +439,41 @@ impl AddEditDialog {
 						)
 						.await?;
 
-					secret_service_for_task
-						.create_secret(
-							target_vault.id,
-							secret_type,
-							Some(title_for_task),
-							metadata_for_task,
-							tags_for_task,
-							expires_for_task,
-							SecretBox::new(Box::new(secret_payload)),
-							vault_key,
-						)
-						.await
+					match mode_for_save {
+						DialogMode::Create => {
+							secret_service_for_task
+								.create_secret(
+									target_vault.id,
+									secret_type,
+									Some(title_for_task),
+									metadata_for_task,
+									tags_for_task,
+									expires_for_task,
+									SecretBox::new(Box::new(secret_payload)),
+									vault_key,
+								)
+								.await
+								.map(|_| ())
+						}
+						DialogMode::Edit(secret_id) => {
+							let secret_to_update = if secret_payload.is_empty() {
+								None
+							} else {
+								Some(SecretBox::new(Box::new(secret_payload)))
+							};
+							secret_service_for_task
+								.update_secret(
+									secret_id,
+									Some(title_for_task),
+									metadata_for_task,
+									tags_for_task,
+									expires_for_task,
+									secret_to_update,
+									vault_key,
+								)
+								.await
+						}
+					}
 				});
 				let _ = sender.send(result);
 			});
@@ -482,6 +526,32 @@ impl AddEditDialog {
 		root.append(&header_card);
 		root.append(&scrolled);
 		window.set_child(Some(&root));
+
+		if let DialogMode::Edit(secret_id) = mode {
+			type_dropdown.set_sensitive(false);
+			Self::setup_for_edit(
+				runtime_handle,
+				Arc::clone(&secret_service),
+				Arc::clone(&vault_service),
+				admin_user_id,
+				admin_master_key.clone(),
+				secret_id,
+				title_entry.clone(),
+				category_entry.clone(),
+				tags_entry.clone(),
+				type_dropdown.clone(),
+				username_entry.clone(),
+				url_entry.clone(),
+				notes_text.buffer(),
+				validity_unlimited.clone(),
+				validity_days.clone(),
+				api_provider_entry.clone(),
+				ssh_public_entry.clone(),
+				ssh_passphrase_entry.clone(),
+				secure_doc_mime_entry.clone(),
+				error_label.clone(),
+			);
+		}
 
 		Self::install_local_css();
 		Self { window }
@@ -683,6 +753,154 @@ impl AddEditDialog {
 		box_widget.append(&import_hint);
 		frame.set_child(Some(&box_widget));
 		(frame, path_entry, mime_entry)
+	}
+
+	#[allow(clippy::too_many_arguments)]
+	fn setup_for_edit<TSecret, TVault>(
+		runtime_handle: Handle,
+		secret_service: Arc<TSecret>,
+		vault_service: Arc<TVault>,
+		admin_user_id: Uuid,
+		admin_master_key: Vec<u8>,
+		secret_id: Uuid,
+		title_entry: gtk4::Entry,
+		category_entry: gtk4::Entry,
+		tags_entry: gtk4::Entry,
+		type_dropdown: gtk4::DropDown,
+		username_entry: gtk4::Entry,
+		url_entry: gtk4::Entry,
+		notes_buffer: gtk4::TextBuffer,
+		validity_unlimited: gtk4::CheckButton,
+		validity_days: gtk4::SpinButton,
+		api_provider_entry: gtk4::Entry,
+		ssh_public_entry: gtk4::Entry,
+		ssh_passphrase_entry: gtk4::Entry,
+		secure_doc_mime_entry: gtk4::Entry,
+		error_label: gtk4::Label,
+	) where
+		TSecret: SecretService + Send + Sync + 'static,
+		TVault: VaultService + Send + Sync + 'static,
+	{
+		let (sender, receiver) = tokio::sync::oneshot::channel();
+		std::thread::spawn(move || {
+			let result: Result<crate::models::SecretItem, crate::errors::AppError> =
+				runtime_handle.block_on(async move {
+					let vaults = vault_service.list_user_vaults(admin_user_id).await?;
+					let target_vault = vaults
+						.into_iter()
+						.next()
+						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
+
+					let _vault_key = vault_service
+						.open_vault(
+							target_vault.id,
+							SecretBox::new(Box::new(admin_master_key.clone())),
+						)
+						.await?;
+
+					let items = secret_service.list_by_vault(target_vault.id).await?;
+					items
+						.into_iter()
+						.find(|item| item.id == secret_id)
+						.ok_or_else(|| {
+							crate::errors::AppError::NotFound("secret not found".to_string())
+						})
+				});
+			let _ = sender.send(result);
+		});
+
+		glib::MainContext::default().spawn_local(async move {
+			match receiver.await {
+				Ok(Ok(item)) => {
+					title_entry.set_text(item.title.as_deref().unwrap_or_default());
+					tags_entry.set_text(item.tags.as_deref().unwrap_or_default());
+
+					let type_index = match item.secret_type {
+						SecretType::Password => 0,
+						SecretType::ApiToken => 1,
+						SecretType::SshKey => 2,
+						SecretType::SecureDocument => 3,
+					};
+					type_dropdown.set_selected(type_index);
+
+					if let Some(raw_metadata) = item.metadata_json {
+						if let Ok(value) = serde_json::from_str::<Value>(&raw_metadata) {
+							category_entry.set_text(
+								value
+									.get("category")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							username_entry.set_text(
+								value
+									.get("login")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							url_entry.set_text(
+								value
+									.get("url")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							notes_buffer.set_text(
+								value
+									.get("notes")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+
+							api_provider_entry.set_text(
+								value
+									.get("provider")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							ssh_public_entry.set_text(
+								value
+									.get("ssh_public_key")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							ssh_passphrase_entry.set_text(
+								value
+									.get("ssh_passphrase")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+							secure_doc_mime_entry.set_text(
+								value
+									.get("document_mime")
+									.and_then(Value::as_str)
+									.unwrap_or_default(),
+							);
+
+							let unlimited = value
+								.get("validity_unlimited")
+								.and_then(Value::as_bool)
+								.unwrap_or(item.expires_at.is_none());
+							validity_unlimited.set_active(unlimited);
+
+							if let Some(days) = value.get("validity_days").and_then(Value::as_i64) {
+								if days > 0 {
+									validity_days.set_value(days as f64);
+								}
+							}
+						}
+					} else {
+						validity_unlimited.set_active(item.expires_at.is_none());
+					}
+
+					validity_days.set_sensitive(!validity_unlimited.is_active());
+				}
+				Ok(Err(_)) | Err(_) => {
+					error_label.set_text(
+						"Impossible de charger le secret pour edition. Reessayez dans un instant.",
+					);
+					error_label.set_visible(true);
+				}
+			}
+		});
 	}
 
 	fn install_local_css() {

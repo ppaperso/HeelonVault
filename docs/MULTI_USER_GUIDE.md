@@ -1,5 +1,8 @@
 # 👥 Guide du système multi-utilisateurs
 
+> Note migration: ce document contient des références historiques de l'ancienne implémentation Python.
+> Le runtime actif du projet est désormais Rust (`rust/`).
+
 Ce guide détaille le fonctionnement du système multi-utilisateurs avec workspaces séparés.
 
 ## 🎯 Vue d'ensemble

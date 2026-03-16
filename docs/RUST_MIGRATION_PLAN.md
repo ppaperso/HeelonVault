@@ -17,6 +17,7 @@ Créer un socle Rust sécurisé, testable et performant dans `rust/`, sans casse
 - `PasswordService` est requalifié en service auxiliaire spécialisé uniquement pour la politique de mot de passe : validation, scoring, génération, détection de réutilisation. Il ne fait ni CRUD, ni chiffrement, ni accès repository.
 - Les migrations SQL devaient être écrites avant l’UI car les repositories en dépendent au runtime. Cette étape est désormais réalisée.- Le bootstrap runtime (`main.rs`) est en place : ouverture de la base SQLite fichier, application des migrations au démarrage via `sqlx::migrate!`, composition complète des services, cycle de vie GTK4/libadwaita.
 - L'UI démarre sur la base migrée réelle. Le contrat async est respecté : zéro accès DB/crypto sur le thread UI.
+
 ## Plan Global
 
 1. Cadrer l’architecture cible Rust et les frontières de couches.
