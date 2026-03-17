@@ -24,6 +24,12 @@ pub trait AuthService {
         username: &str,
         password: SecretBox<Vec<u8>>,
     ) -> Result<bool, AppError>;
+    async fn change_password(
+        &self,
+        username: &str,
+        current_password: SecretBox<Vec<u8>>,
+        new_password: SecretBox<Vec<u8>>,
+    ) -> Result<(), AppError>;
     fn signal_shutdown(&self);
 }
 
@@ -158,6 +164,73 @@ where
             derived_hash.expose_secret().as_slice(),
             expected_password_hash.as_slice(),
         ))
+    }
+
+    async fn change_password(
+        &self,
+        username: &str,
+        current_password: SecretBox<Vec<u8>>,
+        new_password: SecretBox<Vec<u8>>,
+    ) -> Result<(), AppError> {
+        self.ensure_not_shutting_down()?;
+
+        if current_password.expose_secret().as_slice() == new_password.expose_secret().as_slice() {
+            return Err(AppError::Validation(
+                "new password must be different from current password".to_string(),
+            ));
+        }
+
+        let current_secret = Self::password_to_secret_string(&current_password)?;
+        let new_secret = Self::password_to_secret_string(&new_password)?;
+
+        let current_salt = {
+            let credentials = self
+                .credentials
+                .lock()
+                .map_err(|_| AppError::Internal)?;
+            let record = credentials
+                .get(username)
+                .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+
+            SecretBox::new(Box::new(record.password_salt.expose_secret().clone()))
+        };
+
+        let expected_hash = {
+            let credentials = self
+                .credentials
+                .lock()
+                .map_err(|_| AppError::Internal)?;
+            let record = credentials
+                .get(username)
+                .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+            record.password_hash.expose_secret().clone()
+        };
+
+        let derived_current = self
+            .crypto_service
+            .derive_key(&current_secret, &current_salt)
+            .await?;
+        if !Self::constant_time_eq(
+            derived_current.expose_secret().as_slice(),
+            expected_hash.as_slice(),
+        ) {
+            return Err(AppError::Authorization("invalid current password".to_string()));
+        }
+
+        let new_salt = self.crypto_service.generate_kdf_salt().await?;
+        let new_hash = self.crypto_service.derive_key(&new_secret, &new_salt).await?;
+
+        let mut credentials = self
+            .credentials
+            .lock()
+            .map_err(|_| AppError::Internal)?;
+        let record = credentials
+            .get_mut(username)
+            .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+        record.password_salt = new_salt;
+        record.password_hash = new_hash;
+
+        Ok(())
     }
 
     fn signal_shutdown(&self) {

@@ -9,6 +9,12 @@ use uuid::Uuid;
 pub trait UserRepository {
     async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError>;
     async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError>;
+    async fn update_user_profile(
+        &self,
+        user_id: Uuid,
+        email: Option<&str>,
+        display_name: Option<&str>,
+    ) -> Result<(), AppError>;
     async fn update_password_envelope(
         &self,
         user_id: Uuid,
@@ -45,7 +51,8 @@ impl SqlxUserRepository {
 
 impl UserRepository for SqlxUserRepository {
     async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError> {
-        let row_opt = sqlx::query("SELECT id, username, role FROM users WHERE id = ?1")
+        let row_opt =
+            sqlx::query("SELECT id, username, role, email, display_name, updated_at FROM users WHERE id = ?1")
             .bind(user_id.to_string())
             .fetch_optional(&self.pool)
             .await
@@ -62,6 +69,15 @@ impl UserRepository for SqlxUserRepository {
                 let role_raw: String = row
                     .try_get("role")
                     .map_err(|err| Self::map_storage_err("read role", err))?;
+                let email: Option<String> = row
+                    .try_get("email")
+                    .map_err(|err| Self::map_storage_err("read email", err))?;
+                let display_name: Option<String> = row
+                    .try_get("display_name")
+                    .map_err(|err| Self::map_storage_err("read display_name", err))?;
+                let updated_at: Option<String> = row
+                    .try_get("updated_at")
+                    .map_err(|err| Self::map_storage_err("read updated_at", err))?;
 
                 let parsed_id = Uuid::parse_str(&id_str)
                     .map_err(|err| Self::map_storage_err("parse user id", err))?;
@@ -71,6 +87,9 @@ impl UserRepository for SqlxUserRepository {
                     id: parsed_id,
                     username,
                     role,
+                    email,
+                    display_name,
+                    updated_at,
                 }))
             }
             None => Ok(None),
@@ -78,11 +97,13 @@ impl UserRepository for SqlxUserRepository {
     }
 
     async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
-        let row_opt = sqlx::query("SELECT id, username, role FROM users WHERE username = ?1")
-            .bind(username)
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("get user by username", err))?;
+        let row_opt = sqlx::query(
+            "SELECT id, username, role, email, display_name, updated_at FROM users WHERE username = ?1",
+        )
+        .bind(username)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("get user by username", err))?;
 
         match row_opt {
             Some(row) => {
@@ -95,6 +116,15 @@ impl UserRepository for SqlxUserRepository {
                 let role_raw: String = row
                     .try_get("role")
                     .map_err(|err| Self::map_storage_err("read role", err))?;
+                let email: Option<String> = row
+                    .try_get("email")
+                    .map_err(|err| Self::map_storage_err("read email", err))?;
+                let display_name: Option<String> = row
+                    .try_get("display_name")
+                    .map_err(|err| Self::map_storage_err("read display_name", err))?;
+                let updated_at: Option<String> = row
+                    .try_get("updated_at")
+                    .map_err(|err| Self::map_storage_err("read updated_at", err))?;
 
                 let parsed_id = Uuid::parse_str(&id_str)
                     .map_err(|err| Self::map_storage_err("parse user id", err))?;
@@ -104,10 +134,40 @@ impl UserRepository for SqlxUserRepository {
                     id: parsed_id,
                     username: stored_username,
                     role,
+                    email,
+                    display_name,
+                    updated_at,
                 }))
             }
             None => Ok(None),
         }
+    }
+
+    async fn update_user_profile(
+        &self,
+        user_id: Uuid,
+        email: Option<&str>,
+        display_name: Option<&str>,
+    ) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE users
+             SET email = ?1,
+                 display_name = ?2,
+                 updated_at = CURRENT_TIMESTAMP
+             WHERE id = ?3",
+        )
+        .bind(email)
+        .bind(display_name)
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("update user profile", err))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Storage("user not found for profile update".to_string()));
+        }
+
+        Ok(())
     }
 
     async fn update_password_envelope(
@@ -171,6 +231,9 @@ mod tests {
                 id TEXT PRIMARY KEY NOT NULL,
                 username TEXT NOT NULL UNIQUE,
                 role TEXT NOT NULL,
+                email TEXT,
+                display_name TEXT,
+                updated_at TEXT,
                 password_envelope BLOB,
                 totp_secret_envelope BLOB
             )",

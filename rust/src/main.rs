@@ -13,17 +13,22 @@ use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Row, SqlitePool};
 use tokio::runtime::Builder;
 use tracing::info;
+use tracing_appender::non_blocking::WorkerGuard;
+use tracing_subscriber::fmt::time::UtcTime;
+use tracing_subscriber::prelude::*;
 use tracing_subscriber::EnvFilter;
 
 use heelonvault_rust::config::constants::APP_ID;
 use heelonvault_rust::errors::AppError;
 use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
+use heelonvault_rust::repositories::user_repository::SqlxUserRepository;
 use heelonvault_rust::repositories::vault_repository::SqlxVaultRepository;
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::BackupServiceImpl;
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
+use heelonvault_rust::services::user_service::UserServiceImpl;
 use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
 };
@@ -34,6 +39,7 @@ use uuid::Uuid;
 type VaultServiceHandle =
 	VaultServiceImpl<SqlxVaultRepository, SqlxVaultEnvelopeRepository, CryptoServiceImpl>;
 type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl>;
+type UserServiceHandle = UserServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>>;
 
 struct SqlxVaultEnvelopeRepository {
 	pool: SqlitePool,
@@ -78,14 +84,16 @@ struct AppContext {
 	auth_service: Arc<AuthServiceImpl<CryptoServiceImpl>>,
 	vault_service: Arc<VaultServiceHandle>,
 	secret_service: Arc<SecretServiceHandle>,
+	user_service: Arc<UserServiceHandle>,
 	admin_user_id: Uuid,
+	admin_identity_label: String,
 	admin_master_key: Vec<u8>,
 	_password_service: PasswordServiceImpl,
 	_backup_service: BackupServiceImpl,
 }
 
 fn main() -> Result<()> {
-	initialize_tracing()?;
+	let _logging_guard = init_logging()?;
 	register_resources()?;
 
 	let runtime = Builder::new_multi_thread()
@@ -115,8 +123,10 @@ fn main() -> Result<()> {
 			runtime_handle.clone(),
 			Arc::clone(&context.secret_service),
 			Arc::clone(&context.vault_service),
+			Arc::clone(&context.user_service),
 			context.admin_user_id,
 			context.admin_master_key.clone(),
+			context.admin_identity_label.clone(),
 		)
 		.into_inner();
 		window.set_icon_name(Some("heelonvault"));
@@ -383,17 +393,104 @@ fn install_application_css() {
 	}
 }
 
-fn initialize_tracing() -> Result<()> {
-	let env_filter = EnvFilter::try_from_default_env()
-		.unwrap_or_else(|_| EnvFilter::new("info"));
+fn init_logging() -> Result<WorkerGuard> {
+	const SENSITIVE_TARGETS: &[&str] = &[
+		"vault::crypto",
+		"auth::session",
+		"heelonvault_rust::services::crypto_service",
+		"heelonvault_rust::services::secret_service",
+		"heelonvault_rust::services::auth_service",
+		"heelonvault_rust::services::vault_service",
+	];
 
-	tracing_subscriber::fmt()
-		.with_env_filter(env_filter)
-		.with_target(false)
-		.try_init()
-		.map_err(|error| anyhow!("failed to initialize tracing subscriber: {error}"))?;
+	let default_level = if cfg!(debug_assertions) {
+		"debug"
+	} else {
+		"info"
+	};
+	let base_filter_spec = env::var("RUST_LOG")
+		.ok()
+		.filter(|value| !value.trim().is_empty())
+		.or_else(|| {
+			env::var("HEELONVAULT_LOG_LEVEL")
+				.ok()
+				.filter(|value| !value.trim().is_empty())
+		})
+		.unwrap_or_else(|| default_level.to_string());
 
-	Ok(())
+	let mut filter_spec = base_filter_spec.clone();
+	for target in SENSITIVE_TARGETS {
+		if !base_filter_spec.contains(target) {
+			filter_spec.push(',');
+			filter_spec.push_str(target);
+			filter_spec.push_str("=warn");
+		}
+	}
+
+	let env_filter = EnvFilter::try_new(filter_spec.clone())
+		.with_context(|| format!("invalid log level/filter: {filter_spec}"))?;
+
+	let log_dir = env::var("HEELONVAULT_LOG_DIR")
+		.ok()
+		.filter(|value| !value.trim().is_empty())
+		.unwrap_or_else(|| "logs".to_string());
+	let log_dir_path = PathBuf::from(&log_dir);
+	fs::create_dir_all(&log_dir_path)
+		.with_context(|| format!("failed to create log directory {}", log_dir_path.display()))?;
+
+	let (file_writer, guard) = tracing_appender::non_blocking(tracing_appender::rolling::daily(
+		&log_dir_path,
+		"heelonvault.log",
+	));
+
+	let is_debug_logging = base_filter_spec.to_ascii_lowercase().contains("debug");
+	let is_dev_mode = cfg!(debug_assertions);
+
+	if is_dev_mode {
+		let console_layer = tracing_subscriber::fmt::layer()
+			.pretty()
+			.with_writer(std::io::stdout)
+			.with_target(false)
+			.with_timer(UtcTime::rfc_3339());
+		let file_layer = tracing_subscriber::fmt::layer()
+			.json()
+			.with_ansi(false)
+			.with_writer(file_writer)
+			.with_target(is_debug_logging)
+			.with_line_number(is_debug_logging)
+			.with_file(is_debug_logging)
+			.with_timer(UtcTime::rfc_3339());
+
+		tracing_subscriber::registry()
+			.with(env_filter)
+			.with(console_layer)
+			.with(file_layer)
+			.try_init()
+			.map_err(|error| anyhow!("failed to initialize tracing subscriber: {error}"))?;
+	} else {
+		let console_layer = tracing_subscriber::fmt::layer()
+			.compact()
+			.with_writer(std::io::stdout)
+			.with_target(false)
+			.with_timer(UtcTime::rfc_3339());
+		let file_layer = tracing_subscriber::fmt::layer()
+			.json()
+			.with_ansi(false)
+			.with_writer(file_writer)
+			.with_target(is_debug_logging)
+			.with_line_number(is_debug_logging)
+			.with_file(is_debug_logging)
+			.with_timer(UtcTime::rfc_3339());
+
+		tracing_subscriber::registry()
+			.with(env_filter)
+			.with(console_layer)
+			.with(file_layer)
+			.try_init()
+			.map_err(|error| anyhow!("failed to initialize tracing subscriber: {error}"))?;
+	}
+
+	Ok(guard)
 }
 
 async fn initialize_app_context() -> Result<AppContext> {
@@ -436,6 +533,10 @@ async fn initialize_app_context() -> Result<AppContext> {
 		SqlxSecretRepository::new(pool.clone()),
 		CryptoServiceImpl::default(),
 	));
+    let user_service = Arc::new(UserServiceImpl::new(
+        SqlxUserRepository::new(pool.clone()),
+        Arc::clone(&auth_service),
+    ));
 
 	let users_count: i64 = sqlx::query_scalar("SELECT COUNT(*) FROM users")
 		.fetch_one(&pool)
@@ -449,6 +550,15 @@ async fn initialize_app_context() -> Result<AppContext> {
 	)
 	.await?;
 
+	let admin_identity_label: String = sqlx::query_scalar(
+		"SELECT COALESCE(NULLIF(display_name, ''), username) FROM users WHERE id = ?1",
+	)
+	.bind(admin_user_id.to_string())
+	.fetch_optional(&pool)
+	.await
+	.context("failed to resolve admin identity label")?
+	.unwrap_or_else(|| "admin".to_string());
+
 	let password_service = PasswordServiceImpl::new();
 	let backup_service = BackupServiceImpl::new();
 
@@ -460,7 +570,9 @@ async fn initialize_app_context() -> Result<AppContext> {
 		auth_service,
 		vault_service,
 		secret_service,
+		user_service,
 		admin_user_id,
+		admin_identity_label,
 		admin_master_key,
 		_password_service: password_service,
 		_backup_service: backup_service,

@@ -1,5 +1,8 @@
+use std::cell::{Cell, RefCell};
+use std::collections::HashMap;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Duration;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -12,26 +15,77 @@ use tokio::runtime::Handle;
 use uuid::Uuid;
 
 use crate::services::secret_service::SecretService;
+use crate::services::user_service::UserService;
 use crate::services::vault_service::VaultService;
 use crate::ui::dialogs::add_edit_dialog::{AddEditDialog, DialogMode};
+use crate::ui::dialogs::profile_dialog::ProfileDialog;
 use crate::ui::dialogs::trash_dialog::TrashDialog;
+use crate::ui::widgets::secret_card::{SecretCard, SecretRowData};
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SecretCategoryFilter {
+	All,
+	Password,
+	ApiToken,
+	SshKey,
+	SecureDocument,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum AuditFilter {
+	All,
+	Weak,
+	Duplicate,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SecretKind {
+	Password,
+	ApiToken,
+	SshKey,
+	SecureDocument,
+}
+
+#[derive(Clone)]
+struct SecretFilterMeta {
+	title_lower: String,
+	url_lower: String,
+	kind: SecretKind,
+	is_weak: bool,
+	is_duplicate: bool,
+}
+
+#[derive(Clone)]
+struct FilterRuntime {
+	meta_by_widget: Rc<RefCell<HashMap<String, SecretFilterMeta>>>,
+	search_text: Rc<RefCell<String>>,
+	selected_category: Rc<Cell<SecretCategoryFilter>>,
+	selected_audit: Rc<Cell<AuditFilter>>,
+	audit_all_count_label: gtk4::Label,
+	audit_weak_count_label: gtk4::Label,
+	audit_duplicate_count_label: gtk4::Label,
+	filtered_status_page: adw::StatusPage,
+}
 
 pub struct MainWindow {
 	window: adw::ApplicationWindow,
 }
 
 impl MainWindow {
-	pub fn new<TSecret, TVault>(
+	pub fn new<TSecret, TVault, TUser>(
 		application: &adw::Application,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
+		user_service: Arc<TUser>,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
+		connected_identity_label: String,
 	) -> Self
 	where
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
+		TUser: UserService + Send + Sync + 'static,
 	{
 		let window = adw::ApplicationWindow::builder()
 			.application(application)
@@ -54,10 +108,66 @@ impl MainWindow {
 			.spacing(0)
 			.build();
 
+		let title_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+		let logo = gtk4::Image::from_resource("/com/heelonvault/rust/icons/Logo_Heelonys_transparent.png");
+		logo.set_pixel_size(22);
+		logo.add_css_class("main-title-logo");
 		let title_label = gtk4::Label::new(Some("HeelonVault"));
 		title_label.add_css_class("title-3");
 		title_label.add_css_class("main-title");
-		header_bar.set_title_widget(Some(&title_label));
+		title_box.append(&logo);
+		title_box.append(&title_label);
+		header_bar.set_title_widget(Some(&title_box));
+
+		let profile_button = gtk4::MenuButton::new();
+		profile_button.add_css_class("header-badge");
+		profile_button.add_css_class("admin-badge");
+		profile_button.set_label(&format!("Connecté: {}", connected_identity_label));
+		profile_button.set_tooltip_text(Some("Mon profil"));
+
+		let profile_popover = gtk4::Popover::new();
+		let profile_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(6)
+			.margin_top(10)
+			.margin_bottom(10)
+			.margin_start(10)
+			.margin_end(10)
+			.build();
+
+		let profile_title = gtk4::Label::new(Some("Compte utilisateur"));
+		profile_title.set_halign(Align::Start);
+		profile_title.add_css_class("heading");
+		profile_box.append(&profile_title);
+
+		let profile_button_open = gtk4::Button::with_label("Profil & sécurité");
+		profile_button_open.add_css_class("flat");
+		profile_button_open.set_halign(Align::Start);
+		let app_for_profile = application.clone();
+		let runtime_for_profile = runtime_handle.clone();
+		let user_service_for_profile = Arc::clone(&user_service);
+		let parent_for_profile = window.clone();
+		let profile_badge_for_update = profile_button.clone();
+		profile_button_open.connect_clicked(move |_| {
+			let profile_badge = profile_badge_for_update.clone();
+			ProfileDialog::present(
+				&app_for_profile,
+				&parent_for_profile,
+				runtime_for_profile.clone(),
+				Arc::clone(&user_service_for_profile),
+				admin_user_id,
+				move |display_label| {
+					profile_badge.set_label(&format!("Connecté: {}", display_label));
+				},
+			);
+		});
+		profile_box.append(&profile_button_open);
+
+		profile_popover.set_child(Some(&profile_box));
+		profile_button.set_popover(Some(&profile_popover));
 
 		let add_button = gtk4::Button::builder()
 			.icon_name("list-add-symbolic")
@@ -90,7 +200,53 @@ impl MainWindow {
 		let admin_master_for_trash = admin_master_key.clone();
 
 		let center_panel = Self::build_center_panel();
-		let secret_list_for_refresh = center_panel.secret_list.clone();
+		let sidebar_panel = Self::build_sidebar_panel();
+
+		let filter_runtime = FilterRuntime {
+			meta_by_widget: Rc::new(RefCell::new(HashMap::new())),
+			search_text: Rc::new(RefCell::new(String::new())),
+			selected_category: Rc::new(Cell::new(SecretCategoryFilter::All)),
+			selected_audit: Rc::new(Cell::new(AuditFilter::All)),
+			audit_all_count_label: sidebar_panel.audit_all_badge.clone(),
+			audit_weak_count_label: sidebar_panel.audit_weak_badge.clone(),
+			audit_duplicate_count_label: sidebar_panel.audit_duplicate_badge.clone(),
+			filtered_status_page: center_panel.filtered_status_page.clone(),
+		};
+
+		let runtime_for_flow_filter = filter_runtime.clone();
+		center_panel.secret_flow.set_filter_func(move |child| {
+			let Some(content) = child.child() else {
+				return false;
+			};
+			let key = content.widget_name().to_string();
+			let store = runtime_for_flow_filter.meta_by_widget.borrow();
+			let Some(meta) = store.get(&key) else {
+				return true;
+			};
+
+			let query = runtime_for_flow_filter.search_text.borrow().to_lowercase();
+			let matches_query = query.is_empty()
+				|| meta.title_lower.contains(query.as_str())
+				|| meta.url_lower.contains(query.as_str());
+
+			let matches_category = match runtime_for_flow_filter.selected_category.get() {
+				SecretCategoryFilter::All => true,
+				SecretCategoryFilter::Password => meta.kind == SecretKind::Password,
+				SecretCategoryFilter::ApiToken => meta.kind == SecretKind::ApiToken,
+				SecretCategoryFilter::SshKey => meta.kind == SecretKind::SshKey,
+				SecretCategoryFilter::SecureDocument => meta.kind == SecretKind::SecureDocument,
+			};
+
+			let matches_audit = match runtime_for_flow_filter.selected_audit.get() {
+				AuditFilter::All => true,
+				AuditFilter::Weak => meta.is_weak,
+				AuditFilter::Duplicate => meta.is_duplicate,
+			};
+
+			matches_query && matches_category && matches_audit
+		});
+
+		let secret_flow_for_refresh = center_panel.secret_flow.clone();
 		let stack_for_refresh = center_panel.stack.clone();
 		let empty_title_for_refresh = center_panel.empty_title.clone();
 		let empty_copy_for_refresh = center_panel.empty_copy.clone();
@@ -102,12 +258,13 @@ impl MainWindow {
 			let secret_service = Arc::clone(&secret_service);
 			let vault_service = Arc::clone(&vault_service);
 			let admin_master = admin_master_key.clone();
-			let secret_list = secret_list_for_refresh.clone();
+			let secret_flow = secret_flow_for_refresh.clone();
 			let stack = stack_for_refresh.clone();
 			let empty_title = empty_title_for_refresh.clone();
 			let empty_copy = empty_copy_for_refresh.clone();
+			let filter_runtime = filter_runtime.clone();
 			Rc::new(move || {
-				Self::refresh_secret_list(
+				Self::refresh_secret_flow(
 					app.clone(),
 					parent_window.clone(),
 					runtime.clone(),
@@ -115,10 +272,11 @@ impl MainWindow {
 					Arc::clone(&vault_service),
 					admin_user_id,
 					admin_master.clone(),
-					secret_list.clone(),
+					secret_flow.clone(),
 					stack.clone(),
 					empty_title.clone(),
 					empty_copy.clone(),
+					filter_runtime.clone(),
 				);
 			})
 		};
@@ -160,6 +318,7 @@ impl MainWindow {
 			dialog.present();
 		});
 		header_bar.pack_start(&trash_button);
+		header_bar.pack_end(&profile_button);
 		root.append(&header_bar);
 
 		let content = gtk4::Box::builder()
@@ -190,8 +349,7 @@ impl MainWindow {
 			.build();
 		split.set_position(270);
 
-		let sidebar_panel = Self::build_sidebar_panel();
-		split.set_start_child(Some(&sidebar_panel));
+		split.set_start_child(Some(&sidebar_panel.frame));
 
 		split.set_end_child(Some(&center_panel.frame));
 
@@ -199,6 +357,43 @@ impl MainWindow {
 		content.append(&split);
 		root.append(&content);
 		window.set_content(Some(&root));
+
+		let flow_for_search = center_panel.secret_flow.clone();
+		let filter_for_search = filter_runtime.clone();
+		search_entry.connect_search_changed(move |entry| {
+			*filter_for_search.search_text.borrow_mut() = entry.text().to_string();
+			Self::apply_filters(&flow_for_search, &filter_for_search);
+		});
+
+		let flow_for_category = center_panel.secret_flow.clone();
+		let filter_for_category = filter_runtime.clone();
+		sidebar_panel.category_list.connect_row_selected(move |_list, row_opt| {
+			if let Some(row) = row_opt {
+				let category = match row.index() {
+					1 => SecretCategoryFilter::Password,
+					2 => SecretCategoryFilter::ApiToken,
+					3 => SecretCategoryFilter::SshKey,
+					4 => SecretCategoryFilter::SecureDocument,
+					_ => SecretCategoryFilter::All,
+				};
+				filter_for_category.selected_category.set(category);
+			}
+			Self::apply_filters(&flow_for_category, &filter_for_category);
+		});
+
+		let flow_for_audit = center_panel.secret_flow.clone();
+		let filter_for_audit = filter_runtime.clone();
+		sidebar_panel.audit_list.connect_row_selected(move |_list, row_opt| {
+			if let Some(row) = row_opt {
+				let audit = match row.index() {
+					1 => AuditFilter::Weak,
+					2 => AuditFilter::Duplicate,
+					_ => AuditFilter::All,
+				};
+				filter_for_audit.selected_audit.set(audit);
+			}
+			Self::apply_filters(&flow_for_audit, &filter_for_audit);
+		});
 
 		refresh_list();
 
@@ -209,7 +404,72 @@ impl MainWindow {
 		self.window
 	}
 
-	fn build_sidebar_panel() -> gtk4::Frame {
+	fn evaluate_password_strength_label(secret_value: &str) -> String {
+		if secret_value.len() >= 12 {
+			let has_uppercase = secret_value.chars().any(|c| c.is_uppercase());
+			let has_lowercase = secret_value.chars().any(|c| c.is_lowercase());
+			let has_digit = secret_value.chars().any(|c| c.is_numeric());
+			let has_special = secret_value.chars().any(|c| !c.is_alphanumeric());
+			let complexity = [has_uppercase, has_lowercase, has_digit, has_special]
+				.iter()
+				.filter(|&&v| v)
+				.count();
+			if complexity >= 3 {
+				return "Robuste".to_string();
+			}
+		}
+		"Faible".to_string()
+	}
+
+	fn apply_filters(secret_flow: &gtk4::FlowBox, filter_runtime: &FilterRuntime) {
+		let (all_count, weak_count, duplicate_count) = {
+			let store = filter_runtime.meta_by_widget.borrow();
+			let all_count = store.len();
+			let weak_count = store.values().filter(|meta| meta.is_weak).count();
+			let duplicate_count = store.values().filter(|meta| meta.is_duplicate).count();
+			(all_count, weak_count, duplicate_count)
+		};
+
+		Self::update_audit_badge(&filter_runtime.audit_all_count_label, all_count);
+		Self::update_audit_badge(&filter_runtime.audit_weak_count_label, weak_count);
+		Self::update_audit_badge(&filter_runtime.audit_duplicate_count_label, duplicate_count);
+
+		secret_flow.invalidate_filter();
+
+		let mut visible_count = 0;
+		let mut cursor = secret_flow.first_child();
+		while let Some(child) = cursor {
+			if let Some(flow_child) = child.downcast_ref::<gtk4::FlowBoxChild>() {
+				if flow_child.is_child_visible() {
+					visible_count += 1;
+				}
+			}
+			cursor = child.next_sibling();
+		}
+
+		filter_runtime
+			.filtered_status_page
+			.set_visible(visible_count == 0);
+	}
+
+	fn update_audit_badge(label: &gtk4::Label, value: usize) {
+		let next_text = value.to_string();
+		let current_text = label.text().to_string();
+		if current_text == next_text {
+			return;
+		}
+
+		label.set_text(&next_text);
+		label.remove_css_class("audit-count-badge-pulse");
+		label.add_css_class("audit-count-badge-pulse");
+
+		let label_clone = label.clone();
+		glib::timeout_add_local_once(Duration::from_millis(240), move || {
+			label_clone.remove_css_class("audit-count-badge-pulse");
+		});
+	}
+
+	fn build_sidebar_panel() -> SidebarWidgets {
 		let sidebar_frame = gtk4::Frame::new(None);
 		sidebar_frame.add_css_class("main-sidebar");
 
@@ -221,6 +481,29 @@ impl MainWindow {
 			.margin_start(14)
 			.margin_end(14)
 			.build();
+
+		let audit_title = gtk4::Label::new(Some("Audit de Sécurité"));
+		audit_title.add_css_class("main-section-title");
+		audit_title.set_halign(Align::Start);
+		sidebar_box.append(&audit_title);
+
+		let audit_list = gtk4::ListBox::new();
+		audit_list.add_css_class("boxed-list");
+		audit_list.add_css_class("main-audit-list");
+		audit_list.set_selection_mode(gtk4::SelectionMode::Single);
+
+		let (audit_all_row, audit_all_badge) = Self::build_audit_sidebar_row("Tous", "view-grid-symbolic");
+		let (audit_weak_row, audit_weak_badge) = Self::build_audit_sidebar_row(
+			"Mots de passe faibles",
+			"dialog-warning-symbolic",
+		);
+		let (audit_duplicate_row, audit_duplicate_badge) =
+			Self::build_audit_sidebar_row("Doublons", "content-copy-symbolic");
+		audit_list.append(&audit_all_row);
+		audit_list.append(&audit_weak_row);
+		audit_list.append(&audit_duplicate_row);
+		audit_list.select_row(Some(&audit_all_row));
+		sidebar_box.append(&audit_list);
 
 		let sidebar_title = gtk4::Label::new(Some("Catégories"));
 		sidebar_title.add_css_class("main-section-title");
@@ -250,7 +533,44 @@ impl MainWindow {
 
 		sidebar_box.append(&category_list);
 		sidebar_frame.set_child(Some(&sidebar_box));
-		sidebar_frame
+		SidebarWidgets {
+			frame: sidebar_frame,
+			category_list,
+			audit_list,
+			audit_all_badge,
+			audit_weak_badge,
+			audit_duplicate_badge,
+		}
+	}
+
+	fn build_audit_sidebar_row(title: &str, icon_name: &str) -> (gtk4::ListBoxRow, gtk4::Label) {
+		let row = gtk4::ListBoxRow::new();
+		let content = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.margin_top(8)
+			.margin_bottom(8)
+			.margin_start(10)
+			.margin_end(10)
+			.build();
+
+		let icon = gtk4::Image::from_icon_name(icon_name);
+		icon.set_pixel_size(18);
+		icon.add_css_class("main-sidebar-icon");
+		content.append(&icon);
+
+		let label = gtk4::Label::new(Some(title));
+		label.set_halign(Align::Start);
+		label.set_hexpand(true);
+		label.add_css_class("main-sidebar-label");
+		content.append(&label);
+
+		let badge = gtk4::Label::new(Some("0"));
+		badge.add_css_class("audit-count-badge");
+		content.append(&badge);
+
+		row.set_child(Some(&content));
+		(row, badge)
 	}
 
 	fn build_sidebar_row(title: &str, icon_name: &str) -> gtk4::ListBoxRow {
@@ -294,12 +614,36 @@ impl MainWindow {
 			.vexpand(true)
 			.hexpand(true)
 			.build();
-		list_scroll.add_css_class("main-secret-list-scroll");
+		list_scroll.add_css_class("main-secret-grid-scroll");
 
-		let secret_list = gtk4::ListBox::new();
-		secret_list.add_css_class("boxed-list");
-		secret_list.add_css_class("main-secret-list");
-		list_scroll.set_child(Some(&secret_list));
+		let secret_flow = gtk4::FlowBox::builder()
+			.homogeneous(true)
+			.max_children_per_line(5)
+			.min_children_per_line(1)
+			.row_spacing(16)
+			.column_spacing(16)
+			.margin_top(12)
+			.margin_bottom(12)
+			.margin_start(12)
+			.margin_end(12)
+			.selection_mode(gtk4::SelectionMode::None)
+			.halign(gtk4::Align::Start)
+			.valign(gtk4::Align::Start)
+			.build();
+		secret_flow.add_css_class("main-secret-grid");
+		list_scroll.set_child(Some(&secret_flow));
+
+		let filtered_status_page = adw::StatusPage::builder()
+			.title("Aucun secret trouvé")
+			.description("Ajustez votre recherche ou vos filtres.")
+			.icon_name("edit-find-symbolic")
+			.build();
+		filtered_status_page.set_visible(false);
+		filtered_status_page.set_can_target(false);
+
+		let list_overlay = gtk4::Overlay::new();
+		list_overlay.set_child(Some(&list_scroll));
+		list_overlay.add_overlay(&filtered_status_page);
 
 		let empty_state = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -332,7 +676,7 @@ impl MainWindow {
 		empty_state.append(&empty_title);
 		empty_state.append(&empty_description);
 
-		stack.add_titled(&list_scroll, Some("list"), "Liste");
+		stack.add_titled(&list_overlay, Some("list"), "Grille");
 		stack.add_titled(&empty_state, Some("empty"), "Vide");
 		stack.set_visible_child_name("empty");
 
@@ -340,14 +684,15 @@ impl MainWindow {
 		CenterPanelWidgets {
 			frame: center_frame,
 			stack,
-			secret_list,
+			secret_flow,
+			filtered_status_page,
 			empty_title,
 			empty_copy: empty_description,
 		}
 	}
 
 	#[allow(clippy::too_many_arguments)]
-	fn refresh_secret_list<TSecret, TVault>(
+	fn refresh_secret_flow<TSecret, TVault>(
 		application: adw::Application,
 		parent_window: adw::ApplicationWindow,
 		runtime_handle: Handle,
@@ -355,10 +700,11 @@ impl MainWindow {
 		vault_service: Arc<TVault>,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
-		secret_list: gtk4::ListBox,
+		secret_flow: gtk4::FlowBox,
 		stack: gtk4::Stack,
 		empty_title: gtk4::Label,
 		empty_copy: gtk4::Label,
+		filter_runtime: FilterRuntime,
 	) where
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
@@ -433,11 +779,20 @@ impl MainWindow {
 							("folder-documents-symbolic", "Document sécurisé")
 						}
 					};
+					let (color_class, kind) = match item.secret_type {
+						crate::models::SecretType::Password => ("secret-type-password", SecretKind::Password),
+						crate::models::SecretType::ApiToken => ("secret-type-token", SecretKind::ApiToken),
+						crate::models::SecretType::SshKey => ("secret-type-ssh", SecretKind::SshKey),
+						crate::models::SecretType::SecureDocument => {
+							("secret-type-document", SecretKind::SecureDocument)
+						}
+					};
 
 					let title = item.title.unwrap_or_else(|| type_label_text.to_string());
 					let created_at = item
 						.created_at
 						.unwrap_or_else(|| "date indisponible".to_string());
+					let health = Self::evaluate_password_strength_label(secret_value.as_str());
 
 					rows.push(SecretRowView {
 						secret_id: item.id,
@@ -448,6 +803,10 @@ impl MainWindow {
 						login,
 						url,
 						secret_value,
+						kind,
+						color_class: color_class.to_string(),
+						health,
+						usage_count: item.usage_count,
 					});
 				}
 
@@ -459,8 +818,14 @@ impl MainWindow {
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
 				Ok(Ok(items)) => {
-					while let Some(child) = secret_list.first_child() {
-						secret_list.remove(&child);
+					filter_runtime.meta_by_widget.borrow_mut().clear();
+					filter_runtime.audit_all_count_label.set_text("0");
+					filter_runtime.audit_weak_count_label.set_text("0");
+					filter_runtime.audit_duplicate_count_label.set_text("0");
+					filter_runtime.filtered_status_page.set_visible(false);
+
+					while let Some(child) = secret_flow.first_child() {
+						secret_flow.remove(&child);
 					}
 
 					if items.is_empty() {
@@ -472,71 +837,63 @@ impl MainWindow {
 						return;
 					}
 
+					let mut duplicate_counts: HashMap<String, usize> = HashMap::new();
+					for item in &items {
+						if !item.secret_value.is_empty() {
+							*duplicate_counts.entry(item.secret_value.clone()).or_insert(0) += 1;
+						}
+					}
+
 					for item in items {
-						let row = gtk4::ListBoxRow::new();
-						let row_box = gtk4::Box::builder()
-							.orientation(Orientation::Horizontal)
-							.spacing(10)
-							.margin_top(10)
-							.margin_bottom(10)
-							.margin_start(12)
-							.margin_end(12)
-							.build();
+						let is_duplicate = duplicate_counts
+							.get(&item.secret_value)
+							.copied()
+							.unwrap_or(0)
+							> 1;
 
-						let icon = gtk4::Image::from_icon_name(item.icon_name.as_str());
-						icon.set_pixel_size(20);
-						icon.add_css_class("main-sidebar-icon");
+						let card_data = SecretRowData {
+							secret_id: item.secret_id,
+							icon_name: item.icon_name.clone(),
+							type_label: item.type_label.clone(),
+							title: item.title.clone(),
+							created_at: item.created_at.clone(),
+							login: item.login.clone(),
+							url: item.url.clone(),
+							secret_value: item.secret_value.clone(),
+							color_class: item.color_class.clone(),
+							health: item.health.clone(),
+							usage_count: item.usage_count,
+							is_duplicate,
+						};
 
-						let text_box = gtk4::Box::builder()
-							.orientation(Orientation::Vertical)
-							.spacing(2)
-							.hexpand(true)
-							.build();
+						let card = Rc::new(SecretCard::new(card_data));
+						let usage_count = Rc::new(Cell::new(item.usage_count));
+						let kind = item.kind;
 
-						let title_label = gtk4::Label::new(Some(&item.title));
-						title_label.set_halign(Align::Start);
-						title_label.add_css_class("main-sidebar-label");
-
-						let meta_label = gtk4::Label::new(Some(&format!(
-							"{} • Créé le: {}",
-							item.type_label, item.created_at
-						)));
-						meta_label.set_halign(Align::Start);
-						meta_label.add_css_class("login-support-copy");
-
-						let actions_box = gtk4::Box::builder()
-							.orientation(Orientation::Horizontal)
-							.spacing(4)
-							.valign(Align::Center)
-							.build();
-
-						let edit_button = gtk4::Button::builder()
-							.icon_name("document-edit-symbolic")
-							.build();
-						edit_button.add_css_class("flat");
-						edit_button.set_tooltip_text(Some("Modifier le secret"));
 						let app_for_edit = application.clone();
 						let parent_for_edit = parent_window.clone();
 						let runtime_for_edit = runtime_handle.clone();
 						let secret_for_edit = Arc::clone(&secret_service);
 						let vault_for_edit = Arc::clone(&vault_service);
-						let list_for_edit = secret_list.clone();
+						let flow_for_edit = secret_flow.clone();
 						let stack_for_edit = stack.clone();
 						let empty_title_for_edit = empty_title.clone();
 						let empty_copy_for_edit = empty_copy.clone();
 						let master_for_edit = admin_master_key.clone();
+						let filter_for_edit = filter_runtime.clone();
 						let secret_id_for_edit = item.secret_id;
-						edit_button.connect_clicked(move |_| {
+						card.get_edit_button().connect_clicked(move |_| {
 							let app_for_refresh = app_for_edit.clone();
 							let parent_for_refresh = parent_for_edit.clone();
 							let runtime_for_refresh = runtime_for_edit.clone();
 							let secret_for_refresh = Arc::clone(&secret_for_edit);
 							let vault_for_refresh = Arc::clone(&vault_for_edit);
-							let list_for_refresh = list_for_edit.clone();
+							let flow_for_refresh = flow_for_edit.clone();
 							let stack_for_refresh = stack_for_edit.clone();
 							let empty_title_refresh = empty_title_for_edit.clone();
 							let empty_copy_refresh = empty_copy_for_edit.clone();
 							let master_for_refresh = master_for_edit.clone();
+							let filter_for_refresh = filter_for_edit.clone();
 
 							let dialog = AddEditDialog::new(
 								&app_for_edit,
@@ -548,7 +905,7 @@ impl MainWindow {
 								master_for_edit.clone(),
 								DialogMode::Edit(secret_id_for_edit),
 								move || {
-									Self::refresh_secret_list(
+									Self::refresh_secret_flow(
 										app_for_refresh.clone(),
 										parent_for_refresh.clone(),
 										runtime_for_refresh.clone(),
@@ -556,33 +913,30 @@ impl MainWindow {
 										Arc::clone(&vault_for_refresh),
 										admin_user_id,
 										master_for_refresh.clone(),
-										list_for_refresh.clone(),
+										flow_for_refresh.clone(),
 										stack_for_refresh.clone(),
 										empty_title_refresh.clone(),
 										empty_copy_refresh.clone(),
+										filter_for_refresh.clone(),
 									);
 								},
 							);
 							dialog.present();
 						});
 
-						let trash_button = gtk4::Button::builder()
-							.icon_name("user-trash-symbolic")
-							.build();
-						trash_button.add_css_class("flat");
-						trash_button.set_tooltip_text(Some("Deplacer vers la corbeille"));
 						let app_for_delete = application.clone();
 						let parent_for_delete = parent_window.clone();
 						let runtime_for_delete = runtime_handle.clone();
 						let secret_for_delete = Arc::clone(&secret_service);
 						let vault_for_delete = Arc::clone(&vault_service);
-						let list_for_delete = secret_list.clone();
+						let flow_for_delete = secret_flow.clone();
 						let stack_for_delete = stack.clone();
 						let empty_title_for_delete = empty_title.clone();
 						let empty_copy_for_delete = empty_copy.clone();
 						let master_for_delete = admin_master_key.clone();
+						let filter_for_delete = filter_runtime.clone();
 						let secret_id_for_delete = item.secret_id;
-						trash_button.connect_clicked(move |_| {
+						card.get_trash_button().connect_clicked(move |_| {
 							let (sender, receiver) = tokio::sync::oneshot::channel();
 							let secret_service_for_task = Arc::clone(&secret_for_delete);
 							let runtime_for_task = runtime_for_delete.clone();
@@ -598,14 +952,15 @@ impl MainWindow {
 							let runtime_for_refresh = runtime_for_delete.clone();
 							let secret_for_refresh = Arc::clone(&secret_for_delete);
 							let vault_for_refresh = Arc::clone(&vault_for_delete);
-							let list_for_refresh = list_for_delete.clone();
+							let flow_for_refresh = flow_for_delete.clone();
 							let stack_for_refresh = stack_for_delete.clone();
 							let empty_title_refresh = empty_title_for_delete.clone();
 							let empty_copy_refresh = empty_copy_for_delete.clone();
 							let master_for_refresh = master_for_delete.clone();
+							let filter_for_refresh = filter_for_delete.clone();
 							glib::MainContext::default().spawn_local(async move {
 								if matches!(receiver.await, Ok(Ok(()))) {
-									Self::refresh_secret_list(
+									Self::refresh_secret_flow(
 										app_for_refresh.clone(),
 										parent_for_refresh.clone(),
 										runtime_for_refresh.clone(),
@@ -613,70 +968,66 @@ impl MainWindow {
 										Arc::clone(&vault_for_refresh),
 										admin_user_id,
 										master_for_refresh.clone(),
-										list_for_refresh.clone(),
+										flow_for_refresh.clone(),
 										stack_for_refresh.clone(),
 										empty_title_refresh.clone(),
 										empty_copy_refresh.clone(),
+										filter_for_refresh.clone(),
 									);
 								}
 							});
 						});
 
-						let copy_login_button = gtk4::Button::builder()
-							.icon_name("edit-copy-symbolic")
-							.build();
-						copy_login_button.add_css_class("flat");
-						copy_login_button.set_tooltip_text(Some("Copier le login"));
-						copy_login_button.set_sensitive(!item.login.is_empty());
-						let login_value = item.login.clone();
-						copy_login_button.connect_clicked(move |_| {
-							if let Some(display) = gtk4::gdk::Display::default() {
-								display.clipboard().set_text(&login_value);
-							}
-						});
+						let copy_value = if !item.secret_value.is_empty() {
+							item.secret_value.clone()
+						} else {
+							item.login.clone()
+						};
 
-						let copy_secret_button = gtk4::Button::builder()
-							.icon_name("edit-copy-symbolic")
-							.build();
-						copy_secret_button.add_css_class("flat");
-						copy_secret_button.set_tooltip_text(Some("Copier le secret"));
-						copy_secret_button.set_sensitive(!item.secret_value.is_empty());
-						let secret_value = item.secret_value.clone();
-						copy_secret_button.connect_clicked(move |_| {
-							if let Some(display) = gtk4::gdk::Display::default() {
-								display.clipboard().set_text(&secret_value);
-							}
-						});
+						if copy_value.is_empty() {
+							card.get_copy_button().set_sensitive(false);
+						} else {
+							let card_for_copy = Rc::clone(&card);
+							let service_for_copy = Arc::clone(&secret_service);
+							let runtime_for_copy = runtime_handle.clone();
+							let usage_for_copy = Rc::clone(&usage_count);
+							let secret_id_for_copy = item.secret_id;
+							card.get_copy_button().connect_clicked(move |_| {
+								if let Some(display) = gtk4::gdk::Display::default() {
+									display.clipboard().set_text(&copy_value);
+								}
 
-						let open_url_button = gtk4::Button::builder()
-							.icon_name("applications-internet-symbolic")
-							.build();
-						open_url_button.add_css_class("flat");
-						open_url_button.set_tooltip_text(Some("Ouvrir l'URL"));
-						open_url_button.set_sensitive(!item.url.is_empty());
-						let url_value = item.url.clone();
-						open_url_button.connect_clicked(move |_| {
-							let _ = gtk4::gio::AppInfo::launch_default_for_uri(
-								url_value.as_str(),
-								None::<&gtk4::gio::AppLaunchContext>,
-							);
-						});
+								let new_value = usage_for_copy.get().saturating_add(1);
+								usage_for_copy.set(new_value);
+								card_for_copy.update_usage_count(new_value);
 
-						text_box.append(&title_label);
-						text_box.append(&meta_label);
-						actions_box.append(&copy_login_button);
-						actions_box.append(&copy_secret_button);
-						actions_box.append(&open_url_button);
-						actions_box.append(&edit_button);
-						actions_box.append(&trash_button);
+								let service_for_task = Arc::clone(&service_for_copy);
+								let runtime_for_task = runtime_for_copy.clone();
+								std::thread::spawn(move || {
+									let _ = runtime_for_task.block_on(async move {
+										service_for_task.increment_usage_count(secret_id_for_copy).await
+									});
+								});
+							});
+						}
 
-						row_box.append(&icon);
-						row_box.append(&text_box);
-						row_box.append(&actions_box);
-						row.set_child(Some(&row_box));
-						secret_list.append(&row);
+						let card_widget = card.get_widget();
+						let widget_key = format!("secret-card-{}", item.secret_id);
+						card_widget.set_widget_name(&widget_key);
+						filter_runtime.meta_by_widget.borrow_mut().insert(
+							widget_key,
+							SecretFilterMeta {
+								title_lower: item.title.to_lowercase(),
+								url_lower: item.url.to_lowercase(),
+								kind,
+								is_weak: item.health == "Faible",
+								is_duplicate,
+							},
+						);
+						secret_flow.insert(&card_widget, -1);
 					}
 
+					Self::apply_filters(&secret_flow, &filter_runtime);
 					stack.set_visible_child_name("list");
 				}
 				Ok(Err(_)) | Err(_) => {
@@ -694,9 +1045,19 @@ impl MainWindow {
 struct CenterPanelWidgets {
 	frame: gtk4::Frame,
 	stack: gtk4::Stack,
-	secret_list: gtk4::ListBox,
+	secret_flow: gtk4::FlowBox,
+	filtered_status_page: adw::StatusPage,
 	empty_title: gtk4::Label,
 	empty_copy: gtk4::Label,
+}
+
+struct SidebarWidgets {
+	frame: gtk4::Frame,
+	category_list: gtk4::ListBox,
+	audit_list: gtk4::ListBox,
+	audit_all_badge: gtk4::Label,
+	audit_weak_badge: gtk4::Label,
+	audit_duplicate_badge: gtk4::Label,
 }
 
 struct SecretRowView {
@@ -708,4 +1069,8 @@ struct SecretRowView {
 	login: String,
 	url: String,
 	secret_value: String,
+	kind: SecretKind,
+	color_class: String,
+	health: String,
+	usage_count: u32,
 }

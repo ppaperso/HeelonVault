@@ -16,7 +16,7 @@ aes-gcm = "0.10"
 argon2 = "0.5"
 getrandom = "0.3"
 gtk4 = "0.9"
-libadwaita = "0.7"
+libadwaita = { version = "0.7", features = ["v1_2"] }
 secrecy = "0.10"
 serde = { version = "1.0", features = ["derive"] }
 serde_json = "1.0"
@@ -26,7 +26,8 @@ time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "sync"] }
 totp-rs = "5.6"
 tracing = "0.1"
-tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt"] }
+tracing-appender = "0.2"
+tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "time"] }
 uuid = { version = "1.16", features = ["serde", "v4"] }
 zeroize = "1.8"
 

@@ -56,6 +56,26 @@ HeelonVault/
 - Prod: `/var/lib/heelonvault-rust-shared/heelonvault.db`
 - Legacy Python a ne pas toucher: `/var/lib/heelonvault-shared`
 
+## Logs (runtime)
+
+- Rotation journaliere active via `tracing-appender` (un fichier par jour).
+- Dossier des logs configurable via `HEELONVAULT_LOG_DIR`.
+- Niveau global configurable via `RUST_LOG` (prioritaire) puis `HEELONVAULT_LOG_LEVEL`.
+- Defauts launchers:
+  - Dev (`run-dev.sh`): `HEELONVAULT_LOG_LEVEL=debug`, `HEELONVAULT_LOG_DIR=./logs`
+  - Prod (`run.sh`): `HEELONVAULT_LOG_LEVEL=info`, `HEELONVAULT_LOG_DIR=/var/lib/heelonvault-rust-shared/logs`
+- Fichiers de rotation: `heelonvault.log.YYYY-MM-DD` dans le dossier configure.
+
+Exemples:
+
+```bash
+# Compat standard Rust (prioritaire)
+RUST_LOG=info,heelonvault_rust::ui=debug ./run-dev.sh
+
+# Ou via variable applicative
+HEELONVAULT_LOG_LEVEL=warn ./run.sh
+```
+
 ## Tests et validation
 
 Depuis `rust/`:

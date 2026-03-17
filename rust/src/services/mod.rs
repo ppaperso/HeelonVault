@@ -3,6 +3,7 @@ pub mod backup_service;
 pub mod crypto_service;
 pub mod password_service;
 pub mod secret_service;
+pub mod user_service;
 pub mod vault_service;
 
 use thiserror::Error;

@@ -1148,7 +1148,7 @@
         border-radius: 12px;
         border: 1px solid #57B9B1;
         background: #FFFFFF;
-        color: #2C3E50;
+           color: #13A1A1;
     }
 
     entry:focus,
@@ -1201,4 +1201,197 @@
     headerbar .dev-badge {
         padding-left: 10px;
         padding-right: 10px;
+    }
+
+    /* ─── SECRET CARD GRID & MODERN FLOWBOX ────────────────────────── */
+
+    .main-secret-grid-scroll {
+        background: transparent;
+    }
+
+    .main-secret-grid {
+        background: transparent;
+    }
+
+    .audit-count-badge {
+        min-width: 24px;
+        padding: 2px 8px;
+        border-radius: 999px;
+        background: rgba(19, 161, 161, 0.14);
+        color: #0A5F5C;
+        font-weight: 700;
+        font-size: 0.78rem;
+    }
+
+    .profile-entry-row {
+        min-height: 38px;
+    }
+
+    .audit-count-badge-pulse {
+        animation: audit-badge-pulse 220ms ease-out;
+    }
+
+    @keyframes audit-badge-pulse {
+        0% {
+            transform: scale(1);
+            background: rgba(19, 161, 161, 0.14);
+        }
+        45% {
+            transform: scale(1.08);
+            background: rgba(19, 161, 161, 0.30);
+        }
+        100% {
+            transform: scale(1);
+            background: rgba(19, 161, 161, 0.14);
+        }
+    }
+
+    .secret-card {
+        min-width: 240px;
+        min-height: 156px;
+        padding: 12px;
+        border-radius: 18px;
+        border: 1px solid rgba(164, 223, 207, 0.65);
+        background: linear-gradient(135deg, #FFFFFF 0%, #F3F6F3 100%);
+        box-shadow: 0 8px 20px rgba(7, 57, 58, 0.08);
+        transition: all 240ms cubic-bezier(0.34, 1.56, 0.64, 1);
+    }
+
+    .secret-card:hover {
+        transform: translateY(-6px);
+        border-color: #13A1A1;
+        box-shadow: 0 16px 32px rgba(7, 57, 58, 0.16);
+    }
+
+    .secret-card:active {
+        transform: translateY(-3px);
+    }
+
+    /* Type-specific left border accent (5px, strongly colored for distinction) */
+    
+    .secret-type-password {
+        border-left: 5px solid #13A1A1;
+    }
+
+    .secret-type-password:hover {
+        border-left-color: #0D8F8A;
+        border-left-width: 6px;
+    }
+
+    .secret-type-token {
+        border-left: 5px solid #1F8678;
+    }
+
+    .secret-type-token:hover {
+        border-left-color: #15654F;
+        border-left-width: 6px;
+    }
+
+    .secret-type-ssh {
+        border-left: 5px solid #07393A;
+    }
+
+    .secret-type-ssh:hover {
+        border-left-color: #05282B;
+        border-left-width: 6px;
+    }
+
+    .secret-type-document {
+        border-left: 5px solid #0D9B96;
+    }
+
+    .secret-type-document:hover {
+        border-left-color: #0A6F6A;
+        border-left-width: 6px;
+    }
+
+    /* Card title */
+    .secret-card-title {
+        color: #07393A;
+        font-weight: 780;
+        letter-spacing: 0.01em;
+        line-height: 1.32;
+        font-size: 1.10rem;
+    }
+
+    /* Card badges row */
+    .secret-card-badges {
+        padding-top: 4px;
+        padding-bottom: 4px;
+    }
+
+    .secret-badge {
+        border-radius: 999px;
+        padding: 2px 10px;
+        font-size: 0.75rem;
+        font-weight: 660;
+        letter-spacing: 0.01em;
+        text-transform: uppercase;
+    }
+
+    .badge-weak {
+        background: rgba(231, 76, 60, 0.12);
+        color: #C01C28;
+        border: 1px solid rgba(231, 76, 60, 0.25);
+    }
+
+    .badge-strong {
+        background: rgba(31, 134, 120, 0.12);
+        color: #0A5F5C;
+        border: 1px solid rgba(31, 134, 120, 0.25);
+    }
+
+    .badge-usage {
+        background: rgba(19, 161, 161, 0.12);
+        color: #0D8F8A;
+        border: 1px solid rgba(19, 161, 161, 0.25);
+    }
+
+    .badge-duplicate {
+        background: rgba(255, 193, 7, 0.12);
+        color: #B8860B;
+        border: 1px solid rgba(255, 193, 7, 0.25);
+    }
+
+    /* Card separator */
+    .secret-card-separator {
+        opacity: 0.1;
+        background-color: #07393A;
+        margin-top: 8px;
+        margin-bottom: 4px;
+    }
+
+    /* Card actions */
+    .secret-card-actions {
+        padding-top: 4px;
+        padding-bottom: 0;
+        border-top: none;
+        margin-top: 0;
+    }
+
+    .secret-card-action-btn {
+        min-height: 32px;
+        padding: 4px 8px;
+        border-radius: 6px;
+        color: #8CACB0;
+        background: transparent;
+        border: none;
+        box-shadow: none;
+        transition: color 0.2s ease;
+        -gtk-icon-size: 16px;
+    }
+
+    .secret-card-action-btn:hover {
+        background: transparent;
+        color: #13A1A1;
+    }
+
+    .secret-card-action-btn:active {
+        background: rgba(19, 161, 161, 0.12);
+        color: #13A1A1;
+    }
+
+    .secret-card-action-btn:disabled {
+        opacity: 0.35;
+        color: #8CACB0;
     }

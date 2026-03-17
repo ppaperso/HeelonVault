@@ -28,6 +28,7 @@ pub trait SecretRepository {
         secret_id: Uuid,
         encrypted_secret_blob: SecretBox<Vec<u8>>,
     ) -> Result<(), AppError>;
+    async fn increment_usage_count(&self, secret_id: Uuid) -> Result<(), AppError>;
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError>;
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
@@ -106,6 +107,12 @@ impl SqlxSecretRepository {
         let created_at: Option<String> = row
             .try_get("created_at")
             .map_err(|err| Self::map_storage_err("read created_at", err))?;
+        let modified_at: Option<String> = row
+            .try_get("modified_at")
+            .map_err(|err| Self::map_storage_err("read modified_at", err))?;
+        let usage_count: u32 = row
+            .try_get("usage_count")
+            .map_err(|err| Self::map_storage_err("read usage_count", err))?;
         let blob_storage_raw: String = row
             .try_get("blob_storage")
             .map_err(|err| Self::map_storage_err("read blob_storage", err))?;
@@ -144,6 +151,8 @@ impl SqlxSecretRepository {
             tags,
             expires_at,
             created_at,
+            modified_at,
+            usage_count,
             blob_storage,
             secret_blob: SecretBox::new(Box::new(secret_blob_bytes)),
         })
@@ -153,7 +162,7 @@ impl SqlxSecretRepository {
 impl SecretRepository for SqlxSecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError> {
         let row_opt = sqlx::query(
-            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
              FROM secret_items
              WHERE id = ?1 AND deleted_at IS NULL",
         )
@@ -170,7 +179,7 @@ impl SecretRepository for SqlxSecretRepository {
 
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
-              "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
+              "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
              FROM secret_items
              WHERE vault_id = ?1 AND deleted_at IS NULL
                ORDER BY created_at DESC, id DESC",
@@ -190,7 +199,7 @@ impl SecretRepository for SqlxSecretRepository {
 
     async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
-            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, blob_storage, secret_blob, file_blob_ref
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
              FROM secret_items
              WHERE vault_id = ?1 AND deleted_at IS NOT NULL
              ORDER BY deleted_at DESC, id DESC",
@@ -337,6 +346,26 @@ impl SecretRepository for SqlxSecretRepository {
         Ok(())
     }
 
+    async fn increment_usage_count(&self, secret_id: Uuid) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE secret_items
+             SET usage_count = usage_count + 1, modified_at = CURRENT_TIMESTAMP
+             WHERE id = ?1 AND deleted_at IS NULL",
+        )
+        .bind(secret_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("increment usage count", err))?;
+
+        if result.rows_affected() == 0 {
+            return Err(AppError::Storage(
+                "secret not found for usage count increment".to_string(),
+            ));
+        }
+
+        Ok(())
+    }
+
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError> {
         let result = sqlx::query(
             "UPDATE secret_items
@@ -458,6 +487,8 @@ mod tests {
             tags: None,
             expires_at: None,
             created_at: None,
+            modified_at: None,
+            usage_count: 0,
             blob_storage: storage,
             secret_blob: SecretBox::new(Box::new(Vec::new())),
         }

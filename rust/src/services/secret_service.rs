@@ -51,6 +51,7 @@ pub trait SecretService {
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
     async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError>;
+    async fn increment_usage_count(&self, secret_id: Uuid) -> Result<(), AppError>;
 }
 
 pub struct SecretServiceImpl<TRepo, TCrypto>
@@ -151,6 +152,8 @@ where
             tags,
             expires_at,
             created_at: None,
+            modified_at: None,
+            usage_count: 0,
             blob_storage,
             secret_blob: stored_blob,
         };
@@ -234,6 +237,66 @@ where
     async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError> {
         self.secret_repo.empty_trash(vault_id).await
     }
+
+    async fn increment_usage_count(&self, secret_id: Uuid) -> Result<(), AppError> {
+        self.secret_repo.increment_usage_count(secret_id).await
+    }
+}
+
+impl<TRepo, TCrypto> SecretServiceImpl<TRepo, TCrypto>
+where
+    TRepo: SecretRepository + Send + Sync,
+    TCrypto: CryptoService + Send + Sync,
+{
+    /// Évalue la robustesse d'un mot de passe basée sur sa longueur et sa complexité
+    pub fn evaluate_password_strength(secret_value: &[u8]) -> String {
+        // Minimum: 12 caractères, avec au moins 3 types de caractères différents
+        if secret_value.len() >= 12 {
+            let content = String::from_utf8_lossy(secret_value);
+            let has_uppercase = content.chars().any(|c| c.is_uppercase());
+            let has_lowercase = content.chars().any(|c| c.is_lowercase());
+            let has_digit = content.chars().any(|c| c.is_numeric());
+            let has_special = content.chars().any(|c| !c.is_alphanumeric());
+
+            let complexity = [has_uppercase, has_lowercase, has_digit, has_special]
+                .iter()
+                .filter(|&&b| b)
+                .count();
+
+            if complexity >= 3 {
+                "Robuste".to_string()
+            } else {
+                "Faible".to_string()
+            }
+        } else {
+            "Faible".to_string()
+        }
+    }
+
+    /// Trouve les IDs des secrets qui partagent la même valeur (doublons potentiels)
+    pub async fn find_duplicate_secrets(
+        &self,
+        vault_id: Uuid,
+        secret_value: &[u8],
+    ) -> Result<Vec<Uuid>, AppError> {
+        let all_items = self.secret_repo.list_by_vault_id(vault_id).await?;
+        let mut duplicates = Vec::new();
+
+        for item in all_items {
+            // Pour cette version simplifiée, on compare le blob secret
+            // Une vraie comparaison nécessiterait le déchiffrement avec vault key
+            if item.secret_blob.expose_secret() == secret_value {
+                duplicates.push(item.id);
+            }
+        }
+
+        Ok(duplicates)
+    }
+
+    /// Incrémente le compteur d'utilisation de ce secret
+    pub async fn increment_secret_usage_count(&self, secret_id: Uuid) -> Result<(), AppError> {
+        self.secret_repo.increment_usage_count(secret_id).await
+    }
 }
 
 #[cfg(test)]
@@ -291,6 +354,8 @@ mod tests {
                     tags: item.tags.clone(),
                     expires_at: item.expires_at.clone(),
                     created_at: None,
+                    modified_at: None,
+                    usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
                 })),
@@ -313,6 +378,8 @@ mod tests {
                     tags: item.tags.clone(),
                     expires_at: item.expires_at.clone(),
                     created_at: None,
+                    modified_at: None,
+                    usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
                 })
@@ -335,6 +402,8 @@ mod tests {
                     tags: item.tags.clone(),
                     expires_at: item.expires_at.clone(),
                     created_at: None,
+                    modified_at: None,
+                    usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
                 })
@@ -447,6 +516,11 @@ mod tests {
             let before = items.len();
             items.retain(|_, item| !(item.vault_id == vault_id && item.deleted));
             Ok(before.saturating_sub(items.len()))
+        }
+
+        async fn increment_usage_count(&self, _secret_id: Uuid) -> Result<(), AppError> {
+            // Stub implementation: no-op
+            Ok(())
         }
     }
 

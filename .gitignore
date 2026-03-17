@@ -3,23 +3,6 @@ rust/target/
 rust/**/*.rs.bk
 rust/Cargo.lock.bak
 
-# Python
-__pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-
-# Virtual Environment
-venv-dev/
-venv-prod/
-venvpwdmanager/
-venv/
-ENV/
-env/
-.venv
-venv-dev
-
 # Database files (SENSITIVE)
 *.db
 *.sqlite
@@ -29,17 +12,6 @@ venv-dev
 *.bin
 *.key
 *.pem
-
-# Données runtime (SENSITIVE)
-data/
-src/data/avatars/*
-!src/data/avatars/.gitkeep
-src/data/backups/*
-!src/data/backups/.gitkeep
-src/data/*.db
-src/data/*.bin
-src/data/*.log
-src/data/backup_*/
 
 # CSV exports et imports (SENSITIVE)
 export-csv/
