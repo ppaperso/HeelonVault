@@ -298,6 +298,7 @@ impl TrashDialog {
                                 }
                             },
                             login,
+                            deleted_at: item.deleted_at.clone(),
                         });
                     }
                     Ok(rows)
@@ -349,6 +350,29 @@ impl TrashDialog {
                         let meta_label = gtk4::Label::new(Some(&meta));
                         meta_label.set_halign(Align::Start);
                         meta_label.add_css_class("login-support-copy");
+
+                        // Ligne de date de suppression
+                        let deleted_text = item.deleted_at.as_deref()
+                            .map(|raw| {
+                                // SQLite: "YYYY-MM-DD HH:MM:SS" => "jj/mm/YYYY à HH:MM"
+                                if raw.len() >= 16 {
+                                    let date = &raw[..10];
+                                    let time = &raw[11..16];
+                                    let parts: Vec<&str> = date.splitn(3, '-').collect();
+                                    if parts.len() == 3 {
+                                        format!("Supprimé le {}/{}/{} à {}", parts[2], parts[1], parts[0], time)
+                                    } else {
+                                        format!("Supprimé le {raw}")
+                                    }
+                                } else {
+                                    format!("Supprimé le {raw}")
+                                }
+                            })
+                            .unwrap_or_default();
+                        let deleted_label = gtk4::Label::new(Some(&deleted_text));
+                        deleted_label.set_halign(Align::Start);
+                        deleted_label.add_css_class("caption");
+                        deleted_label.add_css_class("dim-label");
 
                         let actions = gtk4::Box::builder()
                             .orientation(Orientation::Horizontal)
@@ -496,6 +520,9 @@ impl TrashDialog {
 
                         text_box.append(&title_label);
                         text_box.append(&meta_label);
+                        if !deleted_text.is_empty() {
+                            text_box.append(&deleted_label);
+                        }
                         actions.append(&restore_btn);
                         actions.append(&delete_btn);
 
@@ -547,4 +574,5 @@ struct TrashRowView {
     title: String,
     type_label: String,
     login: String,
+    deleted_at: Option<String>,
 }

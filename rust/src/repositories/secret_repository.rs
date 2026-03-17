@@ -142,6 +142,10 @@ impl SqlxSecretRepository {
             }
         };
 
+        let deleted_at: Option<String> = row
+            .try_get("deleted_at")
+            .unwrap_or(None);
+
         Ok(SecretItem {
             id,
             vault_id,
@@ -155,6 +159,7 @@ impl SqlxSecretRepository {
             usage_count,
             blob_storage,
             secret_blob: SecretBox::new(Box::new(secret_blob_bytes)),
+            deleted_at,
         })
     }
 }
@@ -162,7 +167,7 @@ impl SqlxSecretRepository {
 impl SecretRepository for SqlxSecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError> {
         let row_opt = sqlx::query(
-            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref, deleted_at
              FROM secret_items
              WHERE id = ?1 AND deleted_at IS NULL",
         )
@@ -179,7 +184,7 @@ impl SecretRepository for SqlxSecretRepository {
 
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
-              "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
+              "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref, deleted_at
              FROM secret_items
              WHERE vault_id = ?1 AND deleted_at IS NULL
                ORDER BY created_at DESC, id DESC",
@@ -199,7 +204,7 @@ impl SecretRepository for SqlxSecretRepository {
 
     async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
-            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref
+            "SELECT id, vault_id, secret_type, title, metadata_json, tags, expires_at, created_at, modified_at, usage_count, blob_storage, secret_blob, file_blob_ref, deleted_at
              FROM secret_items
              WHERE vault_id = ?1 AND deleted_at IS NOT NULL
              ORDER BY deleted_at DESC, id DESC",
@@ -491,6 +496,7 @@ mod tests {
             usage_count: 0,
             blob_storage: storage,
             secret_blob: SecretBox::new(Box::new(Vec::new())),
+            deleted_at: None,
         }
     }
 

@@ -156,6 +156,7 @@ where
             usage_count: 0,
             blob_storage,
             secret_blob: stored_blob,
+            deleted_at: None,
         };
 
         self.secret_repo
@@ -358,6 +359,7 @@ mod tests {
                     usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                    deleted_at: None,
                 })),
                 Some(_) => Ok(None),
                 None => Ok(None),
@@ -382,6 +384,7 @@ mod tests {
                     usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                    deleted_at: None,
                 })
                 .collect();
 
@@ -406,6 +409,7 @@ mod tests {
                     usage_count: 0,
                     blob_storage: item.blob_storage,
                     secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                    deleted_at: None,
                 })
                 .collect();
 

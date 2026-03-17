@@ -30,6 +30,11 @@ tracing-appender = "0.2"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "fmt", "json", "time"] }
 uuid = { version = "1.16", features = ["serde", "v4"] }
 zeroize = "1.8"
+zxcvbn = "2.2"
+chrono = { version = "0.4", features = ["std"] }
+bip39 = { version = "2.1", features = ["rand"] }
+base64 = "0.22"
+csv = "1.3"
 
 [build-dependencies]
 glib-build-tools = "0.20"

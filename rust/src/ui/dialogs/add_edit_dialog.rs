@@ -17,6 +17,7 @@ use crate::models::SecretType;
 use crate::services::password_service::{PasswordService, PasswordServiceImpl};
 use crate::services::secret_service::SecretService;
 use crate::services::vault_service::VaultService;
+use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
 
 #[derive(Clone, Copy, Debug)]
 pub enum DialogMode {
@@ -166,7 +167,7 @@ impl AddEditDialog {
 			.build();
 		dynamic_stack.add_css_class("dialog-dynamic-stack");
 
-		let (password_panel, password_entry) = Self::build_password_panel();
+		let (password_panel, password_entry, password_strength_bar) = Self::build_password_panel();
 		dynamic_stack.add_titled(&password_panel, Some("password"), "password");
 
 		let (api_token_panel, api_token_entry, api_provider_entry) = Self::build_api_token_panel();
@@ -282,6 +283,25 @@ impl AddEditDialog {
 		save_button_content.append(&save_spinner);
 		save_button_content.append(&save_label);
 		save_button.set_child(Some(&save_button_content));
+
+		// Gate: save is only allowed when the password tab's score is Robuste (4).
+		// For all other secret types (api_token, ssh_key, secure_document) there is
+		// no password strength requirement, so the button stays enabled.
+		{
+			use std::rc::Rc;
+			let strength  = password_strength_bar.clone();
+			let dropdown  = type_dropdown.clone();
+			let btn       = save_button.clone();
+			let check: Rc<dyn Fn()> = Rc::new(move || {
+				let is_password_type = dropdown.selected() == 0;
+				btn.set_sensitive(!is_password_type || strength.last_score() >= 4);
+			});
+			check();
+			let c = Rc::clone(&check);
+			password_entry.connect_text_notify(move |_| c());
+			let c = Rc::clone(&check);
+			type_dropdown.connect_selected_notify(move |_| c());
+		}
 
 		let dialog_for_cancel = window.clone();
 		cancel_button.connect_clicked(move |_| {
@@ -584,7 +604,7 @@ impl AddEditDialog {
 		(box_widget, entry)
 	}
 
-	fn build_password_panel() -> (gtk4::Frame, gtk4::PasswordEntry) {
+	fn build_password_panel() -> (gtk4::Frame, gtk4::PasswordEntry, PasswordStrengthBar) {
 		let frame = gtk4::Frame::new(None);
 		frame.add_css_class("dialog-type-frame");
 
@@ -638,10 +658,14 @@ impl AddEditDialog {
 		password_row.append(&password_entry);
 		password_row.append(&generate_button);
 
+		let strength_bar = PasswordStrengthBar::new();
+		strength_bar.connect_to_password_entry(&password_entry);
+
 		box_widget.append(&password_label);
 		box_widget.append(&password_row);
+		box_widget.append(strength_bar.root());
 		frame.set_child(Some(&box_widget));
-		(frame, password_entry)
+		(frame, password_entry, strength_bar)
 	}
 
 	fn build_api_token_panel() -> (gtk4::Frame, gtk4::PasswordEntry, gtk4::Entry) {

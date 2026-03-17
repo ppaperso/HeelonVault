@@ -30,4 +30,6 @@ pub struct SecretItem {
     pub usage_count: u32,
     pub blob_storage: BlobStorage,
     pub secret_blob: SecretBox<Vec<u8>>,
+    /// Populated only when the item comes from the trash query (soft-deleted).
+    pub deleted_at: Option<String>,
 }

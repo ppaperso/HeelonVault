@@ -143,6 +143,16 @@ where
             .change_password(user.username.as_str(), current_password, new_password)
             .await?;
 
+        let password_envelope = self
+            .auth_service
+            .get_password_envelope(user.username.as_str())
+            .await?;
+
+        self
+            .user_repo
+            .update_password_envelope(user_id, password_envelope)
+            .await?;
+
         info!(user_id = %user_id, "master password changed");
         Ok(())
     }

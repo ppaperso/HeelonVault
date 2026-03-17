@@ -1,5 +1,6 @@
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
+use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
@@ -12,8 +13,13 @@ use libadwaita::prelude::*;
 use secrecy::{ExposeSecret, SecretBox};
 use serde_json::Value;
 use tokio::runtime::Handle;
+use tracing::info;
 use uuid::Uuid;
+use zeroize::Zeroize;
 
+use crate::services::auth_policy_service::AuthPolicyService;
+use crate::services::backup_service::BackupService;
+use crate::services::import_service::ImportService;
 use crate::services::secret_service::SecretService;
 use crate::services::user_service::UserService;
 use crate::services::vault_service::VaultService;
@@ -69,15 +75,27 @@ struct FilterRuntime {
 
 pub struct MainWindow {
 	window: adw::ApplicationWindow,
+	secret_flow: gtk4::FlowBox,
+	auto_lock_timeout_secs: Rc<Cell<u64>>,
+	auto_lock_source: Rc<RefCell<Option<glib::SourceId>>>,
+	auto_lock_armed: Rc<Cell<bool>>,
+	session_master_key: Rc<RefCell<Vec<u8>>>,
+	on_auto_lock: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 }
 
 impl MainWindow {
-	pub fn new<TSecret, TVault, TUser>(
+	const DEFAULT_AUTO_LOCK_TIMEOUT_SECS: u64 = 5 * 60;
+
+	pub fn new<TSecret, TVault, TUser, TPolicy, TBackup, TImport>(
 		application: &adw::Application,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
 		user_service: Arc<TUser>,
+		auth_policy_service: Arc<TPolicy>,
+		backup_service: Arc<TBackup>,
+		import_service: Arc<TImport>,
+		database_path: PathBuf,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
 		connected_identity_label: String,
@@ -86,6 +104,9 @@ impl MainWindow {
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
 		TUser: UserService + Send + Sync + 'static,
+		TPolicy: AuthPolicyService + Send + Sync + 'static,
+		TBackup: BackupService + Send + Sync + 'static,
+		TImport: ImportService + Send + Sync + 'static,
 	{
 		let window = adw::ApplicationWindow::builder()
 			.application(application)
@@ -96,6 +117,12 @@ impl MainWindow {
 		window.add_css_class("app-window");
 		window.add_css_class("main-window");
 		window.set_icon_name(Some("heelonvault"));
+
+		let auto_lock_source: Rc<RefCell<Option<glib::SourceId>>> = Rc::new(RefCell::new(None));
+		let auto_lock_armed = Rc::new(Cell::new(false));
+		let auto_lock_timeout_secs = Rc::new(Cell::new(Self::DEFAULT_AUTO_LOCK_TIMEOUT_SECS));
+		let session_master_key = Rc::new(RefCell::new(admin_master_key));
+		let on_auto_lock: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
 
 		let header_bar = adw::HeaderBar::new();
 		header_bar.add_css_class("main-headerbar");
@@ -149,8 +176,21 @@ impl MainWindow {
 		let app_for_profile = application.clone();
 		let runtime_for_profile = runtime_handle.clone();
 		let user_service_for_profile = Arc::clone(&user_service);
+		let auth_policy_for_profile = Arc::clone(&auth_policy_service);
+		let backup_for_profile = Arc::clone(&backup_service);
+		let import_for_profile = Arc::clone(&import_service);
+		let secret_for_profile = Arc::clone(&secret_service);
+		let vault_for_profile = Arc::clone(&vault_service);
+		let runtime_for_profile_io = runtime_handle.clone();
+		let db_path_for_profile = database_path.clone();
 		let parent_for_profile = window.clone();
 		let profile_badge_for_update = profile_button.clone();
+		let auto_lock_timeout_for_profile = Rc::clone(&auto_lock_timeout_secs);
+		let auto_lock_source_for_profile = Rc::clone(&auto_lock_source);
+		let auto_lock_armed_for_profile = Rc::clone(&auto_lock_armed);
+		let on_auto_lock_for_profile = Rc::clone(&on_auto_lock);
+		let session_for_profile = Rc::clone(&session_master_key);
+		let session_for_profile_io = Rc::clone(&session_master_key);
 		profile_button_open.connect_clicked(move |_| {
 			let profile_badge = profile_badge_for_update.clone();
 			ProfileDialog::present(
@@ -158,9 +198,41 @@ impl MainWindow {
 				&parent_for_profile,
 				runtime_for_profile.clone(),
 				Arc::clone(&user_service_for_profile),
+				Arc::clone(&auth_policy_for_profile),
+				Arc::clone(&backup_for_profile),
+				Arc::clone(&import_for_profile),
+				Arc::clone(&secret_for_profile),
+				Arc::clone(&vault_for_profile),
+				db_path_for_profile.clone(),
+				runtime_for_profile_io.clone(),
 				admin_user_id,
+				{
+					let session_for_cb = Rc::clone(&session_for_profile_io);
+					move || Self::snapshot_session_master_key(&session_for_cb)
+				},
 				move |display_label| {
 					profile_badge.set_label(&format!("Connecté: {}", display_label));
+				},
+				{
+					let auto_lock_timeout_for_cb = Rc::clone(&auto_lock_timeout_for_profile);
+					let auto_lock_source_for_cb = Rc::clone(&auto_lock_source_for_profile);
+					let auto_lock_armed_for_cb = Rc::clone(&auto_lock_armed_for_profile);
+					let parent_for_cb = parent_for_profile.clone();
+					let on_auto_lock_for_cb = Rc::clone(&on_auto_lock_for_profile);
+					let session_for_cb = Rc::clone(&session_for_profile);
+					move |mins| {
+						auto_lock_timeout_for_cb.set(mins.saturating_mul(60));
+						if auto_lock_armed_for_cb.get() {
+							Self::reset_auto_lock_timer(
+								&parent_for_cb,
+								&auto_lock_source_for_cb,
+								&auto_lock_armed_for_cb,
+								auto_lock_timeout_for_cb.get(),
+								&on_auto_lock_for_cb,
+								&session_for_cb,
+							);
+						}
+					}
 				},
 			);
 		});
@@ -190,17 +262,18 @@ impl MainWindow {
 		let secret_for_add = Arc::clone(&secret_service);
 		let vault_for_add = Arc::clone(&vault_service);
 		let admin_user_for_add = admin_user_id;
-		let admin_master_for_add = admin_master_key.clone();
+		let session_master_for_add = Rc::clone(&session_master_key);
 		let app_for_trash = application.clone();
 		let window_for_trash = window.clone();
 		let runtime_for_trash = runtime_handle.clone();
 		let secret_for_trash = Arc::clone(&secret_service);
 		let vault_for_trash = Arc::clone(&vault_service);
 		let admin_user_for_trash = admin_user_id;
-		let admin_master_for_trash = admin_master_key.clone();
+		let session_master_for_trash = Rc::clone(&session_master_key);
 
 		let center_panel = Self::build_center_panel();
 		let sidebar_panel = Self::build_sidebar_panel();
+		let secret_flow_for_struct = center_panel.secret_flow.clone();
 
 		let filter_runtime = FilterRuntime {
 			meta_by_widget: Rc::new(RefCell::new(HashMap::new())),
@@ -257,13 +330,19 @@ impl MainWindow {
 			let runtime = runtime_handle.clone();
 			let secret_service = Arc::clone(&secret_service);
 			let vault_service = Arc::clone(&vault_service);
-			let admin_master = admin_master_key.clone();
+			let session_master = Rc::clone(&session_master_key);
 			let secret_flow = secret_flow_for_refresh.clone();
 			let stack = stack_for_refresh.clone();
 			let empty_title = empty_title_for_refresh.clone();
 			let empty_copy = empty_copy_for_refresh.clone();
 			let filter_runtime = filter_runtime.clone();
 			Rc::new(move || {
+				let Some(master_key) = Self::snapshot_session_master_key(&session_master) else {
+					empty_title.set_text("Session verrouillée");
+					empty_copy.set_text("Reconnectez-vous pour réactiver l'accès aux secrets.");
+					stack.set_visible_child_name("empty");
+					return;
+				};
 				Self::refresh_secret_flow(
 					app.clone(),
 					parent_window.clone(),
@@ -271,7 +350,7 @@ impl MainWindow {
 					Arc::clone(&secret_service),
 					Arc::clone(&vault_service),
 					admin_user_id,
-					admin_master.clone(),
+					master_key,
 					secret_flow.clone(),
 					stack.clone(),
 					empty_title.clone(),
@@ -281,8 +360,69 @@ impl MainWindow {
 			})
 		};
 
+		// ── Bouton Urgence (Panic) ─────────────────────────────────────────
+		// Place dans la zone de fin de la HeaderBar pour être visible mais
+		// séparé des actions habituelles.
+		let panic_button = gtk4::Button::new();
+		panic_button.add_css_class("panic-badge");
+		panic_button.set_tooltip_text(Some(
+			"Fermeture d'urgence — Efface les données sensibles et ferme l'application",
+		));
+
+		let panic_inner = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(5)
+			.valign(Align::Center)
+			.build();
+		let panic_icon = gtk4::Image::from_icon_name("system-shutdown-symbolic");
+		panic_icon.add_css_class("panic-badge-label");
+		let panic_lbl = gtk4::Label::new(Some("Urgence"));
+		panic_lbl.add_css_class("panic-badge-label");
+		panic_inner.append(&panic_icon);
+		panic_inner.append(&panic_lbl);
+		panic_button.set_child(Some(&panic_inner));
+
+		let window_for_panic = window.clone();
+		panic_button.connect_clicked(move |_| {
+			let dialog = adw::MessageDialog::new(
+				Some(&window_for_panic),
+				Some("Fermeture d'urgence"),
+				Some(
+					"Les structures sensibles (clés, SecretBox) seront libérées \
+					par le système d'exploitation lors de la terminaison du processus. \
+					\n\nCette action est irréversible.",
+				),
+			);
+			dialog.add_response("cancel", "Annuler");
+			dialog.add_response("wipe_exit", "Effacer et quitter");
+			dialog.set_response_appearance(
+				"wipe_exit",
+				adw::ResponseAppearance::Destructive,
+			);
+			dialog.set_default_response(Some("cancel"));
+			dialog.set_close_response("cancel");
+			dialog.connect_response(None, |_dlg, response| {
+				if response == "wipe_exit" {
+					// Journalise l'événement avant la sortie.
+					// DailyLogFileWriter est synchrone : le message est écrit
+					// sur disque avant que process::exit ne termine le processus.
+					info!("Panic mode activated - wiping memory and exiting");
+					// Les SecretBox allouées dans les closures GTK seront
+					// retirées de la mémoire virtuelle par le noyau lors de la
+					// libération du tas du processus. L'OS zero-fill les pages
+					// avant de les réattribuer (comportement garanti par Linux).
+					std::process::exit(0);
+				}
+			});
+			dialog.present();
+		});
+
 		let refresh_for_add = Rc::clone(&refresh_list);
 		add_button.connect_clicked(move |_| {
+			let Some(master_key) = Self::snapshot_session_master_key(&session_master_for_add) else {
+				info!("add secret blocked: session is locked");
+				return;
+			};
 			let refresh_after_save = Rc::clone(&refresh_for_add);
 			let dialog = AddEditDialog::new(
 				&app_for_add,
@@ -291,7 +431,7 @@ impl MainWindow {
 				Arc::clone(&secret_for_add),
 				Arc::clone(&vault_for_add),
 				admin_user_for_add,
-				admin_master_for_add.clone(),
+				master_key,
 				DialogMode::Create,
 				move || {
 					refresh_after_save();
@@ -302,6 +442,10 @@ impl MainWindow {
 		let refresh_for_trash = Rc::clone(&refresh_list);
 		header_bar.pack_start(&add_button);
 		trash_button.connect_clicked(move |_| {
+			let Some(master_key) = Self::snapshot_session_master_key(&session_master_for_trash) else {
+				info!("trash access blocked: session is locked");
+				return;
+			};
 			let refresh_after_trash = Rc::clone(&refresh_for_trash);
 			let dialog = TrashDialog::new(
 				&app_for_trash,
@@ -310,7 +454,7 @@ impl MainWindow {
 				Arc::clone(&secret_for_trash),
 				Arc::clone(&vault_for_trash),
 				admin_user_for_trash,
-				admin_master_for_trash.clone(),
+				master_key,
 				move || {
 					refresh_after_trash();
 				},
@@ -319,6 +463,7 @@ impl MainWindow {
 		});
 		header_bar.pack_start(&trash_button);
 		header_bar.pack_end(&profile_button);
+		header_bar.pack_end(&panic_button);
 		root.append(&header_bar);
 
 		let content = gtk4::Box::builder()
@@ -397,11 +542,168 @@ impl MainWindow {
 
 		refresh_list();
 
-		Self { window }
+		let key_controller = gtk4::EventControllerKey::new();
+		let window_for_key = window.clone();
+		let source_for_key = Rc::clone(&auto_lock_source);
+		let armed_for_key = Rc::clone(&auto_lock_armed);
+		let timeout_for_key = Rc::clone(&auto_lock_timeout_secs);
+		let callback_for_key = Rc::clone(&on_auto_lock);
+		let session_for_key = Rc::clone(&session_master_key);
+		key_controller.connect_key_pressed(move |_controller, _key, _keycode, _state| {
+			Self::reset_auto_lock_timer(
+				&window_for_key,
+				&source_for_key,
+				&armed_for_key,
+				timeout_for_key.get(),
+				&callback_for_key,
+				&session_for_key,
+			);
+			glib::Propagation::Proceed
+		});
+		window.add_controller(key_controller);
+
+		let motion_controller = gtk4::EventControllerMotion::new();
+		let window_for_motion = window.clone();
+		let source_for_motion = Rc::clone(&auto_lock_source);
+		let armed_for_motion = Rc::clone(&auto_lock_armed);
+		let timeout_for_motion = Rc::clone(&auto_lock_timeout_secs);
+		let callback_for_motion = Rc::clone(&on_auto_lock);
+		let session_for_motion = Rc::clone(&session_master_key);
+		motion_controller.connect_motion(move |_controller, _x, _y| {
+			Self::reset_auto_lock_timer(
+				&window_for_motion,
+				&source_for_motion,
+				&armed_for_motion,
+				timeout_for_motion.get(),
+				&callback_for_motion,
+				&session_for_motion,
+			);
+		});
+		window.add_controller(motion_controller);
+
+		Self {
+			window,
+			secret_flow: secret_flow_for_struct,
+			auto_lock_timeout_secs,
+			auto_lock_source,
+			auto_lock_armed,
+			session_master_key,
+			on_auto_lock,
+		}
 	}
 
-	pub fn into_inner(self) -> adw::ApplicationWindow {
-		self.window
+	pub fn window(&self) -> &adw::ApplicationWindow {
+		&self.window
+	}
+
+	pub fn set_on_auto_lock(&self, callback: Rc<dyn Fn()>) {
+		*self.on_auto_lock.borrow_mut() = Some(callback);
+	}
+
+	pub fn set_session_master_key(&self, key: Vec<u8>) {
+		let mut current = self.session_master_key.borrow_mut();
+		current.zeroize();
+		*current = key;
+	}
+
+	pub fn activate_auto_lock(&self) {
+		self.auto_lock_armed.set(true);
+		Self::reset_auto_lock_timer(
+			&self.window,
+			&self.auto_lock_source,
+			&self.auto_lock_armed,
+			self.auto_lock_timeout_secs.get(),
+			&self.on_auto_lock,
+			&self.session_master_key,
+		);
+	}
+
+	pub fn set_auto_lock_timeout(&self, mins: u64) {
+		let mins = match mins {
+			1 | 5 | 10 | 30 => mins,
+			_ => 5,
+		};
+		self.auto_lock_timeout_secs.set(mins.saturating_mul(60));
+		if self.auto_lock_armed.get() {
+			Self::reset_auto_lock_timer(
+				&self.window,
+				&self.auto_lock_source,
+				&self.auto_lock_armed,
+				self.auto_lock_timeout_secs.get(),
+				&self.on_auto_lock,
+				&self.session_master_key,
+			);
+		}
+	}
+
+	pub fn deactivate_auto_lock(&self) {
+		self.auto_lock_armed.set(false);
+		if let Some(source_id) = self.auto_lock_source.borrow_mut().take() {
+			source_id.remove();
+		}
+	}
+
+	pub fn clear_sensitive_session(&self) {
+		self.deactivate_auto_lock();
+		{
+			let mut key = self.session_master_key.borrow_mut();
+			key.zeroize();
+			key.clear();
+		}
+		while let Some(child) = self.secret_flow.first_child() {
+			self.secret_flow.remove(&child);
+		}
+	}
+
+	fn snapshot_session_master_key(session_master_key: &Rc<RefCell<Vec<u8>>>) -> Option<Vec<u8>> {
+		let key = session_master_key.borrow();
+		if key.is_empty() {
+			None
+		} else {
+			Some(key.clone())
+		}
+	}
+
+	fn reset_auto_lock_timer(
+		window: &adw::ApplicationWindow,
+		auto_lock_source: &Rc<RefCell<Option<glib::SourceId>>>,
+		auto_lock_armed: &Rc<Cell<bool>>,
+		timeout_secs: u64,
+		on_auto_lock: &Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+		session_master_key: &Rc<RefCell<Vec<u8>>>,
+	) {
+		if !auto_lock_armed.get() || !window.is_visible() {
+			return;
+		}
+
+		if let Some(source_id) = auto_lock_source.borrow_mut().take() {
+			source_id.remove();
+		}
+
+		let auto_lock_source_for_timeout = Rc::clone(auto_lock_source);
+		let auto_lock_armed_for_timeout = Rc::clone(auto_lock_armed);
+		let on_auto_lock_for_timeout = Rc::clone(on_auto_lock);
+		let session_master_for_timeout = Rc::clone(session_master_key);
+		let source_id = glib::timeout_add_local_once(Duration::from_secs(timeout_secs), move || {
+			if !auto_lock_armed_for_timeout.get() {
+				return;
+			}
+			if let Some(active_source) = auto_lock_source_for_timeout.borrow_mut().take() {
+				active_source.remove();
+			}
+			auto_lock_armed_for_timeout.set(false);
+			{
+				let mut key = session_master_for_timeout.borrow_mut();
+				key.zeroize();
+				key.clear();
+			}
+			info!("Auto-lock triggered due to inactivity");
+			if let Some(callback) = on_auto_lock_for_timeout.borrow().as_ref() {
+				callback();
+			}
+		});
+
+		*auto_lock_source.borrow_mut() = Some(source_id);
 	}
 
 	fn evaluate_password_strength_label(secret_value: &str) -> String {
