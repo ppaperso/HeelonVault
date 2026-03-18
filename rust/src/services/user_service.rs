@@ -12,6 +12,7 @@ use crate::services::auth_service::AuthService;
 pub struct UserProfileUpdate {
     pub email: Option<String>,
     pub display_name: Option<String>,
+    pub show_passwords_in_edit: Option<bool>,
     pub current_password: Option<SecretBox<Vec<u8>>>,
 }
 
@@ -19,6 +20,11 @@ pub struct UserProfileUpdate {
 pub trait UserService {
     async fn get_user_profile(&self, user_id: Uuid) -> Result<User, AppError>;
     async fn update_user_profile(&self, user_id: Uuid, update: UserProfileUpdate) -> Result<User, AppError>;
+    async fn update_show_passwords_in_edit(
+        &self,
+        user_id: Uuid,
+        show_passwords_in_edit: bool,
+    ) -> Result<User, AppError>;
     async fn change_master_password(
         &self,
         user_id: Uuid,
@@ -106,6 +112,7 @@ where
                 user_id,
                 next_email.as_deref(),
                 next_display_name.as_deref(),
+                update.show_passwords_in_edit,
             )
             .await?;
 
@@ -155,5 +162,23 @@ where
 
         info!(user_id = %user_id, "master password changed");
         Ok(())
+    }
+
+    async fn update_show_passwords_in_edit(
+        &self,
+        user_id: Uuid,
+        show_passwords_in_edit: bool,
+    ) -> Result<User, AppError> {
+        self.user_repo
+            .update_show_passwords_in_edit(user_id, show_passwords_in_edit)
+            .await?;
+
+        let updated_user = self
+            .user_repo
+            .get_by_id(user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("user not found after preference update".to_string()))?;
+
+        Ok(updated_user)
     }
 }

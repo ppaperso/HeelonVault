@@ -1,7 +1,48 @@
-# 🔒 Sécurité et Contrôle d'Accès
+# Sécurité et Contrôle d'Accès
 
-> Note migration: ce document contient des références historiques de l'ancienne implémentation Python.
-> Le runtime actif du projet est désormais Rust (`rust/`).
+> Note migration: ce document contient encore des références historiques Python.
+> Le runtime actif et maintenu est désormais Rust (`rust/`).
+
+## État actuel Rust 0.2.0
+
+Les changements de sécurité visibles côté runtime Rust incluent désormais:
+
+- déconnexion propre sur fermeture de la fenêtre principale;
+- déconnexion propre sur auto-lock;
+- journalisation des connexions réussies dans `login_history`;
+- affichage optionnel du mot de passe courant en édition via préférence utilisateur persistée;
+- retour garanti à l'écran de login après déconnexion de session.
+
+## Journalisation des connexions
+
+La table `login_history` conserve les connexions réussies récentes:
+
+- `user_id`
+- `login_at`
+- `ip_address`
+- `device_info`
+
+Usage actuel:
+
+- alimentation au login réussi;
+- affichage des 5 dernières connexions dans le popover du badge profil.
+
+Cette journalisation est informative et ne remplace pas un audit complet de sécurité.
+
+## Préférence d'affichage du mot de passe en édition
+
+La préférence `show_passwords_in_edit` est stockée au niveau utilisateur.
+
+Comportement:
+
+- désactivée par défaut;
+- si activée, le champ mot de passe en édition peut être prérempli dans un `PasswordEntry` masqué avec icône oeil;
+- si la valeur affichée n'est pas modifiée, aucun changement de secret n'est persévéré;
+- si la valeur est modifiée, la règle de robustesse reste appliquée.
+
+Objectif:
+
+- améliorer la compréhension utilisateur sans dégrader le modèle de sécurité par défaut.
 
 ## 📋 Restrictions implémentées
 

@@ -44,7 +44,22 @@ Banque        : www.mabanque.fr/espace-client
 
 ### 3️⃣ Dans la recherche
 
-Le champ URL est **inclus dans la recherche globale** :
+Le champ URL est **inclus dans la recherche globale**, mais il n'est plus le seul champ pris en compte dans le runtime Rust actuel.
+
+La recherche principale couvre désormais:
+
+- titre;
+- login / username;
+- email;
+- URL;
+- notes;
+- catégorie;
+- tags;
+- type de secret.
+
+Le moteur actuel applique aussi une normalisation accents/casse et accepte des recherches champées du type `url:github`, `email:admin`, `tag:prod`.
+
+Exemple logique historique:
 
 ```python
 # Recherche dans : titre, nom d'utilisateur ET URL

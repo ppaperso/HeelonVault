@@ -74,7 +74,7 @@ impl SqlxAuthPolicyService {
     }
 
     fn is_allowed_auto_lock_delay(mins: i64) -> bool {
-        matches!(mins, 1 | 5 | 10 | 30)
+        matches!(mins, 0 | 1 | 5 | 10 | 15 | 30)
     }
 }
 
@@ -215,7 +215,7 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         }
         if !Self::is_allowed_auto_lock_delay(mins) {
             return Err(AppError::Validation(
-                "auto-lock delay must be one of: 1, 5, 10, 30".to_string(),
+                "auto-lock delay must be one of: 0, 1, 5, 10, 15, 30".to_string(),
             ));
         }
 

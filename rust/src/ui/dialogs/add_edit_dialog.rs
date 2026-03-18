@@ -29,6 +29,10 @@ pub struct AddEditDialog {
 	window: gtk4::Window,
 }
 
+pub struct AddEditInlineView {
+	pub container: gtk4::ScrolledWindow,
+}
+
 impl AddEditDialog {
 	#[allow(clippy::too_many_arguments)]
 	pub fn new<TSecret, TVault>(
@@ -167,7 +171,8 @@ impl AddEditDialog {
 			.build();
 		dynamic_stack.add_css_class("dialog-dynamic-stack");
 
-		let (password_panel, password_entry, password_strength_bar) = Self::build_password_panel();
+		let (password_panel, password_entry, password_strength_bar) =
+			Self::build_password_panel(None);
 		dynamic_stack.add_titled(&password_panel, Some("password"), "password");
 
 		let (api_token_panel, api_token_entry, api_provider_entry) = Self::build_api_token_panel();
@@ -549,17 +554,22 @@ impl AddEditDialog {
 
 		if let DialogMode::Edit(secret_id) = mode {
 			type_dropdown.set_sensitive(false);
+			let initial_password_snapshot: Rc<std::cell::RefCell<Option<String>>> =
+				Rc::new(std::cell::RefCell::new(None));
 			Self::setup_for_edit(
 				runtime_handle,
 				Arc::clone(&secret_service),
 				Arc::clone(&vault_service),
 				admin_user_id,
 				admin_master_key.clone(),
+				false,
 				secret_id,
 				title_entry.clone(),
 				category_entry.clone(),
 				tags_entry.clone(),
 				type_dropdown.clone(),
+				password_entry.clone(),
+				initial_password_snapshot,
 				username_entry.clone(),
 				url_entry.clone(),
 				notes_text.buffer(),
@@ -575,6 +585,598 @@ impl AddEditDialog {
 
 		Self::install_local_css();
 		Self { window }
+	}
+
+	#[allow(clippy::too_many_arguments)]
+	pub fn build_inline<TSecret, TVault>(
+		runtime_handle: Handle,
+		secret_service: Arc<TSecret>,
+		vault_service: Arc<TVault>,
+		admin_user_id: Uuid,
+		admin_master_key: Vec<u8>,
+		show_passwords_in_edit: bool,
+		mode: DialogMode,
+		on_cancel: impl Fn() + 'static,
+		on_saved: impl Fn() + 'static,
+	) -> AddEditInlineView
+	where
+		TSecret: SecretService + Send + Sync + 'static,
+		TVault: VaultService + Send + Sync + 'static,
+	{
+		let on_saved: Rc<dyn Fn()> = Rc::new(on_saved);
+		let on_cancel: Rc<dyn Fn()> = Rc::new(on_cancel);
+
+		let container = gtk4::ScrolledWindow::builder()
+			.vexpand(true)
+			.hexpand(true)
+			.hscrollbar_policy(gtk4::PolicyType::Never)
+			.build();
+
+		let root = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(12)
+			.margin_top(16)
+			.margin_bottom(16)
+			.margin_start(16)
+			.margin_end(16)
+			.build();
+		root.add_css_class("add-edit-dialog");
+
+		let header_card = gtk4::Frame::new(None);
+		header_card.add_css_class("login-hero");
+
+		let header_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(14)
+			.margin_top(16)
+			.margin_bottom(16)
+			.margin_start(16)
+			.margin_end(16)
+			.build();
+
+		let back_button = gtk4::Button::with_label("← Retour");
+		back_button.add_css_class("flat");
+		let on_cancel_for_back = Rc::clone(&on_cancel);
+		back_button.connect_clicked(move |_| {
+			on_cancel_for_back();
+		});
+
+		let header_icon =
+			gtk4::Image::from_resource("/com/heelonvault/rust/icons/hicolor/128x128/apps/heelonvault.png");
+		header_icon.set_pixel_size(42);
+		header_icon.add_css_class("login-hero-icon");
+
+		let header_text = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(4)
+			.hexpand(true)
+			.build();
+
+		let title = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Ajouter un secret",
+			DialogMode::Edit(_) => "Modifier le secret",
+		}));
+		title.add_css_class("title-2");
+		title.add_css_class("login-hero-title");
+		title.set_halign(Align::Start);
+
+		let subtitle = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Sélectionnez un type puis renseignez les champs associés.",
+			DialogMode::Edit(_) => {
+				"Mettez a jour les champs souhaites. Laissez le secret vide pour le conserver."
+			}
+		}));
+		subtitle.add_css_class("login-hero-copy");
+		subtitle.set_halign(Align::Start);
+		subtitle.set_wrap(true);
+
+		header_text.append(&title);
+		header_text.append(&subtitle);
+		header_box.append(&back_button);
+		header_box.append(&header_icon);
+		header_box.append(&header_text);
+		header_card.set_child(Some(&header_box));
+
+		let form_card = gtk4::Frame::new(None);
+		form_card.add_css_class("login-card");
+
+		let form_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(12)
+			.margin_top(18)
+			.margin_bottom(18)
+			.margin_start(18)
+			.margin_end(18)
+			.build();
+
+		let (title_row, title_entry) =
+			Self::build_labeled_entry("Titre *", "Nom lisible du secret", "dialog-title-entry");
+		let (category_row, category_entry) = Self::build_labeled_entry(
+			"Catégorie",
+			"Personnel, Travail, Infrastructure...",
+			"dialog-category-entry",
+		);
+		let (tags_row, tags_entry) = Self::build_labeled_entry(
+			"Tags (séparés par des virgules)",
+			"prod, client-a, finance",
+			"dialog-tags-entry",
+		);
+
+		let type_label = gtk4::Label::new(Some("Type de secret"));
+		type_label.add_css_class("login-field-label");
+		type_label.set_halign(Align::Start);
+
+		let type_items = gtk4::StringList::new(&[
+			"password",
+			"api_token",
+			"ssh_key",
+			"secure_document",
+		]);
+		let type_dropdown = gtk4::DropDown::builder().model(&type_items).build();
+		type_dropdown.add_css_class("dialog-type-dropdown");
+		type_dropdown.set_selected(0);
+
+		let dynamic_stack = gtk4::Stack::builder()
+			.transition_type(gtk4::StackTransitionType::SlideLeftRight)
+			.hexpand(true)
+			.build();
+		dynamic_stack.add_css_class("dialog-dynamic-stack");
+
+		let password_hint = match mode {
+			DialogMode::Edit(_) => Some(
+				"Le champ mot de passe est vide par défaut pour sécurité. Laissez-le vide pour conserver la valeur actuelle. Pour afficher la valeur actuelle avec des étoiles et l'icône oeil, activez l'option dédiée dans Profil & Sécurité.",
+			),
+			DialogMode::Create => None,
+		};
+		let (password_panel, password_entry, password_strength_bar) =
+			Self::build_password_panel(password_hint);
+		let initial_password_snapshot: Rc<std::cell::RefCell<Option<String>>> =
+			Rc::new(std::cell::RefCell::new(None));
+		dynamic_stack.add_titled(&password_panel, Some("password"), "password");
+
+		let (api_token_panel, api_token_entry, api_provider_entry) = Self::build_api_token_panel();
+		dynamic_stack.add_titled(&api_token_panel, Some("api_token"), "api_token");
+
+		let (ssh_key_panel, ssh_private_text, ssh_public_entry, ssh_passphrase_entry) =
+			Self::build_ssh_key_panel();
+		dynamic_stack.add_titled(&ssh_key_panel, Some("ssh_key"), "ssh_key");
+
+		let (secure_doc_panel, secure_doc_path_entry, secure_doc_mime_entry) =
+			Self::build_secure_document_panel();
+		dynamic_stack.add_titled(
+			&secure_doc_panel,
+			Some("secure_document"),
+			"secure_document",
+		);
+		dynamic_stack.set_visible_child_name("password");
+
+		let stack_for_type = dynamic_stack.clone();
+		type_dropdown.connect_selected_notify(move |dropdown| {
+			let view_name = match dropdown.selected() {
+				0 => "password",
+				1 => "api_token",
+				2 => "ssh_key",
+				3 => "secure_document",
+				_ => "password",
+			};
+			stack_for_type.set_visible_child_name(view_name);
+		});
+
+		let (username_row, username_entry) = Self::build_labeled_entry(
+			"Nom d'utilisateur / Login",
+			"alice@example.com",
+			"dialog-username-entry",
+		);
+		let (url_row, url_entry) =
+			Self::build_labeled_entry("URL", "https://example.com", "dialog-url-entry");
+
+		let notes_label = gtk4::Label::new(Some("Notes"));
+		notes_label.add_css_class("login-field-label");
+		notes_label.set_halign(Align::Start);
+
+		let notes_scrolled = gtk4::ScrolledWindow::builder()
+			.min_content_height(120)
+			.hscrollbar_policy(gtk4::PolicyType::Never)
+			.build();
+		notes_scrolled.add_css_class("dialog-notes-scroll");
+
+		let notes_text = gtk4::TextView::new();
+		notes_text.set_wrap_mode(gtk4::WrapMode::WordChar);
+		notes_text.set_left_margin(10);
+		notes_text.set_right_margin(10);
+		notes_text.set_top_margin(10);
+		notes_text.set_bottom_margin(10);
+		notes_text.add_css_class("dialog-notes-text");
+		notes_scrolled.set_child(Some(&notes_text));
+
+		let validity_label = gtk4::Label::new(Some("Validité"));
+		validity_label.add_css_class("login-field-label");
+		validity_label.set_halign(Align::Start);
+
+		let validity_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+
+		let validity_unlimited = gtk4::CheckButton::with_label("Validité illimitée");
+		validity_unlimited.add_css_class("dialog-validity-check");
+
+		let validity_adjustment = gtk4::Adjustment::new(90.0, 1.0, 3650.0, 1.0, 30.0, 0.0);
+		let validity_days = gtk4::SpinButton::builder()
+			.adjustment(&validity_adjustment)
+			.digits(0)
+			.numeric(true)
+			.build();
+		validity_days.add_css_class("dialog-validity-spin");
+		validity_box.append(&validity_unlimited);
+		validity_box.append(&validity_days);
+
+		let days_for_toggle = validity_days.clone();
+		validity_unlimited.connect_toggled(move |toggle| {
+			days_for_toggle.set_sensitive(!toggle.is_active());
+		});
+
+		let error_label = gtk4::Label::new(None);
+		error_label.add_css_class("login-error");
+		error_label.set_halign(Align::Start);
+		error_label.set_wrap(true);
+		error_label.set_visible(false);
+
+		let button_row = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.halign(Align::End)
+			.build();
+
+		let cancel_button = gtk4::Button::with_label("Annuler");
+		cancel_button.add_css_class("secondary-pill");
+		let on_cancel_for_cancel = Rc::clone(&on_cancel);
+		cancel_button.connect_clicked(move |_| {
+			on_cancel_for_cancel();
+		});
+
+		let save_button = gtk4::Button::new();
+		save_button.add_css_class("primary-pill");
+		let save_button_content = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.halign(Align::Center)
+			.build();
+		let save_spinner = gtk4::Spinner::new();
+		save_spinner.set_visible(false);
+		let save_label = gtk4::Label::new(Some(match mode {
+			DialogMode::Create => "Enregistrer",
+			DialogMode::Edit(_) => "Mettre a jour",
+		}));
+		save_button_content.append(&save_spinner);
+		save_button_content.append(&save_label);
+		save_button.set_child(Some(&save_button_content));
+
+		{
+			let strength = password_strength_bar.clone();
+			let dropdown = type_dropdown.clone();
+			let btn = save_button.clone();
+			let password_for_check = password_entry.clone();
+			let initial_password_snapshot_for_check = Rc::clone(&initial_password_snapshot);
+			let is_edit_mode = matches!(mode, DialogMode::Edit(_));
+			let check: Rc<dyn Fn()> = Rc::new(move || {
+				let is_password_type = dropdown.selected() == 0;
+				let password_text = password_for_check.text();
+				let password_raw = password_text.trim().to_string();
+				let password_is_filled = !password_raw.is_empty();
+				let unchanged_prefilled_password = if is_edit_mode {
+					initial_password_snapshot_for_check
+						.borrow()
+						.as_ref()
+						.map(|value| value == &password_raw)
+						.unwrap_or(false)
+				} else {
+					false
+				};
+
+				let can_save = if is_password_type && password_is_filled && !unchanged_prefilled_password {
+					// Password field is filled: enforce robuste score
+					strength.last_score() >= 4
+				} else if is_password_type && !password_is_filled && is_edit_mode {
+					// In edit mode with empty password: can update other fields
+					true
+				} else if is_password_type && unchanged_prefilled_password && is_edit_mode {
+					// Existing password only displayed: allow updating other fields
+					true
+				} else if is_password_type && !password_is_filled && !is_edit_mode {
+					// In create mode with empty password: cannot save
+					false
+				} else {
+					// Not password type: always allow
+					true
+				};
+				btn.set_sensitive(can_save);
+			});
+			check();
+			let c = Rc::clone(&check);
+			password_entry.connect_text_notify(move |_| c());
+			let c = Rc::clone(&check);
+			type_dropdown.connect_selected_notify(move |_| c());
+		}
+
+		let title_for_save = title_entry.clone();
+		let category_for_save = category_entry.clone();
+		let tags_for_save = tags_entry.clone();
+		let type_for_save = type_dropdown.clone();
+		let username_for_save = username_entry.clone();
+		let url_for_save = url_entry.clone();
+		let notes_for_save = notes_text.buffer();
+		let validity_unlimited_for_save = validity_unlimited.clone();
+		let validity_days_for_save = validity_days.clone();
+		let password_for_save = password_entry.clone();
+		let api_token_for_save = api_token_entry.clone();
+		let api_provider_for_save = api_provider_entry.clone();
+		let ssh_private_for_save = ssh_private_text.clone();
+		let ssh_public_for_save = ssh_public_entry.clone();
+		let ssh_passphrase_for_save = ssh_passphrase_entry.clone();
+		let secure_doc_for_save = secure_doc_path_entry.clone();
+		let secure_doc_mime_for_save = secure_doc_mime_entry.clone();
+		let error_for_save = error_label.clone();
+		let spinner_for_save = save_spinner.clone();
+		let save_btn_for_save = save_button.clone();
+		let secret_for_save = Arc::clone(&secret_service);
+		let vault_for_save = Arc::clone(&vault_service);
+		let runtime_for_save = runtime_handle.clone();
+		let on_saved_for_save = Rc::clone(&on_saved);
+		let on_cancel_for_save = Rc::clone(&on_cancel);
+		let mode_for_save = mode;
+		let admin_master_for_save_seed = admin_master_key.clone();
+		let initial_password_snapshot_for_save = Rc::clone(&initial_password_snapshot);
+		save_button.connect_clicked(move |_| {
+			error_for_save.set_visible(false);
+			error_for_save.set_text("");
+
+			let title = title_for_save.text().trim().to_string();
+			if title.is_empty() {
+				error_for_save.set_text("Le titre est obligatoire.");
+				error_for_save.set_visible(true);
+				return;
+			}
+
+			let selected_type = type_for_save.selected();
+			let category = category_for_save.text().trim().to_string();
+			let tags_value = tags_for_save.text().trim().to_string();
+			let username = username_for_save.text().trim().to_string();
+			let url = url_for_save.text().trim().to_string();
+			let notes = notes_for_save
+				.text(&notes_for_save.start_iter(), &notes_for_save.end_iter(), false)
+				.to_string();
+			let expires_at = if validity_unlimited_for_save.is_active() {
+				None
+			} else {
+				let days = i64::from(validity_days_for_save.value_as_int());
+				if days <= 0 {
+					None
+				} else {
+					let ts = OffsetDateTime::now_utc() + Duration::days(days);
+					ts.format(&Rfc3339).ok()
+				}
+			};
+			let metadata_json = {
+				let mut metadata = Map::new();
+				metadata.insert("category".to_string(), Value::String(category));
+				metadata.insert("notes".to_string(), Value::String(notes));
+				metadata.insert("login".to_string(), Value::String(username));
+				metadata.insert("url".to_string(), Value::String(url));
+				metadata.insert(
+					"validity_unlimited".to_string(),
+					Value::Bool(validity_unlimited_for_save.is_active()),
+				);
+				metadata.insert(
+					"validity_days".to_string(),
+					Value::Number(i64::from(validity_days_for_save.value_as_int()).into()),
+				);
+				if selected_type == 1 {
+					metadata.insert(
+						"provider".to_string(),
+						Value::String(api_provider_for_save.text().trim().to_string()),
+					);
+				}
+				if selected_type == 2 {
+					metadata.insert(
+						"ssh_public_key".to_string(),
+						Value::String(ssh_public_for_save.text().trim().to_string()),
+					);
+					metadata.insert(
+						"ssh_passphrase".to_string(),
+						Value::String(ssh_passphrase_for_save.text().trim().to_string()),
+					);
+				}
+				if selected_type == 3 {
+					metadata.insert(
+						"document_mime".to_string(),
+						Value::String(secure_doc_mime_for_save.text().trim().to_string()),
+					);
+				}
+				Some(Value::Object(metadata).to_string())
+			};
+
+			let (secret_type, mut secret_text) = match selected_type {
+				0 => (SecretType::Password, password_for_save.text().to_string()),
+				1 => (SecretType::ApiToken, api_token_for_save.text().to_string()),
+				2 => {
+					let buffer = ssh_private_for_save.buffer();
+					let text = buffer
+						.text(&buffer.start_iter(), &buffer.end_iter(), false)
+						.to_string();
+					(SecretType::SshKey, text)
+				}
+				3 => (
+					SecretType::SecureDocument,
+					secure_doc_for_save.text().to_string(),
+				),
+				_ => (SecretType::Password, password_for_save.text().to_string()),
+			};
+
+			if matches!(mode_for_save, DialogMode::Edit(_)) && selected_type == 0 {
+				if let Some(initial_value) = initial_password_snapshot_for_save.borrow().as_ref() {
+					if secret_text.trim() == initial_value.trim() {
+						secret_text.clear();
+					}
+				}
+			}
+
+			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
+				error_for_save.set_text("Le secret est obligatoire pour ce type.");
+				error_for_save.set_visible(true);
+				return;
+			}
+
+			save_btn_for_save.set_sensitive(false);
+			save_spinner.set_visible(true);
+			save_spinner.set_spinning(true);
+
+			let (sender, receiver) = tokio::sync::oneshot::channel();
+			let secret_service_for_task = Arc::clone(&secret_for_save);
+			let vault_service_for_task = Arc::clone(&vault_for_save);
+			let runtime_for_task = runtime_for_save.clone();
+			let admin_master_for_task = admin_master_for_save_seed.clone();
+			let title_for_task = title.clone();
+			let metadata_for_task = metadata_json.clone();
+			let tags_for_task = if tags_value.is_empty() {
+				None
+			} else {
+				Some(tags_value)
+			};
+			let expires_for_task = expires_at.clone();
+			let secret_payload = secret_text.into_bytes();
+			std::thread::spawn(move || {
+				let result = runtime_for_task.block_on(async move {
+					let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
+					let target_vault = vaults
+						.into_iter()
+						.next()
+						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
+					let vault_key = vault_service_for_task
+						.open_vault(
+							target_vault.id,
+							SecretBox::new(Box::new(admin_master_for_task.clone())),
+						)
+						.await?;
+
+					match mode_for_save {
+						DialogMode::Create => {
+							secret_service_for_task
+								.create_secret(
+									target_vault.id,
+									secret_type,
+									Some(title_for_task),
+									metadata_for_task,
+									tags_for_task,
+									expires_for_task,
+									SecretBox::new(Box::new(secret_payload)),
+									vault_key,
+								)
+								.await
+								.map(|_| ())
+						}
+						DialogMode::Edit(secret_id) => {
+							let secret_to_update = if secret_payload.is_empty() {
+								None
+							} else {
+								Some(SecretBox::new(Box::new(secret_payload)))
+							};
+							secret_service_for_task
+								.update_secret(
+									secret_id,
+									Some(title_for_task),
+									metadata_for_task,
+									tags_for_task,
+									expires_for_task,
+									secret_to_update,
+									vault_key,
+								)
+								.await
+						}
+					}
+				});
+				let _ = sender.send(result);
+			});
+
+			let error_for_result = error_for_save.clone();
+			let save_btn_for_result = save_btn_for_save.clone();
+			let spinner_for_result = spinner_for_save.clone();
+			let on_saved_for_result = Rc::clone(&on_saved_for_save);
+			let on_cancel_for_result = Rc::clone(&on_cancel_for_save);
+			glib::MainContext::default().spawn_local(async move {
+				save_btn_for_result.set_sensitive(true);
+				spinner_for_result.set_visible(false);
+				spinner_for_result.set_spinning(false);
+
+				match receiver.await {
+					Ok(Ok(_)) => {
+						on_saved_for_result();
+						on_cancel_for_result();
+					}
+					Ok(Err(_)) | Err(_) => {
+						error_for_result.set_text(
+							"Impossible d'enregistrer le secret pour le moment. Réessayez.",
+						);
+						error_for_result.set_visible(true);
+					}
+				}
+			});
+		});
+
+		button_row.append(&cancel_button);
+		button_row.append(&save_button);
+
+		form_box.append(&title_row);
+		form_box.append(&category_row);
+		form_box.append(&tags_row);
+		form_box.append(&type_label);
+		form_box.append(&type_dropdown);
+		form_box.append(&dynamic_stack);
+		form_box.append(&username_row);
+		form_box.append(&url_row);
+		form_box.append(&notes_label);
+		form_box.append(&notes_scrolled);
+		form_box.append(&validity_label);
+		form_box.append(&validity_box);
+		form_box.append(&error_label);
+		form_box.append(&button_row);
+
+		form_card.set_child(Some(&form_box));
+		root.append(&header_card);
+		root.append(&form_card);
+		container.set_child(Some(&root));
+
+		if let DialogMode::Edit(secret_id) = mode {
+			type_dropdown.set_sensitive(false);
+			Self::setup_for_edit(
+				runtime_handle,
+				Arc::clone(&secret_service),
+				Arc::clone(&vault_service),
+				admin_user_id,
+				admin_master_key.clone(),
+				show_passwords_in_edit,
+				secret_id,
+				title_entry.clone(),
+				category_entry.clone(),
+				tags_entry.clone(),
+				type_dropdown.clone(),
+				password_entry.clone(),
+				Rc::clone(&initial_password_snapshot),
+				username_entry.clone(),
+				url_entry.clone(),
+				notes_text.buffer(),
+				validity_unlimited.clone(),
+				validity_days.clone(),
+				api_provider_entry.clone(),
+				ssh_public_entry.clone(),
+				ssh_passphrase_entry.clone(),
+				secure_doc_mime_entry.clone(),
+				error_label.clone(),
+			);
+		}
+
+		Self::install_local_css();
+		AddEditInlineView { container }
 	}
 
 	pub fn present(&self) {
@@ -604,7 +1206,9 @@ impl AddEditDialog {
 		(box_widget, entry)
 	}
 
-	fn build_password_panel() -> (gtk4::Frame, gtk4::PasswordEntry, PasswordStrengthBar) {
+	fn build_password_panel(
+		edit_hint: Option<&str>,
+	) -> (gtk4::Frame, gtk4::PasswordEntry, PasswordStrengthBar) {
 		let frame = gtk4::Frame::new(None);
 		frame.add_css_class("dialog-type-frame");
 
@@ -663,6 +1267,32 @@ impl AddEditDialog {
 
 		box_widget.append(&password_label);
 		box_widget.append(&password_row);
+		if let Some(hint) = edit_hint {
+			let hint_wrap = gtk4::Box::builder()
+				.orientation(Orientation::Horizontal)
+				.spacing(8)
+				.margin_top(4)
+				.margin_bottom(2)
+				.margin_start(4)
+				.margin_end(4)
+				.build();
+			hint_wrap.add_css_class("dialog-password-edit-hint-wrap");
+
+			let hint_icon = gtk4::Image::from_icon_name("dialog-information-symbolic");
+			hint_icon.set_pixel_size(16);
+			hint_icon.add_css_class("dialog-password-edit-hint-icon");
+
+			let hint_label = gtk4::Label::new(Some(hint));
+			hint_label.set_halign(Align::Start);
+			hint_label.set_xalign(0.0);
+			hint_label.set_wrap(true);
+			hint_label.add_css_class("dialog-password-edit-hint");
+			hint_label.set_hexpand(true);
+
+			hint_wrap.append(&hint_icon);
+			hint_wrap.append(&hint_label);
+			box_widget.append(&hint_wrap);
+		}
 		box_widget.append(strength_bar.root());
 		frame.set_child(Some(&box_widget));
 		(frame, password_entry, strength_bar)
@@ -786,11 +1416,14 @@ impl AddEditDialog {
 		vault_service: Arc<TVault>,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
+		show_passwords_in_edit: bool,
 		secret_id: Uuid,
 		title_entry: gtk4::Entry,
 		category_entry: gtk4::Entry,
 		tags_entry: gtk4::Entry,
 		type_dropdown: gtk4::DropDown,
+		password_entry: gtk4::PasswordEntry,
+		initial_password_snapshot: Rc<std::cell::RefCell<Option<String>>>,
 		username_entry: gtk4::Entry,
 		url_entry: gtk4::Entry,
 		notes_buffer: gtk4::TextBuffer,
@@ -807,7 +1440,7 @@ impl AddEditDialog {
 	{
 		let (sender, receiver) = tokio::sync::oneshot::channel();
 		std::thread::spawn(move || {
-			let result: Result<crate::models::SecretItem, crate::errors::AppError> =
+			let result: Result<(crate::models::SecretItem, Option<String>), crate::errors::AppError> =
 				runtime_handle.block_on(async move {
 					let vaults = vault_service.list_user_vaults(admin_user_id).await?;
 					let target_vault = vaults
@@ -815,7 +1448,7 @@ impl AddEditDialog {
 						.next()
 						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
 
-					let _vault_key = vault_service
+					let vault_key = vault_service
 						.open_vault(
 							target_vault.id,
 							SecretBox::new(Box::new(admin_master_key.clone())),
@@ -823,19 +1456,38 @@ impl AddEditDialog {
 						.await?;
 
 					let items = secret_service.list_by_vault(target_vault.id).await?;
-					items
+					let item = items
 						.into_iter()
 						.find(|item| item.id == secret_id)
 						.ok_or_else(|| {
 							crate::errors::AppError::NotFound("secret not found".to_string())
-						})
+						})?;
+
+					let existing_password = if show_passwords_in_edit
+						&& matches!(item.secret_type, SecretType::Password)
+					{
+						let decrypted = secret_service
+							.get_secret(
+								secret_id,
+								SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+							)
+							.await?;
+						Some(
+							String::from_utf8(decrypted.secret_value.expose_secret().clone())
+								.unwrap_or_default(),
+						)
+					} else {
+						None
+					};
+
+					Ok((item, existing_password))
 				});
 			let _ = sender.send(result);
 		});
 
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
-				Ok(Ok(item)) => {
+				Ok(Ok((item, existing_password))) => {
 					title_entry.set_text(item.title.as_deref().unwrap_or_default());
 					tags_entry.set_text(item.tags.as_deref().unwrap_or_default());
 
@@ -913,6 +1565,11 @@ impl AddEditDialog {
 						}
 					} else {
 						validity_unlimited.set_active(item.expires_at.is_none());
+					}
+
+					if let Some(value) = existing_password {
+						*initial_password_snapshot.borrow_mut() = Some(value.clone());
+						password_entry.set_text(value.as_str());
 					}
 
 					validity_days.set_sensitive(!validity_unlimited.is_active());

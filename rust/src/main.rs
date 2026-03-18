@@ -35,6 +35,7 @@ use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::{BackupService, BackupServiceImpl};
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::import_service::ImportServiceImpl;
+use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
 use heelonvault_rust::services::user_service::UserServiceImpl;
@@ -89,7 +90,7 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
 
 struct AppContext {
 	database_path: PathBuf,
-	_pool: SqlitePool,
+	pool: SqlitePool,
 	_crypto_service: CryptoServiceImpl,
 	auth_service: Arc<AuthServiceImpl<CryptoServiceImpl>>,
 	auth_policy_service: Arc<SqlxAuthPolicyService>,
@@ -206,6 +207,7 @@ fn main() -> Result<()> {
 			Arc::clone(&context.auth_policy_service),
 			Arc::clone(&context.backup_service),
 			Arc::clone(&context.import_service),
+			context.pool.clone(),
 			context.database_path.clone(),
 			context.admin_user_id,
 			context.admin_master_key.clone(),
@@ -260,7 +262,7 @@ fn main() -> Result<()> {
 					})?;
 
 					runtime_for_restore_task.block_on(async {
-						context_for_restore._pool.close().await;
+						context_for_restore.pool.close().await;
 					});
 
 					promote_staged_restore(
@@ -281,6 +283,23 @@ fn main() -> Result<()> {
 				move || {
 					main_for_success
 						.set_session_master_key(context_for_success.admin_master_key.clone());
+					main_for_success.refresh_entries();
+
+					let runtime_for_history = runtime_for_success.clone();
+					let pool_for_history = context_for_success.pool.clone();
+					let user_id_for_history = context_for_success.admin_user_id;
+					std::thread::spawn(move || {
+						let device_info = format!("{} / GTK4 Desktop", std::env::consts::OS);
+						let _ = runtime_for_history.block_on(async move {
+							let _ = record_successful_login(
+								&pool_for_history,
+								user_id_for_history,
+								None,
+								Some(device_info.as_str()),
+							)
+							.await;
+						});
+					});
 
 					let (sender, receiver) = tokio::sync::oneshot::channel();
 					let runtime_for_task = runtime_for_success.clone();
@@ -310,12 +329,16 @@ fn main() -> Result<()> {
 			login_dialog.present();
 		});
 
+		let main_for_logout = Rc::clone(&main_window);
+		let present_for_logout = Rc::clone(&present_login);
+		main_window.set_on_logout(Rc::new(move || {
+			main_for_logout.clear_sensitive_session();
+			present_for_logout.as_ref()();
+		}));
+
 		let main_for_auto_lock = Rc::clone(&main_window);
-		let present_for_auto_lock = Rc::clone(&present_login);
 		main_window.set_on_auto_lock(Rc::new(move || {
-			main_for_auto_lock.clear_sensitive_session();
-			main_for_auto_lock.window().set_visible(false);
-			present_for_auto_lock.as_ref()();
+			main_for_auto_lock.trigger_logout();
 		}));
 
 		present_login.as_ref()();
@@ -537,6 +560,95 @@ fn install_application_css() {
 			font-weight: 600;
 		}
 
+		.profile-login-history-popover {
+			min-width: 280px;
+		}
+
+		button.sidebar-profile-entry {
+			border-radius: 12px;
+			border: 1px solid transparent;
+			padding: 0;
+			background: transparent;
+		}
+
+		button.sidebar-profile-entry:hover {
+			background: rgba(19, 161, 161, 0.12);
+			border-color: rgba(19, 161, 161, 0.26);
+		}
+
+		label.inline-status {
+			font-weight: 600;
+			border-radius: 10px;
+			padding: 6px 10px;
+		}
+
+		label.inline-status-loading {
+			background: rgba(19, 161, 161, 0.12);
+			color: #0A5F5C;
+		}
+
+		label.inline-status-success {
+			background: rgba(31, 134, 120, 0.14);
+			color: #1F8678;
+		}
+
+		label.inline-status-error {
+			background: rgba(192, 28, 40, 0.12);
+			color: #C01C28;
+		}
+
+		.profile-view-content {
+			padding: 2px;
+		}
+
+		.profile-view-header {
+			margin-bottom: 2px;
+		}
+
+		frame.profile-section-frame {
+			border-radius: 14px;
+			padding: 2px;
+		}
+
+		.profile-field-label {
+			font-weight: 680;
+			letter-spacing: 0.01em;
+		}
+
+		.profile-section-subtitle {
+			margin-bottom: 2px;
+		}
+
+		entry.profile-field-entry,
+		passwordentry.profile-field-entry,
+		dropdown.profile-field-entry {
+			min-height: 38px;
+		}
+
+		.profile-actions-row {
+			margin-top: 4px;
+		}
+
+		button.profile-action-btn {
+			min-height: 34px;
+			padding-left: 14px;
+			padding-right: 14px;
+		}
+
+		.profile-inline-status {
+			margin-top: 2px;
+		}
+
+		.profile-compact frame.profile-section-frame {
+			padding: 0;
+		}
+
+		.profile-compact button.profile-action-btn {
+			min-height: 32px;
+			padding-left: 12px;
+			padding-right: 12px;
+		}
+
 		.main-empty-state {
 			padding: 26px;
 		}
@@ -750,7 +862,7 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	Ok(AppContext {
 		database_path,
-		_pool: pool,
+		pool,
 		_crypto_service: crypto_service,
 		auth_service,
 		auth_policy_service,

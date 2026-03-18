@@ -21,7 +21,7 @@ table `secret_items`, champ `title`, champ `deleted_at`.
 - Sécurité multi-vault:
 opérations de corbeille scoppées par `vault_id`.
 - UX simple:
-pas de page dédiée à l’édition.
+édition inline dans le panneau principal, sans dialogue modal pour le flux principal.
 
 ## Implémentation Réalisée
 
@@ -44,19 +44,20 @@ en édition, `plaintext_secret = None` conserve le secret existant.
 - Si un nouveau secret est fourni:
 validation + chiffrement + mise à jour du blob.
 
-### 3) Dialog Create/Edit (`add_edit_dialog.rs`)
+### 3) Éditeur Create/Edit (`add_edit_dialog.rs`)
 
 - Ajout du mode `DialogMode::{Create, Edit(Uuid)}`.
 - Pré-remplissage des champs en mode `Edit` via `setup_for_edit`.
 - Type verrouillé en édition pour éviter les transitions ambiguës de blob.
 - Submit unifié:
 création via `create_secret`, édition via `update_secret`.
+- Évolution UX: intégration inline dans la vue principale via `secret_editor_view`.
 
 ### 4) Liste Principale (`main_window.rs`)
 
 - Ajout d’un `secret_id` dans le view-model de ligne.
 - Ajout de l’icône crayon:
-ouvre `AddEditDialog` en mode édition.
+ouvre l’éditeur inline en mode édition.
 - Ajout de l’icône poubelle:
 appelle `soft_delete` puis rafraîchit la liste active.
 - Ajout d’un bouton d’accès à la corbeille dans le header.
@@ -74,6 +75,7 @@ appelle `soft_delete` puis rafraîchit la liste active.
 ## Validation
 
 - `cargo check` passe.
+- validation manuelle UI confirmée sur les flux inline création / édition / retour.
 - Tests repository ciblés:
 update metadata, soft delete, restore, permanent delete, empty trash.
 - Tests service ciblés:

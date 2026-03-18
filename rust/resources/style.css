@@ -76,6 +76,33 @@
         min-width: 260px;
     }
 
+    .profile-login-history-popover {
+        min-width: 300px;
+    }
+
+    .profile-login-history-popover label,
+    headerbar .profile-login-history-popover label {
+        color: #2C3E50;
+    }
+
+    .profile-login-history-title,
+    headerbar .profile-login-history-title {
+        color: #07393A;
+        font-weight: 700;
+    }
+
+    .profile-login-history-row,
+    headerbar .profile-login-history-row {
+        color: #2C3E50;
+        font-size: 0.86rem;
+    }
+
+    .profile-login-history-muted,
+    headerbar .profile-login-history-muted {
+        color: #5F7E80;
+        font-size: 0.82rem;
+    }
+
     .app-menu-section {
         margin-top: 8px;
         margin-bottom: 2px;
@@ -1225,6 +1252,24 @@
 
     .profile-entry-row {
         min-height: 38px;
+    }
+
+    .dialog-password-edit-hint-wrap {
+        border-radius: 12px;
+        border: 1px solid rgba(19, 161, 161, 0.35);
+        background: linear-gradient(135deg, rgba(19, 161, 161, 0.09), rgba(31, 134, 120, 0.06));
+        padding: 10px 12px;
+    }
+
+    .dialog-password-edit-hint-icon {
+        color: #0A5F5C;
+        opacity: 0.95;
+    }
+
+    .dialog-password-edit-hint {
+        color: #2C3E50;
+        font-size: 0.83rem;
+        line-height: 1.3;
     }
 
     .audit-count-badge-pulse {

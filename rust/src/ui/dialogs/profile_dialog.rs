@@ -790,6 +790,7 @@ impl ProfileDialog {
                 } else {
                     Some(display_name)
                 },
+                show_passwords_in_edit: None,
                 current_password: if current_password_raw.is_empty() {
                     None
                 } else {
