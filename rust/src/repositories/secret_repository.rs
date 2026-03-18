@@ -472,6 +472,8 @@ mod tests {
                 secret_blob BLOB,
                 file_blob_ref BLOB,
                 created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                modified_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP,
+                usage_count INTEGER NOT NULL DEFAULT 0,
                 deleted_at TEXT
             )",
         )
