@@ -1,5 +1,7 @@
 # Guide de Mise a Jour en Production (Rust)
 
+Version documentée: `0.2.0`
+
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
 ## Portee
@@ -32,6 +34,14 @@ Le script effectue:
 5. Build release Rust (`cargo build --release`).
 6. Ajustement des permissions du dossier de donnees Rust.
 
+## Changements applicatifs 0.2.0 a verifier apres update
+
+- migration `0007_login_history.sql` appliquee;
+- migration `0008_user_show_passwords_in_edit.sql` appliquee;
+- vue `Profil & Sécurité` accessible depuis la sidebar;
+- fermeture de la fenêtre principale ramenant au login au lieu de quitter;
+- édition de secret effectuée inline dans le panneau central.
+
 ## Restauration (rollback)
 
 Si une mise a jour doit etre annulee:
@@ -58,7 +68,17 @@ sed -n '1,80p' /opt/heelonvault/run.sh
 
 # build local de controle (optionnel)
 cd /opt/heelonvault/rust && cargo check
+
+# migrations presentes
+ls -1 /opt/heelonvault/rust/migrations
 ```
+
+Vérifications fonctionnelles recommandées:
+
+1. Se connecter puis cliquer sur la croix de la fenêtre: l'écran de login doit réapparaître.
+2. Se reconnecter immédiatement: la grille des cartes doit être rechargée.
+3. Ouvrir `Profil & Sécurité` et changer la préférence d'affichage du mot de passe en édition.
+4. Modifier un secret de type mot de passe pour vérifier le comportement du champ selon la préférence.
 
 ## Bonnes pratiques
 

@@ -1,6 +1,7 @@
 <?xml version="1.0" encoding="UTF-8"?>
 <gresources>
   <gresource prefix="/com/heelonvault/rust">
+    <file>icons/Logo_Heelonys_transparent.png</file>
     <file>icons/hicolor/48x48/apps/heelonvault.png</file>
     <file>icons/hicolor/128x128/apps/heelonvault.png</file>
     <file>icons/hicolor/256x256/apps/heelonvault.png</file>

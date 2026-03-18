@@ -1,33 +1,41 @@
-# HeelonVault Rust Skeleton
+# HeelonVault Rust Runtime
 
-Ce dossier contient le socle Rust de migration pour HeelonVault, sans logique fonctionnelle.
+Ce dossier contient le runtime actif de HeelonVault en Rust.
 
-## Objectifs
+## État actuel
 
-- Poser une architecture propre et testable (`models`, `repositories`, `services`, `ui`, `config`).
-- Intégrer dès le départ les exigences sécurité non négociables.
-- Préparer une migration incrémentale sans impacter le code Python existant.
+- version applicative: `0.2.0`;
+- UI GTK4/libadwaita opérationnelle;
+- base SQLite avec migrations automatiques au démarrage;
+- services métier et tests d'intégration actifs;
+- launchers racine `run-dev.sh` et `run.sh` utilisés comme point d'entrée.
 
-## Choix techniques
+## Capacités livrées
 
-- `gtk4` + `libadwaita`: future UI desktop native GNOME.
-- `sqlx` (SQLite, macros): requêtes validées à la compilation.
-- `tokio`: runtime async pour isoler I/O et DB hors thread UI GTK.
-- `argon2`: KDF Argon2id (remplacement PBKDF2).
-- `aes-gcm`: chiffrement AES-256-GCM.
-- `secrecy` + `zeroize`: hygiène mémoire pour données sensibles.
-- `totp-rs`: fondation 2FA TOTP.
-- `uuid`: identifiants stables (vaults/items/users).
-- `thiserror`: erreurs typées sans `unwrap()` sur chemins sensibles.
+- authentification multi-utilisateur;
+- coffre de secrets avec création, édition inline et corbeille;
+- profil et sécurité dans une vue inline dédiée;
+- export `.hvb` et import CSV;
+- historique de connexions récentes;
+- recherche avancée multi-champs;
+- déconnexion propre au close window et à l'auto-lock.
 
-## Notes d'architecture
+## Commandes utiles
 
-- UI GTK reste sur son event loop principal.
-- Les opérations DB/crypto sont destinées à s'exécuter hors thread UI.
-- Le schéma SQLite sera versionné via `db_metadata(schema_version)` (migrations à implémenter plus tard).
+```bash
+cd rust
+cargo check
+cargo test
+```
 
-## Périmètre actuel
+## Notes techniques
 
-- Structures de modules et types/traits vides.
-- Fichiers de migration SQL versionnés et volontairement vides.
-- Aucun comportement métier implémenté.
+- `tokio` est utilisé pour isoler DB/crypto hors thread GTK;
+- `sqlx::migrate!()` applique les migrations au lancement;
+- `secrecy` et `zeroize` encadrent les données sensibles;
+- les préférences utilisateur incluent désormais `show_passwords_in_edit`.
+
+## Migrations récentes
+
+- `0007_login_history.sql`: journalisation des connexions réussies;
+- `0008_user_show_passwords_in_edit.sql`: préférence d'affichage du mot de passe en édition.

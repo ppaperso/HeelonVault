@@ -4,8 +4,14 @@ use std::path::Path;
 use aes_gcm::aead::consts::U12;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
+use argon2::{Algorithm, Argon2, Params, Version};
+use base64::Engine;
+use bip39::{Language, Mnemonic};
 use gtk4::glib::{Checksum, ChecksumType};
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::{ExposeSecret, SecretBox, SecretString};
+use serde::{Deserialize, Serialize};
+use tracing::info;
+use zeroize::Zeroizing;
 use crate::errors::AppError;
 
 const BACKUP_MAGIC: &[u8; 5] = b"HVBK1";
@@ -13,6 +19,23 @@ const SHA256_HEX_LEN: usize = 64;
 const BACKUP_NONCE_LEN: usize = 12;
 const SQLITE_HEADER: &[u8; 16] = b"SQLite format 3\0";
 const AES_256_KEY_LEN: usize = 32;
+const RECOVERY_SALT_LEN: usize = 32;
+
+#[derive(Debug, Clone)]
+pub struct RecoveryKeyBundle {
+    pub recovery_phrase: SecretString,
+}
+
+#[derive(Debug, Serialize, Deserialize)]
+struct HvbEncryptedPayload {
+    version: u8,
+    kdf: String,
+    salt_b64: String,
+    nonce_b64: String,
+    ciphertext_b64: String,
+    sha256_hex: String,
+    plaintext_size: usize,
+}
 
 #[derive(Debug, Clone)]
 pub struct BackupMetadata {
@@ -22,6 +45,19 @@ pub struct BackupMetadata {
 
 #[allow(async_fn_in_trait)]
 pub trait BackupService {
+    fn generate_recovery_key(&self) -> Result<RecoveryKeyBundle, AppError>;
+    fn export_hvb_with_recovery_key(
+        &self,
+        sqlite_db_path: &Path,
+        backup_file_path: &Path,
+        recovery_phrase: &SecretString,
+    ) -> Result<BackupMetadata, AppError>;
+    fn import_hvb_with_recovery_key(
+        &self,
+        backup_file_path: &Path,
+        recovery_phrase: &SecretString,
+        new_sqlite_db_path: &Path,
+    ) -> Result<BackupMetadata, AppError>;
     fn export_backup(
         &self,
         sqlite_db_path: &Path,
@@ -78,6 +114,65 @@ impl BackupServiceImpl {
         getrandom::fill(&mut nonce)
             .map_err(|err| AppError::Crypto(format!("backup nonce generation failed: {err}")))?;
         Ok(nonce)
+    }
+
+    fn generate_recovery_salt() -> Result<[u8; RECOVERY_SALT_LEN], AppError> {
+        let mut salt = [0_u8; RECOVERY_SALT_LEN];
+        getrandom::fill(&mut salt)
+            .map_err(|err| AppError::Crypto(format!("recovery salt generation failed: {err}")))?;
+        Ok(salt)
+    }
+
+    fn derive_backup_key_from_recovery(
+        recovery_phrase: &SecretString,
+        salt: &[u8],
+    ) -> Result<SecretBox<Vec<u8>>, AppError> {
+        if salt.is_empty() {
+            return Err(AppError::Validation("recovery salt must not be empty".to_string()));
+        }
+
+        let params = Params::new(64 * 1024, 3, 1, Some(AES_256_KEY_LEN))
+            .map_err(|err| AppError::Crypto(format!("invalid argon2 params: {err}")))?;
+        let argon2 = Argon2::new(Algorithm::Argon2id, Version::V0x13, params);
+        let mut output = Zeroizing::new(vec![0_u8; AES_256_KEY_LEN]);
+        argon2
+            .hash_password_into(
+                recovery_phrase.expose_secret().as_bytes(),
+                salt,
+                output.as_mut_slice(),
+            )
+            .map_err(|err| AppError::Crypto(format!("argon2id recovery derivation failed: {err}")))?;
+
+        Ok(SecretBox::new(Box::new(output.to_vec())))
+    }
+
+    fn parse_hvb_payload(bytes: &[u8]) -> Result<HvbEncryptedPayload, AppError> {
+        serde_json::from_slice(bytes)
+            .map_err(|err| AppError::Validation(format!("invalid .hvb json payload: {err}")))
+    }
+
+    fn replace_existing_database(
+        target_sqlite_db_path: &Path,
+        plaintext: &[u8],
+    ) -> Result<(), AppError> {
+        Self::ensure_parent_exists(target_sqlite_db_path)?;
+
+        if target_sqlite_db_path.exists() {
+            let old_path = target_sqlite_db_path.with_extension("old");
+            if old_path.exists() {
+                fs::remove_file(&old_path).map_err(|err| {
+                    AppError::Storage(format!("failed to remove existing .old database: {err}"))
+                })?;
+            }
+
+            fs::rename(target_sqlite_db_path, &old_path).map_err(|err| {
+                AppError::Storage(format!("failed to rotate previous database to .old: {err}"))
+            })?;
+        }
+
+        fs::write(target_sqlite_db_path, plaintext).map_err(|err| {
+            AppError::Storage(format!("failed to write restored SQLite database: {err}"))
+        })
     }
 
     fn encrypt_bytes(
@@ -207,6 +302,118 @@ impl Default for BackupServiceImpl {
 }
 
 impl BackupService for BackupServiceImpl {
+    fn generate_recovery_key(&self) -> Result<RecoveryKeyBundle, AppError> {
+        let mnemonic = Mnemonic::generate_in(Language::English, 24)
+            .map_err(|err| AppError::Crypto(format!("failed to generate bip39 mnemonic: {err}")))?;
+
+        Ok(RecoveryKeyBundle {
+            recovery_phrase: SecretString::new(mnemonic.to_string().into_boxed_str()),
+        })
+    }
+
+    fn export_hvb_with_recovery_key(
+        &self,
+        sqlite_db_path: &Path,
+        backup_file_path: &Path,
+        recovery_phrase: &SecretString,
+    ) -> Result<BackupMetadata, AppError> {
+        let sqlite_bytes = fs::read(sqlite_db_path)
+            .map_err(|err| AppError::Storage(format!("failed to read SQLite database: {err}")))?;
+        Self::validate_sqlite_bytes(sqlite_bytes.as_slice())?;
+
+        let salt = Self::generate_recovery_salt()?;
+        let backup_key = Self::derive_backup_key_from_recovery(recovery_phrase, &salt)?;
+        let (sha256_hex, nonce, ciphertext) =
+            Self::encrypt_bytes(sqlite_bytes.as_slice(), &backup_key)?;
+
+        let payload = HvbEncryptedPayload {
+            version: 1,
+            kdf: "argon2id".to_string(),
+            salt_b64: base64::engine::general_purpose::STANDARD.encode(salt),
+            nonce_b64: base64::engine::general_purpose::STANDARD.encode(nonce),
+            ciphertext_b64: base64::engine::general_purpose::STANDARD.encode(ciphertext),
+            sha256_hex: sha256_hex.clone(),
+            plaintext_size: sqlite_bytes.len(),
+        };
+        let json_bytes = serde_json::to_vec_pretty(&payload)
+            .map_err(|err| AppError::Storage(format!("failed to serialize hvb payload: {err}")))?;
+
+        Self::ensure_parent_exists(backup_file_path)?;
+        fs::write(backup_file_path, json_bytes)
+            .map_err(|err| AppError::Storage(format!("failed to write .hvb file: {err}")))?;
+
+        info!(
+            file = %backup_file_path.display(),
+            plaintext_size = sqlite_bytes.len(),
+            "encrypted hvb export completed successfully"
+        );
+
+        Ok(BackupMetadata {
+            sha256_hex,
+            plaintext_size: sqlite_bytes.len(),
+        })
+    }
+
+    fn import_hvb_with_recovery_key(
+        &self,
+        backup_file_path: &Path,
+        recovery_phrase: &SecretString,
+        new_sqlite_db_path: &Path,
+    ) -> Result<BackupMetadata, AppError> {
+        Mnemonic::parse_in_normalized(Language::English, recovery_phrase.expose_secret())
+            .map_err(|err| AppError::Validation(format!("invalid recovery phrase: {err}")))?;
+
+        let backup_bytes = fs::read(backup_file_path)
+            .map_err(|err| AppError::Storage(format!("failed to read .hvb file: {err}")))?;
+        let payload = Self::parse_hvb_payload(backup_bytes.as_slice())?;
+
+        if payload.version != 1 || payload.kdf != "argon2id" {
+            return Err(AppError::Validation(
+                "unsupported .hvb backup format".to_string(),
+            ));
+        }
+
+        let salt = base64::engine::general_purpose::STANDARD
+            .decode(payload.salt_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("invalid .hvb salt: {err}")))?;
+        let nonce_vec = base64::engine::general_purpose::STANDARD
+            .decode(payload.nonce_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("invalid .hvb nonce: {err}")))?;
+        let ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(payload.ciphertext_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("invalid .hvb ciphertext: {err}")))?;
+
+        if nonce_vec.len() != BACKUP_NONCE_LEN {
+            return Err(AppError::Validation(
+                "invalid .hvb nonce length".to_string(),
+            ));
+        }
+
+        let mut nonce = [0_u8; BACKUP_NONCE_LEN];
+        nonce.copy_from_slice(nonce_vec.as_slice());
+
+        let backup_key = Self::derive_backup_key_from_recovery(recovery_phrase, salt.as_slice())?;
+        let plaintext = Self::decrypt_bytes(
+            payload.sha256_hex.as_str(),
+            nonce,
+            ciphertext.as_slice(),
+            &backup_key,
+        )?;
+
+        Self::replace_existing_database(new_sqlite_db_path, plaintext.as_slice())?;
+
+        info!(
+            file = %backup_file_path.display(),
+            destination = %new_sqlite_db_path.display(),
+            "Database successfully restored from backup"
+        );
+
+        Ok(BackupMetadata {
+            sha256_hex: payload.sha256_hex,
+            plaintext_size: plaintext.len(),
+        })
+    }
+
     fn export_backup(
         &self,
         sqlite_db_path: &Path,

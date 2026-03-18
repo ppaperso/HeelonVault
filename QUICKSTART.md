@@ -1,5 +1,7 @@
 # Quickstart (Rust)
 
+Version rapide documentée: `0.2.0`
+
 ## 1. Build Check
 
 ```bash
@@ -25,7 +27,15 @@ Development database path:
 cd rust
 cargo test secret_repository:: -- --nocapture
 cargo test secret_service:: -- --nocapture
+cargo test --test login_history_integration
 ```
+
+## 3bis. Vérifications UI recommandées
+
+1. Ouvrir `Profil & Sécurité` depuis la sidebar.
+2. Fermer la fenêtre principale avec la croix: le login doit réapparaître.
+3. Se reconnecter immédiatement: les cartes de secrets doivent être visibles.
+4. Activer l'affichage du mot de passe en édition, puis modifier un secret de type mot de passe.
 
 ## 4. Production Build
 
