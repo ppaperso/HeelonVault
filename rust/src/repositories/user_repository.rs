@@ -9,6 +9,10 @@ use uuid::Uuid;
 pub trait UserRepository {
     async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError>;
     async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError>;
+    async fn resolve_username_for_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> Result<Option<String>, AppError>;
     async fn update_user_profile(
         &self,
         user_id: Uuid,
@@ -152,6 +156,57 @@ impl UserRepository for SqlxUserRepository {
                     show_passwords_in_edit: show_passwords_in_edit != 0,
                     updated_at,
                 }))
+            }
+            None => Ok(None),
+        }
+    }
+
+    async fn resolve_username_for_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> Result<Option<String>, AppError> {
+        let normalized_identifier = identifier.trim();
+        if normalized_identifier.is_empty() {
+            return Ok(None);
+        }
+
+        let row_opt = sqlx::query(
+            "SELECT username
+             FROM (
+                 SELECT username, 1 AS match_rank
+                 FROM users
+                 WHERE lower(trim(username)) = lower(trim(?1))
+
+                 UNION ALL
+
+                 SELECT username, 2 AS match_rank
+                 FROM users
+                 WHERE email IS NOT NULL
+                   AND trim(email) <> ''
+                   AND lower(trim(email)) = lower(trim(?1))
+
+                 UNION ALL
+
+                 SELECT username, 3 AS match_rank
+                 FROM users
+                 WHERE display_name IS NOT NULL
+                   AND trim(display_name) <> ''
+                   AND lower(trim(display_name)) = lower(trim(?1))
+             )
+             ORDER BY match_rank ASC, username ASC
+             LIMIT 1",
+        )
+        .bind(normalized_identifier)
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("resolve username for login identifier", err))?;
+
+        match row_opt {
+            Some(row) => {
+                let username: String = row
+                    .try_get("username")
+                    .map_err(|err| Self::map_storage_err("read resolved username", err))?;
+                Ok(Some(username))
             }
             None => Ok(None),
         }
@@ -369,6 +424,60 @@ mod tests {
         assert_eq!(user.id, user_id);
         assert_eq!(user.username, "bob");
         assert!(matches!(user.role, UserRole::User));
+    }
+
+    #[tokio::test]
+    async fn resolve_username_for_login_identifier_matches_username_email_and_display_name() {
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "repo setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let user_id = Uuid::new_v4();
+        let insert_result = insert_user(&repo, user_id, "alice", "admin").await;
+        assert!(insert_result.is_ok(), "seed user should succeed");
+        if insert_result.is_err() {
+            return;
+        }
+
+        let profile_result = sqlx::query(
+            "UPDATE users SET email = ?1, display_name = ?2 WHERE id = ?3",
+        )
+        .bind("alice@example.com")
+        .bind("Alice Martin")
+        .bind(user_id.to_string())
+        .execute(&repo.pool)
+        .await;
+        assert!(profile_result.is_ok(), "profile update should succeed");
+        if profile_result.is_err() {
+            return;
+        }
+
+        let by_username = repo
+            .resolve_username_for_login_identifier("ALICE")
+            .await;
+        assert!(by_username.is_ok(), "username resolution should succeed");
+        assert_eq!(by_username.ok().flatten().as_deref(), Some("alice"));
+
+        let by_email = repo
+            .resolve_username_for_login_identifier("  Alice@Example.com ")
+            .await;
+        assert!(by_email.is_ok(), "email resolution should succeed");
+        assert_eq!(by_email.ok().flatten().as_deref(), Some("alice"));
+
+        let by_display = repo
+            .resolve_username_for_login_identifier("alice martin")
+            .await;
+        assert!(by_display.is_ok(), "display name resolution should succeed");
+        assert_eq!(by_display.ok().flatten().as_deref(), Some("alice"));
+
+        let missing = repo
+            .resolve_username_for_login_identifier("inconnu")
+            .await;
+        assert!(missing.is_ok(), "missing lookup should still succeed");
+        assert!(missing.ok().flatten().is_none(), "missing lookup returns none");
     }
 
     #[tokio::test]

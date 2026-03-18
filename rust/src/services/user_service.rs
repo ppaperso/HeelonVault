@@ -19,6 +19,10 @@ pub struct UserProfileUpdate {
 #[allow(async_fn_in_trait)]
 pub trait UserService {
     async fn get_user_profile(&self, user_id: Uuid) -> Result<User, AppError>;
+    async fn resolve_username_for_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> Result<Option<String>, AppError>;
     async fn update_user_profile(&self, user_id: Uuid, update: UserProfileUpdate) -> Result<User, AppError>;
     async fn update_show_passwords_in_edit(
         &self,
@@ -67,6 +71,15 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
         Ok(user)
+    }
+
+    async fn resolve_username_for_login_identifier(
+        &self,
+        identifier: &str,
+    ) -> Result<Option<String>, AppError> {
+        self.user_repo
+            .resolve_username_for_login_identifier(identifier)
+            .await
     }
 
     async fn update_user_profile(&self, user_id: Uuid, update: UserProfileUpdate) -> Result<User, AppError> {

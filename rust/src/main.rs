@@ -38,6 +38,7 @@ use heelonvault_rust::services::import_service::ImportServiceImpl;
 use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
+use heelonvault_rust::services::totp_service::SqliteTotpService;
 use heelonvault_rust::services::user_service::UserServiceImpl;
 use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
@@ -50,6 +51,7 @@ type VaultServiceHandle =
 	VaultServiceImpl<SqlxVaultRepository, SqlxVaultEnvelopeRepository, CryptoServiceImpl>;
 type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl>;
 type UserServiceHandle = UserServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>>;
+type TotpServiceHandle = SqliteTotpService<AuthServiceImpl<CryptoServiceImpl>, CryptoServiceImpl>;
 
 struct SqlxVaultEnvelopeRepository {
 	pool: SqlitePool,
@@ -99,6 +101,7 @@ struct AppContext {
 	backup_service: Arc<BackupServiceImpl>,
 	import_service: Arc<ImportServiceImpl>,
 	user_service: Arc<UserServiceHandle>,
+	totp_service: Arc<TotpServiceHandle>,
 	admin_user_id: Uuid,
 	admin_username: String,
 	admin_identity_label: String,
@@ -204,6 +207,7 @@ fn main() -> Result<()> {
 			Arc::clone(&context.secret_service),
 			Arc::clone(&context.vault_service),
 			Arc::clone(&context.user_service),
+			Arc::clone(&context.totp_service),
 			Arc::clone(&context.auth_policy_service),
 			Arc::clone(&context.backup_service),
 			Arc::clone(&context.import_service),
@@ -238,7 +242,8 @@ fn main() -> Result<()> {
 				runtime_for_login.clone(),
 				Arc::clone(&context_for_login.auth_service),
 				Arc::clone(&context_for_login.auth_policy_service),
-				false,
+				Arc::clone(&context_for_login.user_service),
+				Arc::clone(&context_for_login.totp_service),
 				move |backup_file_path, recovery_phrase, new_password| {
 					let staging_path = build_restore_staging_path(&context_for_restore.database_path);
 					cleanup_restore_staging_path(&staging_path).map_err(|error| {
@@ -364,308 +369,7 @@ fn setup_icon_theme() {
 
 fn install_application_css() {
 	let provider = gtk4::CssProvider::new();
-	provider.load_from_data(
-		r#"
-		window.app-window,
-		window {
-			background:
-				radial-gradient(circle at top left, rgba(164, 223, 207, 0.55), transparent 42%),
-				radial-gradient(circle at top right, rgba(111, 211, 180, 0.22), transparent 36%),
-				#F3F6F3;
-			color: #2C3E50;
-		}
-
-		.login-shell {
-			min-width: 460px;
-		}
-
-		.login-panel {
-			padding: 12px;
-		}
-
-		.login-hero,
-		.login-card {
-			border-radius: 20px;
-			border: 1px solid rgba(164, 223, 207, 0.95);
-			box-shadow: 0 20px 40px rgba(7, 57, 58, 0.08);
-		}
-
-		.login-hero {
-			background: linear-gradient(135deg, #07393A, #0A5F5C);
-			color: #FFFFFF;
-		}
-
-		.login-hero-icon {
-			color: #FFFFFF;
-			opacity: 0.95;
-		}
-
-		.login-hero-title {
-			color: #FFFFFF;
-		}
-
-		.login-hero-copy,
-		.login-hero-meta {
-			color: rgba(255, 255, 255, 0.82);
-		}
-
-		.login-badge {
-			background: rgba(255, 255, 255, 0.14);
-			color: #A4DFCF;
-			border-radius: 999px;
-			padding: 6px 14px;
-			font-weight: 700;
-		}
-
-		.login-card {
-			background: linear-gradient(135deg, #FFFFFF, #F3F6F3);
-		}
-
-		.login-field-label {
-			color: #07393A;
-			font-weight: 700;
-		}
-
-		.login-support-copy,
-		.login-strength {
-			color: #7F8C9A;
-		}
-
-		entry.login-entry,
-		passwordentry.login-entry {
-			background: rgba(255, 255, 255, 0.92);
-			border-radius: 16px;
-			border: 1px solid rgba(164, 223, 207, 0.95);
-			padding: 12px 14px;
-			color: #2C3E50;
-			box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.85);
-		}
-
-		entry.login-entry:focus,
-		passwordentry.login-entry:focus {
-			border-color: #13A1A1;
-			box-shadow: 0 0 0 2px rgba(19, 161, 161, 0.18);
-		}
-
-		entry.login-totp-entry {
-			font-size: 1.15rem;
-			font-weight: 700;
-			letter-spacing: 0.18rem;
-		}
-
-		button.primary-pill,
-		button.secondary-pill {
-			border-radius: 999px;
-			padding: 12px 20px;
-			font-weight: 700;
-			transition: all 200ms ease;
-		}
-
-		button.primary-pill {
-			background: linear-gradient(120deg, #13A1A1, #1F8678);
-			color: #FFFFFF;
-			box-shadow: 0 12px 22px rgba(19, 161, 161, 0.24);
-		}
-
-		button.primary-pill:hover {
-			transform: translateY(-2px);
-			box-shadow: 0 16px 26px rgba(19, 161, 161, 0.32);
-		}
-
-		button.secondary-pill {
-			background: transparent;
-			color: #07393A;
-			border: 1px solid rgba(7, 57, 58, 0.28);
-		}
-
-		button.secondary-pill:hover {
-			background: rgba(164, 223, 207, 0.22);
-			transform: translateY(-2px);
-		}
-
-		label.login-error {
-			color: #E74C3C;
-			font-weight: 600;
-		}
-
-		label.success {
-			color: #1F8678;
-		}
-
-		label.warning {
-			color: #13A1A1;
-		}
-
-		label.error {
-			color: #E74C3C;
-		}
-
-		.main-window {
-			background: linear-gradient(180deg, rgba(255, 255, 255, 0.88), #F3F6F3 42%);
-		}
-
-		headerbar.main-headerbar {
-			background: linear-gradient(120deg, #07393A, #0A5F5C);
-			color: #FFFFFF;
-			border-radius: 16px;
-			padding: 4px 6px;
-		}
-
-		.main-title {
-			color: #FFFFFF;
-			font-weight: 800;
-		}
-
-		button.main-add-button {
-			padding-left: 20px;
-			padding-right: 20px;
-		}
-
-		entry.main-search-entry,
-		searchentry.main-search-entry {
-			border-radius: 14px;
-			border: 1px solid rgba(164, 223, 207, 0.95);
-			background: rgba(255, 255, 255, 0.95);
-			padding: 10px 12px;
-		}
-
-		frame.main-sidebar,
-		frame.main-center-panel {
-			background: #FFFFFF;
-			border: 1px solid rgba(164, 223, 207, 0.95);
-			border-radius: 18px;
-			box-shadow: 0 14px 28px rgba(7, 57, 58, 0.08);
-		}
-
-		.main-section-title {
-			color: #07393A;
-			font-weight: 800;
-		}
-
-		list.main-category-list row {
-			border-radius: 12px;
-			margin: 2px 0;
-		}
-
-		list.main-category-list row:selected {
-			background: rgba(19, 161, 161, 0.16);
-		}
-
-		.main-sidebar-icon {
-			color: #0A5F5C;
-		}
-
-		.main-sidebar-label {
-			color: #2C3E50;
-			font-weight: 600;
-		}
-
-		.profile-login-history-popover {
-			min-width: 280px;
-		}
-
-		button.sidebar-profile-entry {
-			border-radius: 12px;
-			border: 1px solid transparent;
-			padding: 0;
-			background: transparent;
-		}
-
-		button.sidebar-profile-entry:hover {
-			background: rgba(19, 161, 161, 0.12);
-			border-color: rgba(19, 161, 161, 0.26);
-		}
-
-		label.inline-status {
-			font-weight: 600;
-			border-radius: 10px;
-			padding: 6px 10px;
-		}
-
-		label.inline-status-loading {
-			background: rgba(19, 161, 161, 0.12);
-			color: #0A5F5C;
-		}
-
-		label.inline-status-success {
-			background: rgba(31, 134, 120, 0.14);
-			color: #1F8678;
-		}
-
-		label.inline-status-error {
-			background: rgba(192, 28, 40, 0.12);
-			color: #C01C28;
-		}
-
-		.profile-view-content {
-			padding: 2px;
-		}
-
-		.profile-view-header {
-			margin-bottom: 2px;
-		}
-
-		frame.profile-section-frame {
-			border-radius: 14px;
-			padding: 2px;
-		}
-
-		.profile-field-label {
-			font-weight: 680;
-			letter-spacing: 0.01em;
-		}
-
-		.profile-section-subtitle {
-			margin-bottom: 2px;
-		}
-
-		entry.profile-field-entry,
-		passwordentry.profile-field-entry,
-		dropdown.profile-field-entry {
-			min-height: 38px;
-		}
-
-		.profile-actions-row {
-			margin-top: 4px;
-		}
-
-		button.profile-action-btn {
-			min-height: 34px;
-			padding-left: 14px;
-			padding-right: 14px;
-		}
-
-		.profile-inline-status {
-			margin-top: 2px;
-		}
-
-		.profile-compact frame.profile-section-frame {
-			padding: 0;
-		}
-
-		.profile-compact button.profile-action-btn {
-			min-height: 32px;
-			padding-left: 12px;
-			padding-right: 12px;
-		}
-
-		.main-empty-state {
-			padding: 26px;
-		}
-
-		.main-empty-icon {
-			opacity: 0.95;
-		}
-
-		.main-empty-title {
-			color: #07393A;
-		}
-
-		.main-empty-copy {
-			color: #5B7580;
-		}
-		"#,
-	);
+	provider.load_from_resource("/com/heelonvault/rust/style.css");
 
 	if let Some(display) = gdk::Display::default() {
 		gtk4::style_context_add_provider_for_display(
@@ -857,6 +561,12 @@ async fn initialize_app_context() -> Result<AppContext> {
 	let password_service = PasswordServiceImpl::new();
 	let backup_service = Arc::new(BackupServiceImpl::new());
 	let import_service = Arc::new(ImportServiceImpl::new());
+	let totp_service = Arc::new(SqliteTotpService::new(
+		pool.clone(),
+		Arc::clone(&auth_service),
+		CryptoServiceImpl::default(),
+		"HeelonVault",
+	));
 
 	info!("all services are initialized and ready");
 
@@ -871,6 +581,7 @@ async fn initialize_app_context() -> Result<AppContext> {
 		backup_service,
 		import_service,
 		user_service,
+		totp_service,
 		admin_user_id,
 		admin_username,
 		admin_identity_label,

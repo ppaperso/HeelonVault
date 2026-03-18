@@ -24,7 +24,9 @@ use crate::services::backup_service::BackupService;
 use crate::services::import_service::ImportService;
 use crate::services::login_history_service::list_recent_logins;
 use crate::services::secret_service::SecretService;
+use crate::services::totp_service::TotpService;
 use crate::services::user_service::UserService;
+use crate::ui::messages;
 use crate::services::vault_service::VaultService;
 use crate::ui::dialogs::add_edit_dialog::{AddEditDialog, DialogMode};
 use crate::ui::dialogs::trash_dialog::TrashDialog;
@@ -122,12 +124,13 @@ impl MainWindow {
 		(width, height)
 	}
 
-	pub fn new<TSecret, TVault, TUser, TPolicy, TBackup, TImport>(
+	pub fn new<TSecret, TVault, TUser, TTotp, TPolicy, TBackup, TImport>(
 		application: &adw::Application,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
 		user_service: Arc<TUser>,
+		totp_service: Arc<TTotp>,
 		auth_policy_service: Arc<TPolicy>,
 		backup_service: Arc<TBackup>,
 		import_service: Arc<TImport>,
@@ -141,6 +144,7 @@ impl MainWindow {
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
 		TUser: UserService + Send + Sync + 'static,
+		TTotp: TotpService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
 		TBackup: BackupService + Send + Sync + 'static,
 		TImport: ImportService + Send + Sync + 'static,
@@ -374,10 +378,11 @@ impl MainWindow {
 			})
 		};
 
-		let profile_view = Self::build_profile_view(
+			let profile_view = Self::build_profile_view(
 			window.clone(),
 			runtime_handle.clone(),
 			Arc::clone(&user_service),
+				Arc::clone(&totp_service),
 			Arc::clone(&auth_policy_service),
 			Arc::clone(&backup_service),
 			Arc::clone(&import_service),
@@ -1067,6 +1072,40 @@ impl MainWindow {
 		}
 	}
 
+	fn set_twofa_badge_state(label: &gtk4::Label, enabled: bool) {
+		label.remove_css_class("status-role-admin");
+		label.remove_css_class("status-role-user");
+		if enabled {
+			label.set_text(messages::TWOFA_BADGE_ENABLED);
+			label.add_css_class("status-role-admin");
+		} else {
+			label.set_text(messages::TWOFA_BADGE_DISABLED);
+			label.add_css_class("status-role-user");
+		}
+	}
+
+	fn map_twofa_error(error: &crate::errors::AppError, fallback: &str) -> String {
+		match error {
+			crate::errors::AppError::Authorization(_) => {
+				"Mot de passe actuel invalide. Impossible de valider l'activation 2FA.".to_string()
+			}
+			crate::errors::AppError::Validation(message) => {
+				if message.to_ascii_lowercase().contains("code") {
+					"Code TOTP invalide. Vérifiez l'horloge de votre appareil puis réessayez.".to_string()
+				} else {
+					"Configuration 2FA invalide. Relancez l'activation puis recommencez.".to_string()
+				}
+			}
+			crate::errors::AppError::Storage(_) => {
+				"Erreur de stockage locale pendant l'opération 2FA. Réessayez dans quelques secondes.".to_string()
+			}
+			crate::errors::AppError::Crypto(_) => {
+				"Impossible de sécuriser le secret 2FA localement. Réessayez.".to_string()
+			}
+			_ => fallback.to_string(),
+		}
+	}
+
 	fn format_login_timestamp_fr(raw: &str) -> String {
 		const MONTHS: [&str; 12] = [
 			"janvier",
@@ -1228,10 +1267,11 @@ impl MainWindow {
 	}
 
 	#[allow(clippy::too_many_arguments)]
-	fn build_profile_view<TUser, TPolicy, TBackup, TImport, TSecret, TVault>(
+	fn build_profile_view<TUser, TTotp, TPolicy, TBackup, TImport, TSecret, TVault>(
 		window: adw::ApplicationWindow,
 		runtime_handle: Handle,
 		user_service: Arc<TUser>,
+		totp_service: Arc<TTotp>,
 		auth_policy_service: Arc<TPolicy>,
 		backup_service: Arc<TBackup>,
 		import_service: Arc<TImport>,
@@ -1250,6 +1290,7 @@ impl MainWindow {
 	) -> ProfileViewWidgets
 	where
 		TUser: UserService + Send + Sync + 'static,
+		TTotp: TotpService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
 		TBackup: BackupService + Send + Sync + 'static,
 		TImport: ImportService + Send + Sync + 'static,
@@ -1296,6 +1337,32 @@ impl MainWindow {
 		profile_intro.set_wrap(true);
 		profile_intro.add_css_class("dim-label");
 		content.append(&profile_intro);
+
+		let sections_columns = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(18)
+			.hexpand(true)
+			.homogeneous(true)
+			.build();
+		sections_columns.add_css_class("profile-sections-columns");
+
+		let sections_left = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(18)
+			.hexpand(true)
+			.build();
+		sections_left.add_css_class("profile-sections-column");
+
+		let sections_right = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(18)
+			.hexpand(true)
+			.build();
+		sections_right.add_css_class("profile-sections-column");
+
+		sections_columns.append(&sections_left);
+		sections_columns.append(&sections_right);
+		content.append(&sections_columns);
 
 		let info_frame = gtk4::Frame::builder().label("Informations").build();
 		info_frame.add_css_class("profile-section-frame");
@@ -1372,11 +1439,12 @@ impl MainWindow {
 			info_box.append(widget);
 		}
 		info_frame.set_child(Some(&info_box));
-		content.append(&info_frame);
+		info_frame.set_hexpand(true);
+		sections_left.append(&info_frame);
 
-		let security_frame = gtk4::Frame::builder().label("Sécurité").build();
-		security_frame.add_css_class("profile-section-frame");
-		let security_box = gtk4::Box::builder()
+		let password_change_frame = gtk4::Frame::builder().label("Changement de mot de passe").build();
+		password_change_frame.add_css_class("profile-section-frame");
+		let password_change_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
 			.spacing(10)
 			.margin_top(12)
@@ -1384,14 +1452,15 @@ impl MainWindow {
 			.margin_start(12)
 			.margin_end(12)
 			.build();
-		let security_subtitle = gtk4::Label::new(Some(
-			"Renforcez l'accès à votre coffre et ajustez le verrouillage automatique.",
+		let password_change_subtitle = gtk4::Label::new(Some(
+			"Mettez à jour votre mot de passe maître avec vérification de l'ancien.",
 		));
-		security_subtitle.set_halign(Align::Start);
-		security_subtitle.set_wrap(true);
-		security_subtitle.add_css_class("profile-section-subtitle");
-		security_subtitle.add_css_class("dim-label");
-		security_box.append(&security_subtitle);
+		password_change_subtitle.set_halign(Align::Start);
+		password_change_subtitle.set_wrap(true);
+		password_change_subtitle.add_css_class("profile-section-subtitle");
+		password_change_subtitle.add_css_class("dim-label");
+		password_change_box.append(&password_change_subtitle);
+
 		let current_pw_label = gtk4::Label::new(Some("Mot de passe actuel"));
 		current_pw_label.set_halign(Align::Start);
 		current_pw_label.add_css_class("profile-field-label");
@@ -1399,46 +1468,26 @@ impl MainWindow {
 		current_pw_entry.set_hexpand(true);
 		current_pw_entry.add_css_class("profile-field-entry");
 
-		let auto_lock_label = gtk4::Label::new(Some("Délai de verrouillage automatique"));
-		auto_lock_label.set_halign(Align::Start);
-		auto_lock_label.add_css_class("profile-field-label");
-		let auto_lock_items = gtk4::StringList::new(&["1 min", "5 min", "15 min", "30 min", "jamais"]);
-		let auto_lock_dropdown = gtk4::DropDown::new(Some(auto_lock_items.clone()), None::<gtk4::Expression>);
-		auto_lock_dropdown.add_css_class("profile-field-entry");
-
-		let show_edit_passwords_label = gtk4::Label::new(Some(
-			"Affichage du mot de passe actuel en mode modification",
-		));
-		show_edit_passwords_label.set_halign(Align::Start);
-		show_edit_passwords_label.add_css_class("profile-field-label");
-		let show_edit_passwords_hint = gtk4::Label::new(Some(
-			"Affiche des étoiles dans le champ mot de passe de l'éditeur, avec icône oeil pour le révéler.",
-		));
-		show_edit_passwords_hint.set_halign(Align::Start);
-		show_edit_passwords_hint.set_wrap(true);
-		show_edit_passwords_hint.add_css_class("dim-label");
-		show_edit_passwords_hint.add_css_class("profile-section-subtitle");
-		let show_edit_passwords_switch = gtk4::Switch::new();
-		show_edit_passwords_switch.set_halign(Align::Start);
-
 		let new_pw_label = gtk4::Label::new(Some("Nouveau mot de passe"));
 		new_pw_label.set_halign(Align::Start);
 		new_pw_label.add_css_class("profile-field-label");
 		let new_pw_entry = gtk4::PasswordEntry::new();
 		new_pw_entry.set_hexpand(true);
 		new_pw_entry.add_css_class("profile-field-entry");
+
 		let confirm_pw_label = gtk4::Label::new(Some("Confirmer le nouveau mot de passe"));
 		confirm_pw_label.set_halign(Align::Start);
 		confirm_pw_label.add_css_class("profile-field-label");
 		let confirm_pw_entry = gtk4::PasswordEntry::new();
 		confirm_pw_entry.set_hexpand(true);
 		confirm_pw_entry.add_css_class("profile-field-entry");
-		let security_status_label = gtk4::Label::new(None);
-		security_status_label.set_halign(Align::Start);
-		security_status_label.set_wrap(true);
-		security_status_label.add_css_class("inline-status");
-		security_status_label.add_css_class("profile-inline-status");
-		security_status_label.set_visible(false);
+
+		let password_change_status_label = gtk4::Label::new(None);
+		password_change_status_label.set_halign(Align::Start);
+		password_change_status_label.set_wrap(true);
+		password_change_status_label.add_css_class("inline-status");
+		password_change_status_label.add_css_class("profile-inline-status");
+		password_change_status_label.set_visible(false);
 
 		let security_actions = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
@@ -1465,22 +1514,225 @@ impl MainWindow {
 		for widget in [
 			current_pw_label.upcast_ref::<gtk4::Widget>(),
 			current_pw_entry.upcast_ref::<gtk4::Widget>(),
+			new_pw_label.upcast_ref::<gtk4::Widget>(),
+			new_pw_entry.upcast_ref::<gtk4::Widget>(),
+			confirm_pw_label.upcast_ref::<gtk4::Widget>(),
+			confirm_pw_entry.upcast_ref::<gtk4::Widget>(),
+			password_change_status_label.upcast_ref::<gtk4::Widget>(),
+			security_actions.upcast_ref::<gtk4::Widget>(),
+		] {
+			password_change_box.append(widget);
+		}
+		password_change_frame.set_child(Some(&password_change_box));
+		password_change_frame.set_hexpand(true);
+		sections_right.append(&password_change_frame);
+
+		let security_prefs_frame = gtk4::Frame::builder().label("Préférences de sécurité").build();
+		security_prefs_frame.add_css_class("profile-section-frame");
+		let security_prefs_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(10)
+			.margin_top(12)
+			.margin_bottom(12)
+			.margin_start(12)
+			.margin_end(12)
+			.build();
+
+		let auto_lock_label = gtk4::Label::new(Some("Délai de verrouillage automatique"));
+		auto_lock_label.set_halign(Align::Start);
+		auto_lock_label.add_css_class("profile-field-label");
+		let auto_lock_items = gtk4::StringList::new(&["1 min", "5 min", "15 min", "30 min", "jamais"]);
+		let auto_lock_dropdown = gtk4::DropDown::new(Some(auto_lock_items.clone()), None::<gtk4::Expression>);
+		auto_lock_dropdown.add_css_class("profile-field-entry");
+
+		let show_edit_passwords_label = gtk4::Label::new(Some(
+			"Affichage du mot de passe actuel en mode modification",
+		));
+		show_edit_passwords_label.set_halign(Align::Start);
+		show_edit_passwords_label.add_css_class("profile-field-label");
+		let show_edit_passwords_hint = gtk4::Label::new(Some(
+			"Affiche des étoiles dans le champ mot de passe de l'éditeur, avec icône oeil pour le révéler.",
+		));
+		show_edit_passwords_hint.set_halign(Align::Start);
+		show_edit_passwords_hint.set_wrap(true);
+		show_edit_passwords_hint.add_css_class("dim-label");
+		show_edit_passwords_hint.add_css_class("profile-section-subtitle");
+		let show_edit_passwords_switch = gtk4::Switch::new();
+		show_edit_passwords_switch.set_halign(Align::Start);
+
+		let security_prefs_status_label = gtk4::Label::new(None);
+		security_prefs_status_label.set_halign(Align::Start);
+		security_prefs_status_label.set_wrap(true);
+		security_prefs_status_label.add_css_class("inline-status");
+		security_prefs_status_label.add_css_class("profile-inline-status");
+		security_prefs_status_label.set_visible(false);
+
+		for widget in [
 			auto_lock_label.upcast_ref::<gtk4::Widget>(),
 			auto_lock_dropdown.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_label.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_switch.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_hint.upcast_ref::<gtk4::Widget>(),
-			new_pw_label.upcast_ref::<gtk4::Widget>(),
-			new_pw_entry.upcast_ref::<gtk4::Widget>(),
-			confirm_pw_label.upcast_ref::<gtk4::Widget>(),
-			confirm_pw_entry.upcast_ref::<gtk4::Widget>(),
-			security_status_label.upcast_ref::<gtk4::Widget>(),
-			security_actions.upcast_ref::<gtk4::Widget>(),
+			security_prefs_status_label.upcast_ref::<gtk4::Widget>(),
 		] {
-			security_box.append(widget);
+			security_prefs_box.append(widget);
 		}
-		security_frame.set_child(Some(&security_box));
-		content.append(&security_frame);
+		security_prefs_frame.set_child(Some(&security_prefs_box));
+		security_prefs_frame.set_hexpand(true);
+		sections_right.append(&security_prefs_frame);
+
+		let twofa_frame = gtk4::Frame::new(None);
+		twofa_frame.add_css_class("profile-section-frame");
+		let twofa_header = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+		let twofa_title = gtk4::Label::new(Some("2FA"));
+		twofa_title.add_css_class("profile-field-label");
+		twofa_title.set_halign(Align::Start);
+		let twofa_state_badge = gtk4::Label::new(Some(messages::TWOFA_BADGE_DISABLED));
+		twofa_state_badge.add_css_class("status-role-pill");
+		twofa_state_badge.add_css_class("status-role-user");
+		twofa_state_badge.set_halign(Align::Start);
+		twofa_header.append(&twofa_title);
+		twofa_header.append(&twofa_state_badge);
+		twofa_frame.set_label_widget(Some(&twofa_header));
+		Self::set_twofa_badge_state(&twofa_state_badge, false);
+		let twofa_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(10)
+			.margin_top(12)
+			.margin_bottom(12)
+			.margin_start(12)
+			.margin_end(12)
+			.build();
+
+		let twofa_stack = gtk4::Stack::builder()
+			.hexpand(true)
+			.transition_type(gtk4::StackTransitionType::Crossfade)
+			.build();
+
+		let twofa_disabled_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(8)
+			.build();
+		let twofa_disabled_copy = gtk4::Label::new(Some(
+			"La 2FA n'est pas activée. Activez-la pour ajouter un code TOTP à la connexion.",
+		));
+		twofa_disabled_copy.set_halign(Align::Start);
+		twofa_disabled_copy.set_wrap(true);
+		twofa_disabled_copy.add_css_class("dim-label");
+		twofa_disabled_copy.add_css_class("profile-section-subtitle");
+		let twofa_activate_button = gtk4::Button::with_label("Activer");
+		twofa_activate_button.add_css_class("suggested-action");
+		twofa_activate_button.add_css_class("profile-action-btn");
+		twofa_activate_button.set_halign(Align::Start);
+		twofa_disabled_box.append(&twofa_disabled_copy);
+		twofa_disabled_box.append(&twofa_activate_button);
+
+		let twofa_setup_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(8)
+			.build();
+		let twofa_setup_copy = gtk4::Label::new(Some(
+			"Scannez le code QR, puis saisissez un code TOTP à 6 chiffres pour confirmer l'activation.",
+		));
+		twofa_setup_copy.set_halign(Align::Start);
+		twofa_setup_copy.set_wrap(true);
+		twofa_setup_copy.add_css_class("dim-label");
+		twofa_setup_copy.add_css_class("profile-section-subtitle");
+		let twofa_qr_label = gtk4::Label::new(None);
+		twofa_qr_label.set_halign(Align::Start);
+		twofa_qr_label.set_selectable(true);
+		twofa_qr_label.add_css_class("monospace");
+		let twofa_secret_label = gtk4::Label::new(Some("Secret Base32"));
+		twofa_secret_label.set_halign(Align::Start);
+		twofa_secret_label.add_css_class("profile-field-label");
+		let twofa_secret_entry = gtk4::Entry::new();
+		twofa_secret_entry.set_editable(false);
+		twofa_secret_entry.add_css_class("profile-field-entry");
+		let twofa_code_label = gtk4::Label::new(Some("Code TOTP (6 chiffres)"));
+		twofa_code_label.set_halign(Align::Start);
+		twofa_code_label.add_css_class("profile-field-label");
+		let twofa_code_entry = gtk4::Entry::new();
+		twofa_code_entry.set_input_purpose(gtk4::InputPurpose::Digits);
+		twofa_code_entry.set_max_length(6);
+		twofa_code_entry.add_css_class("profile-field-entry");
+		let twofa_setup_actions = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+		twofa_setup_actions.add_css_class("profile-actions-row");
+		let twofa_confirm_button = gtk4::Button::with_label("Confirmer");
+		twofa_confirm_button.add_css_class("suggested-action");
+		twofa_confirm_button.add_css_class("profile-action-btn");
+		let twofa_cancel_setup_button = gtk4::Button::with_label("Annuler");
+		twofa_cancel_setup_button.add_css_class("flat");
+		twofa_cancel_setup_button.add_css_class("profile-action-btn");
+		twofa_setup_actions.append(&twofa_confirm_button);
+		twofa_setup_actions.append(&twofa_cancel_setup_button);
+		for widget in [
+			twofa_setup_copy.upcast_ref::<gtk4::Widget>(),
+			twofa_qr_label.upcast_ref::<gtk4::Widget>(),
+			twofa_secret_label.upcast_ref::<gtk4::Widget>(),
+			twofa_secret_entry.upcast_ref::<gtk4::Widget>(),
+			twofa_code_label.upcast_ref::<gtk4::Widget>(),
+			twofa_code_entry.upcast_ref::<gtk4::Widget>(),
+			twofa_setup_actions.upcast_ref::<gtk4::Widget>(),
+		] {
+			twofa_setup_box.append(widget);
+		}
+
+		let twofa_enabled_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(8)
+			.build();
+		let twofa_enabled_copy = gtk4::Label::new(Some(
+			"2FA activée. La connexion demandera un code TOTP après vérification du mot de passe.",
+		));
+		twofa_enabled_copy.set_halign(Align::Start);
+		twofa_enabled_copy.set_wrap(true);
+		twofa_enabled_copy.add_css_class("dim-label");
+		twofa_enabled_copy.add_css_class("profile-section-subtitle");
+		let twofa_disable_toggle_button = gtk4::Button::with_label("Désactiver");
+		twofa_disable_toggle_button.add_css_class("flat");
+		twofa_disable_toggle_button.add_css_class("profile-action-btn");
+		twofa_disable_toggle_button.set_halign(Align::Start);
+		let twofa_disable_confirm_row = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.visible(false)
+			.build();
+		twofa_disable_confirm_row.add_css_class("profile-actions-row");
+		let twofa_disable_confirm_button = gtk4::Button::with_label("Confirmer désactivation");
+		twofa_disable_confirm_button.add_css_class("suggested-action");
+		twofa_disable_confirm_button.add_css_class("profile-action-btn");
+		let twofa_disable_cancel_button = gtk4::Button::with_label("Annuler");
+		twofa_disable_cancel_button.add_css_class("flat");
+		twofa_disable_cancel_button.add_css_class("profile-action-btn");
+		twofa_disable_confirm_row.append(&twofa_disable_confirm_button);
+		twofa_disable_confirm_row.append(&twofa_disable_cancel_button);
+		twofa_enabled_box.append(&twofa_enabled_copy);
+		twofa_enabled_box.append(&twofa_disable_toggle_button);
+		twofa_enabled_box.append(&twofa_disable_confirm_row);
+
+		twofa_stack.add_titled(&twofa_disabled_box, Some("disabled"), "Désactivée");
+		twofa_stack.add_titled(&twofa_setup_box, Some("setup"), "Activation");
+		twofa_stack.add_titled(&twofa_enabled_box, Some("enabled"), "Activée");
+		twofa_stack.set_visible_child_name("disabled");
+
+		let twofa_status_label = gtk4::Label::new(None);
+		twofa_status_label.set_halign(Align::Start);
+		twofa_status_label.set_wrap(true);
+		twofa_status_label.add_css_class("inline-status");
+		twofa_status_label.add_css_class("profile-inline-status");
+		twofa_status_label.set_visible(false);
+
+		twofa_box.append(&twofa_stack);
+		twofa_box.append(&twofa_status_label);
+		twofa_frame.set_child(Some(&twofa_box));
+		twofa_frame.set_hexpand(true);
+		sections_right.append(&twofa_frame);
 
 		let data_frame = gtk4::Frame::builder().label("Gestion des données").build();
 		data_frame.add_css_class("profile-section-frame");
@@ -1531,11 +1783,13 @@ impl MainWindow {
 			data_box.append(widget);
 		}
 		data_frame.set_child(Some(&data_box));
-		content.append(&data_frame);
+		data_frame.set_hexpand(true);
+		sections_left.append(&data_frame);
 
 		container.set_child(Some(&content));
 
 		let content_for_compact = content.clone();
+		let sections_columns_for_compact = sections_columns.clone();
 		let save_row_for_compact = save_profile_row.clone();
 		let security_actions_for_compact = security_actions.clone();
 		let save_btn_for_compact = save_profile_button.clone();
@@ -1546,6 +1800,8 @@ impl MainWindow {
 		container.add_tick_callback(move |widget, _clock| {
 			if widget.allocated_width() < 760 {
 				content_for_compact.add_css_class("profile-compact");
+				sections_columns_for_compact.set_orientation(Orientation::Vertical);
+				sections_columns_for_compact.set_homogeneous(false);
 				save_row_for_compact.set_orientation(Orientation::Vertical);
 				save_row_for_compact.set_halign(Align::Fill);
 				security_actions_for_compact.set_orientation(Orientation::Vertical);
@@ -1563,6 +1819,8 @@ impl MainWindow {
 				}
 			} else {
 				content_for_compact.remove_css_class("profile-compact");
+				sections_columns_for_compact.set_orientation(Orientation::Horizontal);
+				sections_columns_for_compact.set_homogeneous(true);
 				save_row_for_compact.set_orientation(Orientation::Horizontal);
 				save_row_for_compact.set_halign(Align::End);
 				security_actions_for_compact.set_orientation(Orientation::Horizontal);
@@ -1585,13 +1843,15 @@ impl MainWindow {
 		let loading_lock = Rc::new(Cell::new(true));
 		let (sender, receiver) = tokio::sync::oneshot::channel();
 		let service_for_load = Arc::clone(&user_service);
+		let totp_for_load = Arc::clone(&totp_service);
 		let policy_for_load = Arc::clone(&auth_policy_service);
 		let runtime_for_load = runtime_handle.clone();
 		std::thread::spawn(move || {
 			let result = runtime_for_load.block_on(async move {
 				let user = service_for_load.get_user_profile(user_id).await?;
 				let delay = policy_for_load.get_auto_lock_delay(user.username.as_str()).await?;
-				Ok::<_, crate::errors::AppError>((user, delay))
+				let totp_enabled = totp_for_load.is_totp_enabled_for_user_id(user_id).await?;
+				Ok::<_, crate::errors::AppError>((user, delay, totp_enabled))
 			});
 			let _ = sender.send(result);
 		});
@@ -1602,11 +1862,14 @@ impl MainWindow {
 		let auto_lock_for_load = auto_lock_dropdown.clone();
 		let show_edit_passwords_for_load = show_edit_passwords_switch.clone();
 		let show_passwords_pref_for_load = Rc::clone(&show_passwords_in_edit_pref);
+		let twofa_stack_for_load = twofa_stack.clone();
+		let twofa_disable_confirm_row_for_load = twofa_disable_confirm_row.clone();
+		let twofa_badge_for_load = twofa_state_badge.clone();
 		let loading_lock_for_load = Rc::clone(&loading_lock);
 		let profile_status_for_load = profile_status_label.clone();
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
-				Ok(Ok((user, delay))) => {
+				Ok(Ok((user, delay, totp_enabled))) => {
 					username_entry_for_load.set_text(user.username.as_str());
 					display_entry_for_load.set_text(user.display_name.as_deref().unwrap_or_default());
 					email_entry_for_load.set_text(user.email.as_deref().unwrap_or_default());
@@ -1621,6 +1884,13 @@ impl MainWindow {
 					auto_lock_for_load.set_selected(selected);
 					show_edit_passwords_for_load.set_active(user.show_passwords_in_edit);
 					show_passwords_pref_for_load.set(user.show_passwords_in_edit);
+					twofa_stack_for_load.set_visible_child_name(if totp_enabled {
+						"enabled"
+					} else {
+						"disabled"
+					});
+					Self::set_twofa_badge_state(&twofa_badge_for_load, totp_enabled);
+					twofa_disable_confirm_row_for_load.set_visible(false);
 					loading_lock_for_load.set(false);
 				}
 				_ => {
@@ -1639,7 +1909,7 @@ impl MainWindow {
 		let username_for_delay = username_entry.clone();
 		let loading_lock_for_delay = Rc::clone(&loading_lock);
 		let window_for_delay = window.clone();
-		let security_status_for_delay = security_status_label.clone();
+		let security_status_for_delay = security_prefs_status_label.clone();
 		let session_for_delay = Rc::clone(&session_master_key);
 		auto_lock_dropdown.connect_selected_notify(move |dropdown| {
 			if loading_lock_for_delay.get() {
@@ -1729,7 +1999,7 @@ impl MainWindow {
 		let profile_status_for_save = profile_status_label.clone();
 		let service_for_toggle = Arc::clone(&user_service);
 		let runtime_for_toggle = runtime_handle.clone();
-		let profile_status_for_toggle = profile_status_label.clone();
+		let profile_status_for_toggle = security_prefs_status_label.clone();
 		let show_passwords_pref_for_toggle = Rc::clone(&show_passwords_in_edit_pref);
 		show_edit_passwords_switch.connect_active_notify(move |switch_widget| {
 			let enabled = switch_widget.is_active();
@@ -1838,7 +2108,7 @@ impl MainWindow {
 		let service_for_pw_change = Arc::clone(&user_service);
 		let runtime_for_pw_change = runtime_handle.clone();
 		let current_pw_for_change = current_pw_entry.clone();
-		let security_status_for_pw_change = security_status_label.clone();
+		let security_status_for_pw_change = password_change_status_label.clone();
 		change_pw_button.connect_clicked(move |_| {
 			Self::set_inline_status(
 				&security_status_for_pw_change,
@@ -1853,7 +2123,7 @@ impl MainWindow {
 		let current_pw_for_rotate = current_pw_entry.clone();
 		let new_pw_for_rotate = new_pw_entry.clone();
 		let confirm_pw_for_rotate = confirm_pw_entry.clone();
-		let security_status_for_rotate = security_status_label.clone();
+		let security_status_for_rotate = password_change_status_label.clone();
 		rotate_master_key_button.connect_clicked(move |_| {
 			let current_raw = current_pw_for_rotate.text().trim().to_string();
 			let new_raw = new_pw_for_rotate.text().trim().to_string();
@@ -1917,6 +2187,263 @@ impl MainWindow {
 						Self::set_inline_status(
 							&security_status_for_result,
 							"Échec du changement de mot de passe.",
+							"error",
+						);
+					}
+				}
+			});
+		});
+
+		let pending_totp_secret: Rc<RefCell<Option<String>>> = Rc::new(RefCell::new(None));
+
+		let username_for_twofa_activate = username_entry.clone();
+		let twofa_stack_for_activate = twofa_stack.clone();
+		let twofa_qr_for_activate = twofa_qr_label.clone();
+		let twofa_secret_for_activate = twofa_secret_entry.clone();
+		let twofa_code_for_activate = twofa_code_entry.clone();
+		let twofa_status_for_activate = twofa_status_label.clone();
+		let pending_secret_for_activate = Rc::clone(&pending_totp_secret);
+		let totp_for_activate = Arc::clone(&totp_service);
+		twofa_activate_button.connect_clicked(move |_| {
+			let username = username_for_twofa_activate.text().trim().to_string();
+			if username.is_empty() {
+				Self::set_inline_status(
+					&twofa_status_for_activate,
+					"Profil non chargé: impossible de démarrer la configuration 2FA.",
+					"error",
+				);
+				return;
+			}
+
+			match totp_for_activate.create_setup_payload(username.as_str()) {
+				Ok(payload) => {
+					*pending_secret_for_activate.borrow_mut() = Some(payload.base32_secret.clone());
+					twofa_qr_for_activate.set_text(payload.qr_ascii.as_str());
+					twofa_secret_for_activate.set_text(payload.base32_secret.as_str());
+					twofa_code_for_activate.set_text("");
+					twofa_stack_for_activate.set_visible_child_name("setup");
+					Self::set_inline_status(
+						&twofa_status_for_activate,
+						"Configuration 2FA prête. Scannez le QR puis confirmez avec un code TOTP.",
+						"success",
+					);
+				}
+				Err(error) => {
+					Self::set_inline_status(
+						&twofa_status_for_activate,
+						Self::map_twofa_error(
+							&error,
+							"Impossible de préparer la configuration 2FA.",
+						)
+						.as_str(),
+						"error",
+					);
+				}
+			}
+		});
+
+		let pending_secret_for_cancel = Rc::clone(&pending_totp_secret);
+		let twofa_stack_for_cancel = twofa_stack.clone();
+		let twofa_status_for_cancel = twofa_status_label.clone();
+		twofa_cancel_setup_button.connect_clicked(move |_| {
+			*pending_secret_for_cancel.borrow_mut() = None;
+			twofa_stack_for_cancel.set_visible_child_name("disabled");
+			Self::set_inline_status(
+				&twofa_status_for_cancel,
+				"Activation 2FA annulée.",
+				"success",
+			);
+		});
+
+		let username_for_twofa_confirm = username_entry.clone();
+		let current_pw_for_twofa_confirm = current_pw_entry.clone();
+		let twofa_code_for_confirm = twofa_code_entry.clone();
+		let twofa_stack_for_confirm = twofa_stack.clone();
+		let twofa_status_for_confirm = twofa_status_label.clone();
+		let twofa_badge_for_confirm = twofa_state_badge.clone();
+		let pending_secret_for_confirm = Rc::clone(&pending_totp_secret);
+		let totp_for_confirm = Arc::clone(&totp_service);
+		let runtime_for_twofa_confirm = runtime_handle.clone();
+		twofa_confirm_button.connect_clicked(move |_| {
+			let username = username_for_twofa_confirm.text().trim().to_string();
+			let code = twofa_code_for_confirm.text().trim().to_string();
+			let current_password = current_pw_for_twofa_confirm.text().trim().to_string();
+
+			if username.is_empty() {
+				Self::set_inline_status(
+					&twofa_status_for_confirm,
+					"Profil non chargé: impossible de finaliser l'activation 2FA.",
+					"error",
+				);
+				return;
+			}
+
+			let Some(secret) = pending_secret_for_confirm.borrow().clone() else {
+				Self::set_inline_status(
+					&twofa_status_for_confirm,
+					"Aucune configuration 2FA en cours.",
+					"error",
+				);
+				return;
+			};
+
+			if current_password.is_empty() {
+				Self::set_inline_status(
+					&twofa_status_for_confirm,
+					"Le mot de passe actuel est requis pour activer la 2FA.",
+					"error",
+				);
+				return;
+			}
+
+			if let Some(validation_message) = messages::validate_totp_code_format(code.as_str()) {
+				Self::set_inline_status(
+					&twofa_status_for_confirm,
+					validation_message,
+					"error",
+				);
+				return;
+			}
+
+			match totp_for_confirm.verify_setup_code(username.as_str(), secret.as_str(), code.as_str()) {
+				Ok(true) => {
+					Self::set_inline_status(
+						&twofa_status_for_confirm,
+						"Activation 2FA en cours...",
+						"loading",
+					);
+
+					let (sender, receiver) = tokio::sync::oneshot::channel();
+					let runtime_for_task = runtime_for_twofa_confirm.clone();
+					let totp_for_task = Arc::clone(&totp_for_confirm);
+					std::thread::spawn(move || {
+						let result = runtime_for_task.block_on(async move {
+							totp_for_task
+								.enable_totp(
+									user_id,
+									username.as_str(),
+									SecretBox::new(Box::new(current_password.into_bytes())),
+									secret.as_str(),
+								)
+								.await
+						});
+						let _ = sender.send(result);
+					});
+
+					let twofa_stack_for_result = twofa_stack_for_confirm.clone();
+					let twofa_status_for_result = twofa_status_for_confirm.clone();
+					let twofa_badge_for_result = twofa_badge_for_confirm.clone();
+					let twofa_code_for_result = twofa_code_for_confirm.clone();
+					let pending_secret_for_result = Rc::clone(&pending_secret_for_confirm);
+					glib::MainContext::default().spawn_local(async move {
+						match receiver.await {
+							Ok(Ok(())) => {
+								*pending_secret_for_result.borrow_mut() = None;
+								twofa_code_for_result.set_text("");
+								twofa_stack_for_result.set_visible_child_name("enabled");
+								Self::set_twofa_badge_state(&twofa_badge_for_result, true);
+								Self::set_inline_status(
+									&twofa_status_for_result,
+									"2FA activée avec succès.",
+									"success",
+								);
+							}
+							Ok(Err(error)) => {
+								Self::set_inline_status(
+									&twofa_status_for_result,
+									Self::map_twofa_error(
+										&error,
+										"Impossible d'activer la 2FA. Vérifiez vos informations puis réessayez.",
+									)
+									.as_str(),
+									"error",
+								);
+							}
+							Err(_) => {
+								Self::set_inline_status(
+									&twofa_status_for_result,
+									"Opération 2FA interrompue. Réessayez.",
+									"error",
+								);
+							}
+						}
+					});
+				}
+				Ok(false) => {
+					Self::set_inline_status(
+						&twofa_status_for_confirm,
+						messages::PROFILE_TOTP_CODE_INVALID_ERROR,
+						"error",
+					);
+				}
+				Err(error) => {
+					Self::set_inline_status(
+						&twofa_status_for_confirm,
+						Self::map_twofa_error(
+							&error,
+							"Impossible de vérifier le code TOTP. Réessayez.",
+						)
+						.as_str(),
+						"error",
+					);
+				}
+			}
+		});
+
+		let twofa_confirm_row_for_toggle = twofa_disable_confirm_row.clone();
+		twofa_disable_toggle_button.connect_clicked(move |_| {
+			twofa_confirm_row_for_toggle.set_visible(true);
+		});
+
+		let twofa_confirm_row_for_cancel = twofa_disable_confirm_row.clone();
+		twofa_disable_cancel_button.connect_clicked(move |_| {
+			twofa_confirm_row_for_cancel.set_visible(false);
+		});
+
+		let totp_for_disable = Arc::clone(&totp_service);
+		let runtime_for_disable = runtime_handle.clone();
+		let twofa_stack_for_disable = twofa_stack.clone();
+		let twofa_status_for_disable = twofa_status_label.clone();
+		let twofa_badge_for_disable = twofa_state_badge.clone();
+		let twofa_confirm_row_for_disable = twofa_disable_confirm_row.clone();
+		twofa_disable_confirm_button.connect_clicked(move |_| {
+			Self::set_inline_status(&twofa_status_for_disable, "Désactivation 2FA en cours...", "loading");
+
+			let (sender, receiver) = tokio::sync::oneshot::channel();
+			let runtime_for_task = runtime_for_disable.clone();
+			let totp_for_task = Arc::clone(&totp_for_disable);
+			std::thread::spawn(move || {
+				let result = runtime_for_task.block_on(async move { totp_for_task.disable_totp(user_id).await });
+				let _ = sender.send(result);
+			});
+
+			let twofa_stack_for_result = twofa_stack_for_disable.clone();
+			let twofa_status_for_result = twofa_status_for_disable.clone();
+			let twofa_badge_for_result = twofa_badge_for_disable.clone();
+			let twofa_confirm_row_for_result = twofa_confirm_row_for_disable.clone();
+			glib::MainContext::default().spawn_local(async move {
+				match receiver.await {
+					Ok(Ok(())) => {
+						twofa_confirm_row_for_result.set_visible(false);
+						twofa_stack_for_result.set_visible_child_name("disabled");
+						Self::set_twofa_badge_state(&twofa_badge_for_result, false);
+						Self::set_inline_status(&twofa_status_for_result, "2FA désactivée.", "success");
+					}
+					Ok(Err(error)) => {
+						Self::set_inline_status(
+							&twofa_status_for_result,
+							Self::map_twofa_error(
+								&error,
+								"Impossible de désactiver la 2FA.",
+							)
+							.as_str(),
+							"error",
+						);
+					}
+					Err(_) => {
+						Self::set_inline_status(
+							&twofa_status_for_result,
+							"Opération 2FA interrompue. Réessayez.",
 							"error",
 						);
 					}

@@ -66,7 +66,7 @@ cargo test
 - `QUICKSTART.md`
 - `docs/ARCHITECTURE.md`
 - `docs/UPDATE_GUIDE.md`
-- `docs/SECURITY.md`
+- `SECURITY.md`
 - `docs/PLAN_ADD_UPDATE_TRASH_SECRET.md`
 
 ## Notes de version 0.2.0

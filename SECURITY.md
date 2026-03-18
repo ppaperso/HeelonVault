@@ -1,143 +1,204 @@
-# Politique de Securite
+# Security Guide (Rust Runtime)
 
-## Versions supportees
+Last update: 18 March 2026
+Scope: active runtime in rust/
 
-Nous fournissons des correctifs de securite pour les versions suivantes :
+This document replaces legacy Python-era notes and reflects the current Rust codebase.
 
-| Version | Support |
-| ------- | ------- |
-| 0.4.x   | Oui     |
-| 0.3.x   | Limite  |
-| < 0.3   | Non     |
+## 1. Security Scope and Threat Model
 
-## Signaler une vulnerabilite
+HeelonVault is a local-first desktop password manager.
 
-Ne creez pas d'issue publique pour une vulnerabilite de securite.
+Security goals:
 
-- Contact securite : `security@heelonys.fr`
-- Merci d'inclure : description, etapes de reproduction, impact, version, environnement, preuve de concept et suggestions de correction.
+- protect vault secrets at rest;
+- protect authentication material (master password derivatives, not plaintext);
+- limit brute-force attempts on login;
+- reduce accidental leaks in UI and logs;
+- preserve session safety (auto-lock and explicit logout).
 
-### Engagement de reponse
+Main assumptions:
 
-1. Accuse de reception sous 48 heures.
-2. Premier retour d'evaluation sous 7 jours.
-3. Correctif selon severite (coordination de divulgation responsable).
+- if the OS account is fully compromised while the app is unlocked, attacker impact remains high;
+- the project focuses on local storage security, not cloud account security.
 
-## Etat actuel de la securite (mars 2026)
+## 2. Cryptography in Rust
 
-### Refonte cryptographique complete
+Current primitives used in rust/src/services/crypto_service.rs:
 
-La couche cryptographique a ete refondue autour de primitives modernes et d'une gestion des secrets plus stricte.
+- KDF: Argon2id (v=19)
+- default KDF params: memory 64 MiB, time cost 3, parallelism 1
+- derived key size: 32 bytes
+- random salt size: 32 bytes
+- encryption: AES-256-GCM
+- nonce size: 12 bytes (fresh random nonce per encryption)
+- RNG: getrandom (OS CSPRNG)
+- sensitive buffers: secrecy + zeroize/Zeroizing patterns
 
-| Domaine | Implementation actuelle |
-| ------- | ----------------------- |
-| Chiffrement des secrets coffre | AES-256-GCM (nonce 96 bits unique par entree) |
-| KDF coffre | PBKDF2-HMAC-SHA256, 600 000 iterations |
-| Longueur de cle | 256 bits |
-| Salt coffre | 32 bytes (min accepte 16 bytes) |
-| Hash mots de passe utilisateurs | PBKDF2-HMAC-SHA256, 600 000 iterations, salt 32 bytes |
-| Confidentialite des emails | HMAC-SHA256 + pepper local (`.email_pepper`) |
-| Chiffrement secrets TOTP | AES-GCM avec cle systeme derivee (PBKDF2-SHA256, 100 000 iterations) |
-| Codes de secours 2FA | HMAC-SHA256 (pas de stockage en clair) |
-| Aleatoire cryptographique | Aleatoire systeme securise |
+Implementation notes:
 
-Points techniques importants :
+- decryption/authentication failures return generic crypto errors;
+- salts and keys are never stored as plaintext passwords;
+- key derivation and encryption are isolated in dedicated services.
 
-- `CryptoService` utilise AES-GCM avec authentification integree (detection d'alteration).
-- Les erreurs de dechiffrement sont normalisees (`invalid key or corrupted/tampered data`) pour limiter les fuites d'information.
-- `CryptoService.clear()` effectue un effacement memoire best-effort de la cle en fin de session.
+## 3. Authentication and Password Material
 
-### Authentification et controle d'acces
+Current auth model in rust/src/services/auth_service.rs:
 
-- Authentification principale par email (avec hash HMAC + pepper cote stockage).
-- Compatibilite legacy : connexion possible via username si necessaire.
-- 2FA TOTP obligatoire dans le flux applicatif :
-  - utilisateur sans 2FA configure : setup impose,
-  - utilisateur 2FA actif : verification TOTP obligatoire avant ouverture du coffre.
-- Roles : `user` et `admin` (gestion utilisateurs/sauvegardes reservee admin).
+- plaintext passwords are converted to secret strings in memory only;
+- password verification uses constant-time byte comparison;
+- credentials are stored as a versioned envelope:
+  - envelope version byte
+  - salt length + hash length
+  - Argon2id salt and derived hash bytes
+- persisted value in database: users.password_envelope (binary)
 
-### Protection anti brute-force
+Important:
 
-Protection combinee :
+- no plaintext password is persisted;
+- changing password rotates salt and hash;
+- auth service supports shutdown signaling to block operations during controlled shutdown.
 
-- Delai artificiel cote auth : 1.5 s sur echec d'authentification.
-- Delai progressif par identifiant : 1s, 2s, 4s, ... jusqu'a 32s.
-- Verrouillage temporaire : 15 minutes apres 5 echecs.
-- Rate limiting global anti-enumeration :
-  - 5 tentatives/minute,
-  - 30 tentatives/heure.
-- Persistance de l'etat anti-bruteforce en local (`.login_attempts.json`, permissions `600`).
+## 4. Login Identifier UX and Security
 
-### Isolation des donnees
+Login now accepts a single identifier field with resolution order:
 
-- Un espace de travail chiffre par utilisateur (`workspace_uuid`).
-- Fichiers principaux :
-  - `users.db` (metadonnees/auth),
-  - `passwords_<workspace_uuid>.db`,
-  - `salt_<workspace_uuid>.bin`.
-- Permissions renforcees sur fichiers sensibles (`600`) appliquees au demarrage.
+1. username (exact logical match, case-insensitive after trim)
+2. email (if present)
+3. display_name (if present)
 
-### Donnees chiffrees vs non chiffrees
+Security behavior:
 
-Chiffrees (AES-256-GCM) :
+- lock policy is applied on the resolved canonical username;
+- failed attempts increment the policy counter for that account;
+- unknown identifier is treated as invalid credentials.
 
-- mots de passe,
-- notes sensibles,
-- secrets TOTP (cote service 2FA).
+## 5. Brute-force and Session Controls
 
-Non chiffrees (necessaires pour UX/recherche/tri) :
+Current lock controls in rust/src/services/auth_policy_service.rs:
 
-- titre,
-- username de l'entree,
-- URL,
-- categorie,
-- tags,
-- metadonnees temporelles.
+- threshold: 5 failed attempts
+- lock window: 5 minutes
+- counters are persisted in auth_policy table
+- successful login resets failed_attempts and last_attempt_at
 
-Recommandation : ne pas stocker de donnees confidentielles dans les champs non chiffres.
+Current session controls:
 
-### Import / export
+- auto-lock delay per user: allowed values 0, 1, 5, 10, 15, 30 minutes
+- default auto-lock delay: 5 minutes
+- app returns to login screen on logout/auto-lock
+- close-window path triggers secure logout behavior
 
-- Export CSV standard : en clair (a manipuler avec prudence).
-- Export ZIP chiffre disponible (`pyzipper`, AES).
-- Import CSV : controles de format et validation minimale, mais les donnees source restent de responsabilite utilisateur.
+## 6. Password Policy and ANSSI Positioning
 
-## Audits et tests
+This project follows an internal baseline inspired by ANSSI guidance (long unique passphrases, no reuse, context-based hardening).
 
-- Tests securite : executez les suites Rust sous `rust/tests/` via `cargo test`
-- Revue de code systematique sur les changements sensibles (auth, crypto, stockage).
-- Journalisation des evenements de securite sans exposition de secrets.
+Current technical rules in Rust:
 
-## 🐧 Compatible Red Hat/Fedora
+- password service policy (generator/validator):
+  - min length 16, max 128
+  - at least one lowercase, uppercase, digit, symbol
+  - no whitespace
+- generated passwords default to length 24
 
-- **Conteneurs** : UBI9/10 Podman-ready
-- **Licences** : SPDX-compliant (REUSE lint ✅)
-- **SBOM** : Généré avec Syft pour UBI
-- **Partner** : Heelonys (Red Hat Partner)
+Current master password change rule in user flow:
 
-## Limitations connues
+- minimum length check currently set to 10 before update.
 
-- Pas de recuperation du mot de passe maitre (par conception).
-- Certaines metadonnees restent en clair pour la recherche et l'ergonomie.
-- Application orientee stockage local (pas de synchronisation cloud native).
+Security recommendation for operations:
 
-## Ressources
+- for admin and sensitive environments, use passphrases >= 16 chars;
+- target roadmap is to align all entry points to a unified >= 16 policy.
 
-- `docs/SECURITY.md`
-- `docs/DATA_PROTECTION.md`
-- `docs/ARCHITECTURE.md`
-- `docs/MULTI_USER_GUIDE.md`
+## 7. Data Protection Boundaries
 
-Standards utiles :
+Data encrypted with AES-256-GCM:
 
+- secret payloads in vault items (passwords and sensitive blobs)
+- key envelopes used by vault service
+- persisted password envelopes for authentication material
+
+Data that may remain in clear text for UX/indexing reasons:
+
+- some metadata fields such as labels/titles/tags/URLs.
+
+Operational recommendation:
+
+- do not place highly sensitive values in metadata fields intended for search/display.
+
+## 8. 2FA Status
+
+2FA/TOTP capabilities exist in model and storage layers, but full end-to-end login enforcement in the Rust UI flow is not yet finalized.
+
+Practical interpretation:
+
+- 2FA is currently considered in-progress for the runtime login pipeline;
+- do not claim full MFA enforcement in audits until login flow migration is complete.
+
+## 9. Logging and Security Events
+
+Current event coverage includes:
+
+- successful login history (table login_history);
+- auth failure threshold events (critical counters);
+- policy reset/update traces.
+
+Logging rules:
+
+- never log plaintext secrets;
+- keep technical details sufficient for incident triage without sensitive payload leakage.
+
+## 10. Security Testing
+
+Minimum test routine before release:
+
+1. cargo check
+2. cargo test
+3. targeted security suites:
+   - rust/tests/security_auth.rs
+   - rust/tests/security_crypto.rs
+
+Recommended manual checks:
+
+1. verify login lock behavior after repeated failures
+2. verify auto-lock behavior and forced return to login
+3. verify password change rotates auth envelope and old password no longer works
+4. verify login via username, display name, and email
+
+## 11. Vulnerability Disclosure
+
+Do not open public issues for security vulnerabilities.
+
+Contact channel:
+
+  <security@heelonys.fr>
+
+Please include:
+
+- impacted version
+- environment
+- reproduction steps
+- expected vs actual behavior
+- impact assessment
+- proof of concept if available
+
+Target response process:
+
+1. acknowledgment within 48h
+2. initial triage within 7 days
+3. coordinated remediation and disclosure by severity
+
+## 12. Compliance and Hardening Roadmap
+
+Near-term priorities:
+
+- unify master password policy to >= 16 across all flows
+- finalize full MFA enforcement in login pipeline
+- add stronger audit trails for admin-sensitive operations
+- document hardening profiles (standard, admin, high assurance)
+
+Reference standards:
+
+- ANSSI password and authentication recommendations
 - OWASP Password Storage Cheat Sheet
 - NIST SP 800-63B
-- NIST SP 800-132
-
-## Divulgation responsable
-
-Merci de ne pas divulguer publiquement une faille avant disponibilite du correctif et coordination avec l'equipe securite.
-
----
-
-Derniere mise a jour : 5 mars 2026

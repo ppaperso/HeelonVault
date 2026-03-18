@@ -26,6 +26,11 @@ pub trait AuthService {
         username: &str,
         password: SecretBox<Vec<u8>>,
     ) -> Result<bool, AppError>;
+    async fn derive_key_if_valid(
+        &self,
+        username: &str,
+        password: SecretBox<Vec<u8>>,
+    ) -> Result<Option<SecretBox<Vec<u8>>>, AppError>;
     async fn change_password(
         &self,
         username: &str,
@@ -286,6 +291,44 @@ where
         record.password_hash = new_hash;
 
         Ok(())
+    }
+
+    async fn derive_key_if_valid(
+        &self,
+        username: &str,
+        password: SecretBox<Vec<u8>>,
+    ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
+        self.ensure_not_shutting_down()?;
+
+        let secret_password = Self::password_to_secret_string(&password)?;
+
+        let (password_salt, expected_password_hash) = {
+            let credentials = self
+                .credentials
+                .lock()
+                .map_err(|_| AppError::Internal)?;
+            match credentials.get(username) {
+                Some(record) => (
+                    SecretBox::new(Box::new(record.password_salt.expose_secret().clone())),
+                    record.password_hash.expose_secret().clone(),
+                ),
+                None => return Ok(None),
+            }
+        };
+
+        let derived_hash = self
+            .crypto_service
+            .derive_key(&secret_password, &password_salt)
+            .await?;
+
+        if Self::constant_time_eq(
+            derived_hash.expose_secret().as_slice(),
+            expected_password_hash.as_slice(),
+        ) {
+            Ok(Some(derived_hash))
+        } else {
+            Ok(None)
+        }
     }
 
     async fn upsert_password_envelope(

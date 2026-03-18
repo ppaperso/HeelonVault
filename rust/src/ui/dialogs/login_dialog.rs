@@ -15,6 +15,9 @@ use tracing::warn;
 use crate::errors::AppError;
 use crate::services::auth_policy_service::AuthPolicyService;
 use crate::services::auth_service::AuthService;
+use crate::services::totp_service::TotpService;
+use crate::services::user_service::UserService;
+use crate::ui::messages;
 use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
 
 pub struct LoginDialog {
@@ -24,17 +27,20 @@ pub struct LoginDialog {
 enum LoginAttemptOutcome {
 	Success,
 	InvalidCredentials { remaining_lock_secs: i64 },
+	InvalidTotp { remaining_lock_secs: i64 },
 	Locked { remaining_lock_secs: i64 },
+	RequiresTotp,
 }
 
 impl LoginDialog {
-	pub fn new<TAuth, TPolicy>(
+	pub fn new<TAuth, TPolicy, TUser, TTotp>(
 		application: &adw::Application,
 		parent: &adw::ApplicationWindow,
 		runtime_handle: Handle,
 		auth_service: Arc<TAuth>,
 		auth_policy_service: Arc<TPolicy>,
-		two_factor_enabled: bool,
+		user_service: Arc<TUser>,
+		totp_service: Arc<TTotp>,
 		on_restore_requested: impl Fn(PathBuf, String, String) -> Result<(), AppError>
 			+ Send
 			+ Sync
@@ -46,6 +52,8 @@ impl LoginDialog {
 	where
 		TAuth: AuthService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
+		TUser: UserService + Send + Sync + 'static,
+		TTotp: TotpService + Send + Sync + 'static,
 	{
 		const FAILURE_COOLDOWN_MS: u64 = 1200;
 
@@ -154,18 +162,18 @@ impl LoginDialog {
 			.build();
 
 		let security_hint = gtk4::Label::new(Some(
-			"Protection locale • verification hors thread UI • aucune fuite de detail technique",
+			"Protection locale • vérification hors thread UI • aucune fuite de détail technique",
 		));
 		security_hint.add_css_class("login-support-copy");
 		security_hint.set_wrap(true);
 		security_hint.set_halign(Align::Start);
 
-		let username_label = gtk4::Label::new(Some("Nom d'utilisateur"));
+		let username_label = gtk4::Label::new(Some("Identifiant"));
 		username_label.add_css_class("login-field-label");
 		username_label.set_halign(Align::Start);
 
 		let username_entry = gtk4::Entry::builder()
-			.placeholder_text("alice")
+			.placeholder_text("username, nom affiche ou email")
 			.hexpand(true)
 			.build();
 		username_entry.add_css_class("login-entry");
@@ -188,14 +196,26 @@ impl LoginDialog {
 		strength_label.set_halign(Align::Start);
 		strength_label.set_visible(false);
 
+		// STEP 1: Credentials form (always visible initially)
+		let credentials_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(14)
+			.build();
+
+		credentials_box.append(&username_label);
+		credentials_box.append(&username_entry);
+		credentials_box.append(&password_label);
+		credentials_box.append(&password_entry);
+		credentials_box.append(&strength_label);
+
+		// STEP 2: TOTP form (shown only if user has 2FA enabled after credentials OK)
 		let totp_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
 			.spacing(8)
-			.visible(two_factor_enabled)
 			.build();
 		totp_box.add_css_class("login-totp-block");
 
-		let totp_label = gtk4::Label::new(Some("Code de verification"));
+		let totp_label = gtk4::Label::new(Some("Code TOTP"));
 		totp_label.add_css_class("login-field-label");
 		totp_label.set_halign(Align::Start);
 
@@ -211,7 +231,7 @@ impl LoginDialog {
 		gtk4::prelude::EntryExt::set_alignment(&totp_entry, 0.5);
 
 		let totp_hint = gtk4::Label::new(Some(
-			"Entrez le code a 6 chiffres de votre application d'authentification si la 2FA est activee.",
+			"Entrez le code TOTP à 6 chiffres de votre application d'authentification.",
 		));
 		totp_hint.add_css_class("login-support-copy");
 		totp_hint.set_wrap(true);
@@ -221,6 +241,15 @@ impl LoginDialog {
 		totp_box.append(&totp_label);
 		totp_box.append(&totp_entry);
 		totp_box.append(&totp_hint);
+
+		// Stack to switch between credentials and TOTP steps
+		let step_stack = gtk4::Stack::builder()
+			.transition_type(gtk4::StackTransitionType::SlideLeft)
+			.build();
+
+		step_stack.add_named(&credentials_box, Some("credentials"));
+		step_stack.add_named(&totp_box, Some("totp"));
+		step_stack.set_visible_child_name("credentials");
 
 		let error_label = gtk4::Label::new(None);
 		error_label.add_css_class("login-error");
@@ -264,15 +293,16 @@ impl LoginDialog {
 		button_box.append(&back_button);
 		button_box.append(&login_button);
 
+		// Back to credentials button (shown in TOTP step)
+		let totp_back_button = gtk4::Button::with_label("← Retour");
+		totp_back_button.add_css_class("flat");
+		totp_back_button.set_halign(Align::Start);
+
 		form_box.append(&security_hint);
-		form_box.append(&username_label);
-		form_box.append(&username_entry);
-		form_box.append(&password_label);
-		form_box.append(&password_entry);
-		form_box.append(&strength_label);
-		form_box.append(&totp_box);
+		form_box.append(&step_stack);
 		form_box.append(&error_label);
 		form_box.append(&restore_button);
+		form_box.append(&totp_back_button);
 		form_box.append(&button_box);
 		form_card.set_child(Some(&form_box));
 
@@ -304,6 +334,7 @@ impl LoginDialog {
 		let username_for_lock_probe = username_entry.clone();
 		let runtime_for_lock_probe = runtime_handle.clone();
 		let auth_policy_for_lock_probe = Arc::clone(&auth_policy_service);
+		let user_for_lock_probe = Arc::clone(&user_service);
 		username_entry.connect_changed(move |entry| {
 			let typed_username = entry.text().trim().to_string();
 			if lock_active_for_username_change.get() {
@@ -319,11 +350,18 @@ impl LoginDialog {
 				let (sender, receiver) = tokio::sync::oneshot::channel();
 				let runtime_for_task = runtime_for_lock_probe.clone();
 				let policy_for_task = Arc::clone(&auth_policy_for_lock_probe);
+				let user_for_task = Arc::clone(&user_for_lock_probe);
 				let username_for_task = typed_username.clone();
 				let username_for_send = username_for_task.clone();
 				std::thread::spawn(move || {
 					let result = runtime_for_task.block_on(async move {
-						policy_for_task.get_state(&username_for_task).await
+						let resolved_username = user_for_task
+							.resolve_username_for_login_identifier(&username_for_task)
+							.await?;
+						match resolved_username {
+							Some(username) => policy_for_task.get_state(username.as_str()).await.map(Some),
+							None => Ok(None),
+						}
 					});
 					let _ = sender.send((username_for_send, result));
 				});
@@ -335,7 +373,7 @@ impl LoginDialog {
 				let lock_timer_for_result = Rc::clone(&lock_timer_for_username_change);
 				let username_entry_for_result = username_for_lock_probe.clone();
 				glib::MainContext::default().spawn_local(async move {
-					if let Ok((checked_username, Ok(state))) = receiver.await {
+					if let Ok((checked_username, Ok(Some(state)))) = receiver.await {
 						if username_entry_for_result.text().trim() == checked_username && state.is_locked() {
 							Self::start_lock_countdown(
 								&button_for_result,
@@ -361,6 +399,16 @@ impl LoginDialog {
 		let dialog_for_back = window.clone();
 		back_button.connect_clicked(move |_| {
 			dialog_for_back.close();
+		});
+
+		// Back to credentials button handler
+		let step_for_back = step_stack.clone();
+		let totp_entry_for_back = totp_entry.clone();
+		let error_for_back = error_label.clone();
+		totp_back_button.connect_clicked(move |_| {
+			step_for_back.set_visible_child_name("credentials");
+			totp_entry_for_back.set_text("");
+			Self::clear_feedback(&error_for_back);
 		});
 
 		let restore_parent = window.clone();
@@ -389,6 +437,14 @@ impl LoginDialog {
 			button_for_totp.emit_clicked();
 		});
 
+		let step_for_button = step_stack.clone();
+		let button_label_for_step = button_label.clone();
+		let step_for_button_watch = step_stack.clone();
+		step_stack.connect_visible_child_name_notify(move |_| {
+			let is_totp_step = step_for_button_watch.visible_child_name().as_ref().map_or(false, |n| n == "totp");
+			button_label_for_step.set_text(if is_totp_step { "Vérifier" } else { "Connexion" });
+		});
+
 		let dialog_for_submit = window.clone();
 		let username_for_submit = username_entry.clone();
 		let password_for_submit = password_entry.clone();
@@ -401,6 +457,7 @@ impl LoginDialog {
 		let on_authenticated_for_submit = Rc::clone(&on_authenticated);
 		let auth_for_submit = Arc::clone(&auth_service);
 		let auth_policy_for_submit = Arc::clone(&auth_policy_service);
+		let user_for_submit = Arc::clone(&user_service);
 		let runtime_for_submit = runtime_handle.clone();
 		let lock_active_for_submit = Rc::clone(&lock_active);
 		let lock_timer_for_submit = Rc::clone(&lock_timer);
@@ -412,125 +469,138 @@ impl LoginDialog {
 
 			Self::clear_feedback(&error_for_submit);
 
-			let username = username_for_submit.text().trim().to_string();
-			let password = password_for_submit.text().to_string();
-			let totp = totp_for_submit.text().trim().to_string();
+			let current_step = step_for_button
+				.visible_child_name()
+				.as_ref()
+				.map_or("credentials", |n| n.as_str())
+				.to_string();
 
-			if username.is_empty() {
-				Self::show_feedback(
-					&error_for_submit,
-					"Saisissez votre nom d'utilisateur pour continuer.",
-				);
-				return;
-			}
+			if current_step == "credentials" {
+				// STEP 1: Validate credentials and check for TOTP requirement
+				let username = username_for_submit.text().trim().to_string();
+				let password = password_for_submit.text().to_string();
 
-			if password.is_empty() {
-				Self::show_feedback(
-					&error_for_submit,
-					"Saisissez votre mot de passe avant de vous connecter.",
-				);
-				return;
-			}
+				if username.is_empty() {
+					Self::show_feedback(
+						&error_for_submit,
+						"Saisissez votre identifiant (username, nom affiche ou email) pour continuer.",
+					);
+					return;
+				}
 
-			if two_factor_enabled && !Self::is_valid_totp(&totp) {
-				Self::show_feedback(
-					&error_for_submit,
-					"Entrez un code a 6 chiffres pour finaliser la connexion.",
-				);
-				return;
-			}
+				if password.is_empty() {
+					Self::show_feedback(
+						&error_for_submit,
+						"Saisissez votre mot de passe avant de vous connecter.",
+					);
+					return;
+				}
 
-			Self::set_pending_state(&button_for_submit, &spinner_for_submit, true);
+				Self::set_pending_state(&button_for_submit, &spinner_for_submit, true);
 
-			let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
-			let auth_for_task = Arc::clone(&auth_for_submit);
-			let auth_policy_for_task = Arc::clone(&auth_policy_for_submit);
-			let username_for_task = username.clone();
-			let password_for_task = password.into_bytes();
-			let runtime_for_task = runtime_for_submit.clone();
+				let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+				let auth_for_task = Arc::clone(&auth_for_submit);
+				let auth_policy_for_task = Arc::clone(&auth_policy_for_submit);
+				let user_for_task = Arc::clone(&user_for_submit);
+				let totp_for_task = Arc::clone(&totp_service);
+				let username_for_task = username.clone();
+				let password_for_task = password.into_bytes();
+				let runtime_for_task = runtime_for_submit.clone();
 
-			std::thread::spawn(move || {
-				let secret_password = SecretBox::new(Box::new(password_for_task));
-				let result: Result<LoginAttemptOutcome, AppError> = runtime_for_task.block_on(async move {
-					let lock_state = auth_policy_for_task.get_state(&username_for_task).await?;
-					if lock_state.is_locked() {
-						warn!(
-							username = %username_for_task,
-							remaining_lock_secs = lock_state.remaining_lock_secs,
-							failed_attempts = lock_state.failed_attempts,
-							"login attempt rejected: account currently locked"
-						);
-						return Ok(LoginAttemptOutcome::Locked {
-							remaining_lock_secs: lock_state.remaining_lock_secs,
-						});
-					}
-
-					let verified = auth_for_task
-						.verify_password(&username_for_task, secret_password)
-						.await?;
-
-					if verified {
-						auth_policy_for_task
-							.reset_failed_attempts(&username_for_task)
+				std::thread::spawn(move || {
+					let password_bytes = password_for_task;
+					let result: Result<LoginAttemptOutcome, AppError> = runtime_for_task.block_on(async move {
+						let resolved_username = user_for_task
+							.resolve_username_for_login_identifier(&username_for_task)
 							.await?;
-						Ok(LoginAttemptOutcome::Success)
-					} else {
-						let state = auth_policy_for_task
-							.record_failed_attempt(&username_for_task)
+
+						let canonical_username = match resolved_username {
+							Some(value) => value,
+							None => {
+								return Ok(LoginAttemptOutcome::InvalidCredentials {
+									remaining_lock_secs: 0,
+								});
+							}
+						};
+
+						let lock_state = auth_policy_for_task.get_state(canonical_username.as_str()).await?;
+						if lock_state.is_locked() {
+							warn!(
+								username = %canonical_username,
+								remaining_lock_secs = lock_state.remaining_lock_secs,
+								failed_attempts = lock_state.failed_attempts,
+								"login attempt rejected: account currently locked"
+							);
+							return Ok(LoginAttemptOutcome::Locked {
+								remaining_lock_secs: lock_state.remaining_lock_secs,
+							});
+						}
+
+						let verified = auth_for_task
+							.verify_password(
+								canonical_username.as_str(),
+								SecretBox::new(Box::new(password_bytes.clone())),
+							)
 							.await?;
-						Ok(LoginAttemptOutcome::InvalidCredentials {
-							remaining_lock_secs: state.remaining_lock_secs,
-						})
-					}
+
+						if verified {
+							// Check if user has 2FA enabled
+							let has_totp = totp_for_task
+								.is_totp_enabled_for_username(canonical_username.as_str())
+								.await?;
+
+							if has_totp {
+								// Require TOTP entry
+								Ok(LoginAttemptOutcome::RequiresTotp)
+							} else {
+								// No TOTP required, proceed to success
+								auth_policy_for_task
+									.reset_failed_attempts(canonical_username.as_str())
+									.await?;
+								Ok(LoginAttemptOutcome::Success)
+							}
+						} else {
+							let state = auth_policy_for_task
+								.record_failed_attempt(canonical_username.as_str())
+								.await?;
+							Ok(LoginAttemptOutcome::InvalidCredentials {
+								remaining_lock_secs: state.remaining_lock_secs,
+							})
+						}
+					});
+					let _ = result_sender.send(result);
 				});
-				let _ = result_sender.send(result);
-			});
 
-			let dialog_for_result = dialog_for_submit.clone();
-			let password_for_result = password_for_submit.clone();
-			let strength_for_result = strength_for_submit.clone();
-			let error_for_result = error_for_submit.clone();
-			let button_for_result = button_for_submit.clone();
-			let spinner_for_result = spinner_for_submit.clone();
-			let authenticated_for_result = Rc::clone(&authenticated_for_submit);
-			let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
-			let lock_active_for_result = Rc::clone(&lock_active_for_submit);
-			let lock_timer_for_result = Rc::clone(&lock_timer_for_submit);
+				let dialog_for_result = dialog_for_submit.clone();
+				let password_for_result = password_for_submit.clone();
+				let strength_for_result = strength_for_submit.clone();
+				let error_for_result = error_for_submit.clone();
+				let button_for_result = button_for_submit.clone();
+				let spinner_for_result = spinner_for_submit.clone();
+				let step_for_result = step_for_button.clone();
+				let totp_for_result = totp_for_submit.clone();
+				let authenticated_for_result = Rc::clone(&authenticated_for_submit);
+				let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
+				let lock_active_for_result = Rc::clone(&lock_active_for_submit);
+				let lock_timer_for_result = Rc::clone(&lock_timer_for_submit);
 
-			glib::MainContext::default().spawn_local(async move {
-				let verification_result = result_receiver.await;
+				glib::MainContext::default().spawn_local(async move {
+					let verification_result = result_receiver.await;
 
-				match verification_result {
-					Ok(Ok(LoginAttemptOutcome::Success)) if two_factor_enabled => {
-						Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-						Self::show_feedback(
-						&error_for_result,
-						"La verification 2FA backend n'est pas encore migree dans cette etape UI.",
-						);
-					}
-					Ok(Ok(LoginAttemptOutcome::Success)) => {
-						Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-						authenticated_for_result.set(true);
-						on_authenticated_for_result();
-						dialog_for_result.close();
-					}
-					Ok(Ok(LoginAttemptOutcome::Locked { remaining_lock_secs })) => {
-						Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-						Self::start_lock_countdown(
-							&button_for_result,
-							&spinner_for_result,
-							&error_for_result,
-							remaining_lock_secs,
-							Rc::clone(&lock_active_for_result),
-							Rc::clone(&lock_timer_for_result),
-						);
-					}
-					Ok(Ok(LoginAttemptOutcome::InvalidCredentials { remaining_lock_secs })) => {
-						password_for_result.set_text("");
-						Self::update_strength_feedback("", &strength_for_result);
-						password_for_result.grab_focus();
-
-						if remaining_lock_secs > 0 {
+					match verification_result {
+						Ok(Ok(LoginAttemptOutcome::Success)) => {
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+							authenticated_for_result.set(true);
+							on_authenticated_for_result();
+							dialog_for_result.close();
+						}
+						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+							// Switch to TOTP step
+							step_for_result.set_visible_child_name("totp");
+							totp_for_result.grab_focus();
+						}
+						Ok(Ok(LoginAttemptOutcome::Locked { remaining_lock_secs })) => {
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							Self::start_lock_countdown(
 								&button_for_result,
@@ -540,10 +610,71 @@ impl LoginDialog {
 								Rc::clone(&lock_active_for_result),
 								Rc::clone(&lock_timer_for_result),
 							);
-						} else {
+						}
+						Ok(Ok(LoginAttemptOutcome::InvalidCredentials { remaining_lock_secs })) => {
+							password_for_result.set_text("");
+							Self::update_strength_feedback("", &strength_for_result);
+							password_for_result.grab_focus();
+
+							if remaining_lock_secs > 0 {
+								Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+								Self::start_lock_countdown(
+									&button_for_result,
+									&spinner_for_result,
+									&error_for_result,
+									remaining_lock_secs,
+									Rc::clone(&lock_active_for_result),
+									Rc::clone(&lock_timer_for_result),
+								);
+							} else {
+								Self::show_feedback(
+									&error_for_result,
+									"Identifiants invalides. Merci de patienter avant une nouvelle tentative.",
+								);
+								let button_after_delay = button_for_result.clone();
+								let spinner_after_delay = spinner_for_result.clone();
+								glib::timeout_add_local_once(
+									Duration::from_millis(FAILURE_COOLDOWN_MS),
+									move || {
+										Self::set_pending_state(
+											&button_after_delay,
+											&spinner_after_delay,
+											false,
+										);
+									},
+								);
+							}
+						}
+						Ok(Ok(LoginAttemptOutcome::InvalidTotp { .. })) => {
+							// Shouldn't reach here in credentials step
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							Self::show_feedback(
 								&error_for_result,
-								"Identifiants invalides. Merci de patienter avant une nouvelle tentative.",
+								"Une erreur interne est survenue. Merci de reessayer.",
+							);
+						}
+						Ok(Err(_)) => {
+							Self::show_feedback(
+								&error_for_result,
+								"Connexion indisponible pour le moment. Merci de patienter.",
+							);
+							let button_after_delay = button_for_result.clone();
+							let spinner_after_delay = spinner_for_result.clone();
+							glib::timeout_add_local_once(
+								Duration::from_millis(FAILURE_COOLDOWN_MS),
+								move || {
+									Self::set_pending_state(
+										&button_after_delay,
+										&spinner_after_delay,
+										false,
+									);
+								},
+							);
+						}
+						Err(_) => {
+							Self::show_feedback(
+								&error_for_result,
+								"La tentative de connexion a ete interrompue. Merci de patienter.",
 							);
 							let button_after_delay = button_for_result.clone();
 							let spinner_after_delay = spinner_for_result.clone();
@@ -559,44 +690,198 @@ impl LoginDialog {
 							);
 						}
 					}
-					Ok(Err(_)) => {
-						Self::show_feedback(
-							&error_for_result,
-							"Connexion indisponible pour le moment. Merci de patienter.",
-						);
-						let button_after_delay = button_for_result.clone();
-						let spinner_after_delay = spinner_for_result.clone();
-						glib::timeout_add_local_once(
-							Duration::from_millis(FAILURE_COOLDOWN_MS),
-							move || {
-								Self::set_pending_state(
-									&button_after_delay,
-									&spinner_after_delay,
-									false,
+				});
+			} else {
+				// STEP 2: Verify TOTP code
+				let totp = totp_for_submit.text().trim().to_string();
+				let username = username_for_submit.text().trim().to_string();
+				let password = password_for_submit.text().to_string();
+
+				Self::set_pending_state(&button_for_submit, &spinner_for_submit, true);
+
+				let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+				let auth_policy_for_task = Arc::clone(&auth_policy_for_submit);
+				let user_for_task = Arc::clone(&user_for_submit);
+				let totp_for_task = Arc::clone(&totp_service);
+				let username_for_task = username;
+				let password_for_task = password.into_bytes();
+				let totp_for_task_value = totp.clone();
+				let runtime_for_task = runtime_for_submit.clone();
+
+				std::thread::spawn(move || {
+					let password_bytes = password_for_task;
+					let result: Result<LoginAttemptOutcome, AppError> = runtime_for_task.block_on(async move {
+						let resolved_username = user_for_task
+							.resolve_username_for_login_identifier(&username_for_task)
+							.await?;
+
+						let canonical_username = match resolved_username {
+							Some(value) => value,
+							None => {
+								return Ok(LoginAttemptOutcome::InvalidCredentials {
+									remaining_lock_secs: 0,
+								});
+							}
+						};
+
+						let lock_state = auth_policy_for_task.get_state(canonical_username.as_str()).await?;
+						if lock_state.is_locked() {
+							return Ok(LoginAttemptOutcome::Locked {
+								remaining_lock_secs: lock_state.remaining_lock_secs,
+							});
+						}
+
+						if !Self::is_valid_totp(&totp_for_task_value) {
+							let state = auth_policy_for_task
+								.record_failed_attempt(canonical_username.as_str())
+								.await?;
+							return Ok(LoginAttemptOutcome::InvalidTotp {
+								remaining_lock_secs: state.remaining_lock_secs,
+							});
+						}
+
+						let totp_ok = totp_for_task
+							.verify_login_totp(
+								canonical_username.as_str(),
+								SecretBox::new(Box::new(password_bytes)),
+								totp_for_task_value.as_str(),
+							)
+							.await?;
+
+						if !totp_ok {
+							let state = auth_policy_for_task
+								.record_failed_attempt(canonical_username.as_str())
+								.await?;
+							return Ok(LoginAttemptOutcome::InvalidTotp {
+								remaining_lock_secs: state.remaining_lock_secs,
+							});
+						}
+
+						auth_policy_for_task
+							.reset_failed_attempts(canonical_username.as_str())
+							.await?;
+						Ok(LoginAttemptOutcome::Success)
+					});
+					let _ = result_sender.send(result);
+				});
+
+				let dialog_for_result = dialog_for_submit.clone();
+				let error_for_result = error_for_submit.clone();
+				let button_for_result = button_for_submit.clone();
+				let spinner_for_result = spinner_for_submit.clone();
+				let totp_for_result = totp_for_submit.clone();
+				let authenticated_for_result = Rc::clone(&authenticated_for_submit);
+				let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
+				let lock_active_for_result = Rc::clone(&lock_active_for_submit);
+				let lock_timer_for_result = Rc::clone(&lock_timer_for_submit);
+
+				glib::MainContext::default().spawn_local(async move {
+					let verification_result = result_receiver.await;
+
+					match verification_result {
+						Ok(Ok(LoginAttemptOutcome::Success)) => {
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+							authenticated_for_result.set(true);
+							on_authenticated_for_result();
+							dialog_for_result.close();
+						}
+						Ok(Ok(LoginAttemptOutcome::InvalidTotp { remaining_lock_secs })) => {
+							totp_for_result.grab_focus();
+
+							if remaining_lock_secs > 0 {
+								Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+								Self::start_lock_countdown(
+									&button_for_result,
+									&spinner_for_result,
+									&error_for_result,
+									remaining_lock_secs,
+									Rc::clone(&lock_active_for_result),
+									Rc::clone(&lock_timer_for_result),
 								);
-							},
-						);
-					}
-					Err(_) => {
-						Self::show_feedback(
-							&error_for_result,
-							"La tentative de connexion a ete interrompue. Merci de patienter.",
-						);
-						let button_after_delay = button_for_result.clone();
-						let spinner_after_delay = spinner_for_result.clone();
-						glib::timeout_add_local_once(
-							Duration::from_millis(FAILURE_COOLDOWN_MS),
-							move || {
-								Self::set_pending_state(
-									&button_after_delay,
-									&spinner_after_delay,
-									false,
+							} else {
+								let totp_feedback = messages::login_totp_error_message(
+									totp_for_result.text().trim(),
 								);
-							},
-						);
+								Self::show_feedback(
+									&error_for_result,
+									totp_feedback,
+								);
+								let button_after_delay = button_for_result.clone();
+								let spinner_after_delay = spinner_for_result.clone();
+								glib::timeout_add_local_once(
+									Duration::from_millis(FAILURE_COOLDOWN_MS),
+									move || {
+										Self::set_pending_state(
+											&button_after_delay,
+											&spinner_after_delay,
+											false,
+										);
+									},
+								);
+							}
+						}
+						Ok(Ok(LoginAttemptOutcome::Locked { remaining_lock_secs })) => {
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+							Self::start_lock_countdown(
+								&button_for_result,
+								&spinner_for_result,
+								&error_for_result,
+								remaining_lock_secs,
+								Rc::clone(&lock_active_for_result),
+								Rc::clone(&lock_timer_for_result),
+							);
+						}
+						Ok(Ok(LoginAttemptOutcome::InvalidCredentials { remaining_lock_secs: _ })) => {
+							// This shouldn't happen in TOTP step, but handle it
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+							Self::show_feedback(
+								&error_for_result,
+								"Une erreur est survenue. Merci de reessayer.",
+							);
+						}
+						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {
+							// Shouldn't happen in TOTP step
+							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
+						}
+						Ok(Err(_)) => {
+							Self::show_feedback(
+								&error_for_result,
+								"Connexion indisponible pour le moment. Merci de patienter.",
+							);
+							let button_after_delay = button_for_result.clone();
+							let spinner_after_delay = spinner_for_result.clone();
+							glib::timeout_add_local_once(
+								Duration::from_millis(FAILURE_COOLDOWN_MS),
+								move || {
+									Self::set_pending_state(
+										&button_after_delay,
+										&spinner_after_delay,
+										false,
+									);
+								},
+							);
+						}
+						Err(_) => {
+							Self::show_feedback(
+								&error_for_result,
+								"La tentative de connexion a ete interrompue. Merci de patienter.",
+							);
+							let button_after_delay = button_for_result.clone();
+							let spinner_after_delay = spinner_for_result.clone();
+							glib::timeout_add_local_once(
+								Duration::from_millis(FAILURE_COOLDOWN_MS),
+								move || {
+									Self::set_pending_state(
+										&button_after_delay,
+										&spinner_after_delay,
+										false,
+									);
+								},
+							);
+						}
 					}
-				}
-			});
+				});
+			}
 		});
 
 		username_entry.grab_focus();

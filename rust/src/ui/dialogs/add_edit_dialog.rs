@@ -583,7 +583,6 @@ impl AddEditDialog {
 			);
 		}
 
-		Self::install_local_css();
 		Self { window }
 	}
 
@@ -1175,7 +1174,6 @@ impl AddEditDialog {
 			);
 		}
 
-		Self::install_local_css();
 		AddEditInlineView { container }
 	}
 
@@ -1584,44 +1582,4 @@ impl AddEditDialog {
 		});
 	}
 
-	fn install_local_css() {
-		let provider = gtk4::CssProvider::new();
-		provider.load_from_data(
-			r#"
-			.add-edit-dialog frame.dialog-type-frame {
-				background: rgba(243, 246, 243, 0.72);
-				border-radius: 14px;
-				border: 1px solid rgba(164, 223, 207, 0.95);
-			}
-
-			.add-edit-dialog dropdown.dialog-type-dropdown,
-			.add-edit-dialog spinbutton.dialog-validity-spin {
-				border-radius: 12px;
-				border: 1px solid rgba(164, 223, 207, 0.95);
-				background: rgba(255, 255, 255, 0.95);
-				padding: 8px 10px;
-			}
-
-			.add-edit-dialog textview,
-			.add-edit-dialog scrolledwindow.dialog-notes-scroll {
-				border-radius: 12px;
-				border: 1px solid rgba(164, 223, 207, 0.95);
-				background: rgba(255, 255, 255, 0.95);
-			}
-
-			.add-edit-dialog textview.dialog-ssh-private-key-text {
-				font-family: monospace;
-				font-size: 0.92rem;
-			}
-			"#,
-		);
-
-		if let Some(display) = gtk4::gdk::Display::default() {
-			gtk4::style_context_add_provider_for_display(
-				&display,
-				&provider,
-				gtk4::STYLE_PROVIDER_PRIORITY_APPLICATION,
-			);
-		}
-	}
 }
