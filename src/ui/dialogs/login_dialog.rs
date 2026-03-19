@@ -96,57 +96,69 @@ impl LoginDialog {
 		hero_frame.add_css_class("login-hero");
 
 		let hero_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(10)
+			.margin_top(24)
+			.margin_bottom(28)
+			.margin_start(24)
+			.margin_end(24)
+			.build();
+
+		let hero_top = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
-			.spacing(16)
-			.margin_top(22)
-			.margin_bottom(22)
-			.margin_start(22)
-			.margin_end(22)
+			.spacing(12)
+			.valign(Align::Center)
 			.build();
 
 		let hero_icon = gtk4::Image::from_resource(
 			"/com/heelonvault/rust/icons/hicolor/128x128/apps/heelonvault.png",
 		);
-		hero_icon.set_pixel_size(56);
+		hero_icon.set_pixel_size(44);
 		hero_icon.set_halign(Align::Center);
-		hero_icon.set_valign(Align::Start);
+		hero_icon.set_valign(Align::Center);
 		hero_icon.add_css_class("login-hero-icon");
-
-		let hero_text_box = gtk4::Box::builder()
-			.orientation(Orientation::Vertical)
-			.spacing(6)
-			.hexpand(true)
-			.build();
 
 		let eyebrow_label = gtk4::Label::new(Some("HeelonVault"));
 		eyebrow_label.add_css_class("login-badge");
 		eyebrow_label.set_halign(Align::Start);
 
-		let title_label = gtk4::Label::new(Some("Connexion securisee"));
+		let hero_beta_badge = gtk4::Label::new(Some("BETA"));
+		hero_beta_badge.add_css_class("beta-badge");
+		hero_beta_badge.add_css_class("login-beta-badge");
+		hero_beta_badge.set_halign(Align::Start);
+
+		let title_label = gtk4::Label::new(Some("Accès sécurisé\nà votre coffre"));
 		title_label.add_css_class("title-1");
 		title_label.add_css_class("login-hero-title");
 		title_label.set_halign(Align::Start);
 
-		let subtitle_label = gtk4::Label::new(Some(
-			"Saisissez vos identifiants pour ouvrir votre coffre local chiffre.",
-		));
+		let subtitle_label = gtk4::Label::new(Some("Chiffrement local · Aucune fuite de données"));
 		subtitle_label.add_css_class("login-hero-copy");
 		subtitle_label.set_wrap(true);
 		subtitle_label.set_halign(Align::Start);
 
-		let meta_label = gtk4::Label::new(Some(&format!(
-			"Version {} • Preview Rust",
-			env!("CARGO_PKG_VERSION")
-		)));
-		meta_label.add_css_class("login-hero-meta");
-		meta_label.set_halign(Align::Start);
+		let badges_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(6)
+			.halign(Align::Start)
+			.build();
+		for text in [
+			"AES-256-GCM".to_string(),
+			"2FA TOTP".to_string(),
+			format!("v{}", env!("CARGO_PKG_VERSION")),
+		] {
+			let badge = gtk4::Label::new(Some(text.as_str()));
+			badge.add_css_class("login-hero-badge");
+			badges_box.append(&badge);
+		}
 
-		hero_text_box.append(&eyebrow_label);
-		hero_text_box.append(&title_label);
-		hero_text_box.append(&subtitle_label);
-		hero_text_box.append(&meta_label);
-		hero_box.append(&hero_icon);
-		hero_box.append(&hero_text_box);
+		hero_top.append(&hero_icon);
+		hero_top.append(&eyebrow_label);
+		hero_top.append(&hero_beta_badge);
+		hero_box.append(&hero_top);
+		hero_box.append(&title_label);
+		hero_box.append(&subtitle_label);
+		hero_box.append(&badges_box);
 		hero_frame.set_child(Some(&hero_box));
 
 		let form_card = gtk4::Frame::new(None);
@@ -161,61 +173,55 @@ impl LoginDialog {
 			.margin_end(20)
 			.build();
 
-		let security_hint = gtk4::Label::new(Some(
-			"Protection locale • vérification hors thread UI • aucune fuite de détail technique",
-		));
-		security_hint.add_css_class("login-support-copy");
-		security_hint.set_wrap(true);
-		security_hint.set_halign(Align::Start);
-
 		let cps_frame = gtk4::Frame::new(None);
 		cps_frame.add_css_class("login-cps-teaser");
+		cps_frame.set_sensitive(false);
 
 		let cps_box = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
-			.spacing(14)
-			.margin_top(14)
-			.margin_bottom(14)
-			.margin_start(14)
-			.margin_end(14)
+			.spacing(10)
+			.margin_top(10)
+			.margin_bottom(10)
+			.margin_start(12)
+			.margin_end(12)
 			.build();
 
 		let cps_image = gtk4::Image::from_resource("/com/heelonvault/rust/images/cps_card.png");
 		cps_image.add_css_class("login-cps-image");
+		cps_image.set_pixel_size(40);
+		cps_image.set_size_request(64, 40);
 		cps_image.set_halign(Align::Center);
 		cps_image.set_valign(Align::Center);
 
-		let cps_text_box = gtk4::Box::builder()
+		let cps_info = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
-			.spacing(4)
+			.spacing(2)
 			.hexpand(true)
 			.build();
 
-		let cps_badge = gtk4::Label::new(Some("CPS · En préparation"));
+		let cps_name = gtk4::Label::new(Some("Carte CPS"));
+		cps_name.add_css_class("login-cps-title");
+		cps_name.set_halign(Align::Start);
+
+		let cps_sub = gtk4::Label::new(Some("Authentification professionnelle"));
+		cps_sub.add_css_class("login-cps-copy");
+		cps_sub.set_halign(Align::Start);
+
+		let cps_badge = gtk4::Label::new(Some("En cours"));
 		cps_badge.add_css_class("login-cps-badge");
-		cps_badge.set_halign(Align::Start);
+		cps_badge.set_halign(Align::End);
+		cps_badge.set_valign(Align::Center);
 
-		let cps_title = gtk4::Label::new(Some("Authentification par carte CPS bientôt disponible"));
-		cps_title.add_css_class("login-cps-title");
-		cps_title.set_wrap(true);
-		cps_title.set_halign(Align::Start);
-
-		let cps_subtitle = gtk4::Label::new(Some(
-			"Le développement est en cours pour cette fonctionnalité. Utilisez votre identifiant et votre mot de passe en attendant.",
-		));
-		cps_subtitle.add_css_class("login-cps-copy");
-		cps_subtitle.set_wrap(true);
-		cps_subtitle.set_halign(Align::Start);
-
-		cps_text_box.append(&cps_badge);
-		cps_text_box.append(&cps_title);
-		cps_text_box.append(&cps_subtitle);
+		cps_info.append(&cps_name);
+		cps_info.append(&cps_sub);
 		cps_box.append(&cps_image);
-		cps_box.append(&cps_text_box);
+		cps_box.append(&cps_info);
+		cps_box.append(&cps_badge);
 		cps_frame.set_child(Some(&cps_box));
 
-		let username_label = gtk4::Label::new(Some("Identifiant"));
+		let username_label = gtk4::Label::new(Some("IDENTIFIANT"));
 		username_label.add_css_class("login-field-label");
+		username_label.add_css_class("login-field-label-caps");
 		username_label.set_halign(Align::Start);
 
 		let username_entry = gtk4::Entry::builder()
@@ -225,8 +231,9 @@ impl LoginDialog {
 		username_entry.add_css_class("login-entry");
 		username_entry.set_activates_default(true);
 
-		let password_label = gtk4::Label::new(Some("Mot de passe"));
+		let password_label = gtk4::Label::new(Some("MOT DE PASSE"));
 		password_label.add_css_class("login-field-label");
+		password_label.add_css_class("login-field-label-caps");
 		password_label.set_halign(Align::Start);
 
 		let password_entry = gtk4::PasswordEntry::builder()
@@ -242,6 +249,10 @@ impl LoginDialog {
 		strength_label.set_halign(Align::Start);
 		strength_label.set_visible(false);
 
+		let restore_button = gtk4::Button::with_label("Recuperer ma base (.hvb)");
+		restore_button.add_css_class("flat");
+		restore_button.set_halign(Align::End);
+
 		// STEP 1: Credentials form (always visible initially)
 		let credentials_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -254,16 +265,51 @@ impl LoginDialog {
 		credentials_box.append(&password_entry);
 		credentials_box.append(&strength_label);
 
-		// STEP 2: TOTP form (shown only if user has 2FA enabled after credentials OK)
-		let totp_box = gtk4::Box::builder()
+		let credentials_step_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(14)
+			.build();
+		credentials_step_box.append(&cps_frame);
+		credentials_step_box.append(&credentials_box);
+		credentials_step_box.append(&restore_button);
+
+		// STEP 2: Full TOTP view replacing the central content
+		let totp_step_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
 			.spacing(8)
 			.build();
-		totp_box.add_css_class("login-totp-block");
+		totp_step_box.add_css_class("login-totp-block");
 
-		let totp_label = gtk4::Label::new(Some("Code TOTP"));
-		totp_label.add_css_class("login-field-label");
-		totp_label.set_halign(Align::Start);
+		let totp_back_button = gtk4::Button::with_label("← Retour aux identifiants");
+		totp_back_button.add_css_class("flat");
+		totp_back_button.set_halign(Align::Start);
+
+		let totp_spacer = gtk4::Separator::new(Orientation::Horizontal);
+		totp_spacer.set_margin_top(8);
+		totp_spacer.set_margin_bottom(8);
+
+		let totp_icon = gtk4::Image::from_icon_name("auth-2fa-symbolic");
+		totp_icon.set_pixel_size(48);
+		totp_icon.set_halign(Align::Center);
+		totp_icon.add_css_class("login-totp-icon");
+
+		let totp_title = gtk4::Label::new(Some("Vérification en deux étapes"));
+		totp_title.add_css_class("login-field-label");
+		totp_title.set_halign(Align::Center);
+
+		let totp_subtitle = gtk4::Label::new(Some(
+			"Saisissez le code à 6 chiffres\nde votre application d'authentification.",
+		));
+		totp_subtitle.add_css_class("login-support-copy");
+		totp_subtitle.set_wrap(true);
+		totp_subtitle.set_justify(Justification::Center);
+		totp_subtitle.set_halign(Align::Fill);
+
+		let totp_entry_wrap = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(0)
+			.halign(Align::Center)
+			.build();
 
 		let totp_entry = gtk4::Entry::builder()
 			.placeholder_text("000000")
@@ -275,26 +321,22 @@ impl LoginDialog {
 		totp_entry.set_halign(Align::Center);
 		totp_entry.set_width_chars(8);
 		gtk4::prelude::EntryExt::set_alignment(&totp_entry, 0.5);
+		totp_entry_wrap.append(&totp_entry);
 
-		let totp_hint = gtk4::Label::new(Some(
-			"Entrez le code TOTP à 6 chiffres de votre application d'authentification.",
-		));
-		totp_hint.add_css_class("login-support-copy");
-		totp_hint.set_wrap(true);
-		totp_hint.set_justify(Justification::Center);
-		totp_hint.set_halign(Align::Fill);
-
-		totp_box.append(&totp_label);
-		totp_box.append(&totp_entry);
-		totp_box.append(&totp_hint);
+		totp_step_box.append(&totp_back_button);
+		totp_step_box.append(&totp_spacer);
+		totp_step_box.append(&totp_icon);
+		totp_step_box.append(&totp_title);
+		totp_step_box.append(&totp_subtitle);
+		totp_step_box.append(&totp_entry_wrap);
 
 		// Stack to switch between credentials and TOTP steps
 		let step_stack = gtk4::Stack::builder()
 			.transition_type(gtk4::StackTransitionType::SlideLeft)
 			.build();
 
-		step_stack.add_named(&credentials_box, Some("credentials"));
-		step_stack.add_named(&totp_box, Some("totp"));
+		step_stack.add_named(&credentials_step_box, Some("credentials"));
+		step_stack.add_named(&totp_step_box, Some("totp"));
 		step_stack.set_visible_child_name("credentials");
 
 		let error_label = gtk4::Label::new(None);
@@ -303,10 +345,6 @@ impl LoginDialog {
 		error_label.set_halign(Align::Start);
 		error_label.set_visible(false);
 
-		let restore_button = gtk4::Button::with_label("Recuperer ma base (.hvb)");
-		restore_button.add_css_class("flat");
-		restore_button.set_halign(Align::End);
-
 		let button_box = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
 			.spacing(10)
@@ -314,6 +352,7 @@ impl LoginDialog {
 
 		let back_button = gtk4::Button::with_label("Quitter");
 		back_button.add_css_class("secondary-pill");
+		back_button.set_hexpand(false);
 
 		let login_button = gtk4::Button::builder()
 			.hexpand(true)
@@ -339,20 +378,86 @@ impl LoginDialog {
 		button_box.append(&back_button);
 		button_box.append(&login_button);
 
-		// Back to credentials button (shown in TOTP step)
-		let totp_back_button = gtk4::Button::with_label("← Retour");
-		totp_back_button.add_css_class("flat");
-		totp_back_button.set_halign(Align::Start);
-		totp_back_button.set_visible(false);
-
-		form_box.append(&security_hint);
-		form_box.append(&cps_frame);
 		form_box.append(&step_stack);
 		form_box.append(&error_label);
-		form_box.append(&restore_button);
-		form_box.append(&totp_back_button);
 		form_box.append(&button_box);
+
+		let sec_strip = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(6)
+			.halign(Align::Center)
+			.margin_top(4)
+			.build();
+		let sec_dot = gtk4::Label::new(Some("·"));
+		sec_dot.add_css_class("login-sec-dot");
+		let sec_text = gtk4::Label::new(Some("Vos données ne quittent jamais cet appareil"));
+		sec_text.add_css_class("login-support-copy");
+		sec_text.set_halign(Align::Center);
+		sec_strip.append(&sec_dot);
+		sec_strip.append(&sec_text);
+		form_box.append(&sec_strip);
+
 		form_card.set_child(Some(&form_box));
+
+		let step_for_back = step_stack.clone();
+		let totp_entry_for_back = totp_entry.clone();
+		let error_for_back = error_label.clone();
+		totp_back_button.connect_clicked(move |_| {
+			step_for_back.set_visible_child_name("credentials");
+			totp_entry_for_back.set_text("");
+			Self::clear_feedback(&error_for_back);
+		});
+
+		let restore_parent = window.clone();
+		let restore_request_handler = Arc::clone(&on_restore_requested);
+		let restore_complete_handler = Rc::clone(&on_restore_completed);
+		restore_button.connect_clicked(move |_| {
+			Self::present_restore_dialog(
+				&restore_parent,
+				Arc::clone(&restore_request_handler),
+				Rc::clone(&restore_complete_handler),
+			);
+		});
+
+		let button_for_username = login_button.clone();
+		username_entry.connect_activate(move |_| {
+			button_for_username.emit_clicked();
+		});
+
+		let button_for_password = login_button.clone();
+		password_entry.connect_activate(move |_| {
+			button_for_password.emit_clicked();
+		});
+
+		let button_for_totp = login_button.clone();
+		totp_entry.connect_activate(move |_| {
+			button_for_totp.emit_clicked();
+		});
+
+		let step_for_button = step_stack.clone();
+		let button_label_for_step = button_label.clone();
+		let step_for_button_watch = step_stack.clone();
+		step_stack.connect_visible_child_name_notify(move |_| {
+			let is_totp_step = step_for_button_watch.visible_child_name().as_ref().map_or(false, |n| n == "totp");
+			button_label_for_step.set_text(if is_totp_step { "Vérifier" } else { "Connexion" });
+		});
+
+		let dialog_for_submit = window.clone();
+		let username_for_submit = username_entry.clone();
+		let password_for_submit = password_entry.clone();
+		let strength_for_submit = strength_label.clone();
+		let totp_for_submit = totp_entry.clone();
+		let error_for_submit = error_label.clone();
+		let button_for_submit = login_button.clone();
+		let spinner_for_submit = spinner.clone();
+		let authenticated_for_submit = Rc::clone(&authenticated);
+		let on_authenticated_for_submit = Rc::clone(&on_authenticated);
+		let auth_for_submit = Arc::clone(&auth_service);
+		let auth_policy_for_submit = Arc::clone(&auth_policy_service);
+		let user_for_submit = Arc::clone(&user_service);
+		let runtime_for_submit = runtime_handle.clone();
+		let lock_active_for_submit = Rc::clone(&lock_active);
+		let lock_timer_for_submit = Rc::clone(&lock_timer);
 
 		root.append(&hero_frame);
 		root.append(&form_card);
@@ -448,69 +553,6 @@ impl LoginDialog {
 		back_button.connect_clicked(move |_| {
 			dialog_for_back.close();
 		});
-
-		// Back to credentials button handler
-		let step_for_back = step_stack.clone();
-		let totp_entry_for_back = totp_entry.clone();
-		let error_for_back = error_label.clone();
-		totp_back_button.connect_clicked(move |_| {
-			step_for_back.set_visible_child_name("credentials");
-			totp_entry_for_back.set_text("");
-			Self::clear_feedback(&error_for_back);
-		});
-
-		let restore_parent = window.clone();
-		let restore_request_handler = Arc::clone(&on_restore_requested);
-		let restore_complete_handler = Rc::clone(&on_restore_completed);
-		restore_button.connect_clicked(move |_| {
-			Self::present_restore_dialog(
-				&restore_parent,
-				Arc::clone(&restore_request_handler),
-				Rc::clone(&restore_complete_handler),
-			);
-		});
-
-		let button_for_username = login_button.clone();
-		username_entry.connect_activate(move |_| {
-			button_for_username.emit_clicked();
-		});
-
-		let button_for_password = login_button.clone();
-		password_entry.connect_activate(move |_| {
-			button_for_password.emit_clicked();
-		});
-
-		let button_for_totp = login_button.clone();
-		totp_entry.connect_activate(move |_| {
-			button_for_totp.emit_clicked();
-		});
-
-		let step_for_button = step_stack.clone();
-		let button_label_for_step = button_label.clone();
-		let step_for_button_watch = step_stack.clone();
-		let totp_back_button_for_step = totp_back_button.clone();
-		step_stack.connect_visible_child_name_notify(move |_| {
-			let is_totp_step = step_for_button_watch.visible_child_name().as_ref().map_or(false, |n| n == "totp");
-			button_label_for_step.set_text(if is_totp_step { "Vérifier" } else { "Connexion" });
-			totp_back_button_for_step.set_visible(is_totp_step);
-		});
-
-		let dialog_for_submit = window.clone();
-		let username_for_submit = username_entry.clone();
-		let password_for_submit = password_entry.clone();
-		let strength_for_submit = strength_label.clone();
-		let totp_for_submit = totp_entry.clone();
-		let error_for_submit = error_label.clone();
-		let button_for_submit = login_button.clone();
-		let spinner_for_submit = spinner.clone();
-		let authenticated_for_submit = Rc::clone(&authenticated);
-		let on_authenticated_for_submit = Rc::clone(&on_authenticated);
-		let auth_for_submit = Arc::clone(&auth_service);
-		let auth_policy_for_submit = Arc::clone(&auth_policy_service);
-		let user_for_submit = Arc::clone(&user_service);
-		let runtime_for_submit = runtime_handle.clone();
-		let lock_active_for_submit = Rc::clone(&lock_active);
-		let lock_timer_for_submit = Rc::clone(&lock_timer);
 
 		login_button.connect_clicked(move |_| {
 			if lock_active_for_submit.get() {

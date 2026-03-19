@@ -1,10 +1,14 @@
 [package]
 name = "heelonvault-rust"
-version = "0.2.0"
+version = "0.9.0-beta"
 edition = "2021"
 license = "MIT"
 description = "HeelonVault Rust migration skeleton (security-first architecture)"
 repository = "<private>"
+
+[[bin]]
+name = "heelonvault"
+path = "src/main.rs"
 
 [features]
 default = []

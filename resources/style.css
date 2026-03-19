@@ -1553,6 +1553,16 @@ window {
     color: rgba(255, 255, 255, 0.82);
 }
 
+.login-hero-badge {
+    background: rgba(255, 255, 255, 0.12);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    color: rgba(255, 255, 255, 0.85);
+    border-radius: 999px;
+    padding: 3px 10px;
+    font-size: 0.78rem;
+    font-weight: 600;
+}
+
 .login-badge {
     background: rgba(255, 255, 255, 0.14);
     color: #A4DFCF;
@@ -1561,48 +1571,68 @@ window {
     font-weight: 700;
 }
 
+.beta-badge {
+    border-radius: 999px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.login-beta-badge {
+    background: linear-gradient(120deg, #F7D66E, #E8A43A);
+    color: #5A2E00;
+    border: 1px solid rgba(255, 255, 255, 0.45);
+    padding: 5px 11px;
+    font-size: 0.70rem;
+    box-shadow: 0 8px 16px rgba(232, 164, 58, 0.30);
+}
+
 .login-card {
     background: linear-gradient(135deg, #FFFFFF, #F3F6F3);
 }
 
-.login-cps-teaser {
-    background: linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(234, 248, 246, 0.94));
-    border-radius: 16px;
-    border: 1px solid rgba(87, 185, 177, 0.55);
-    box-shadow: 0 12px 24px rgba(7, 57, 58, 0.10);
+frame.login-cps-teaser {
+    border: 1px solid rgba(164, 223, 207, 0.85);
+    border-radius: 12px;
+    background: rgba(164, 223, 207, 0.14);
+    opacity: 1.0;
 }
 
 .login-cps-image {
-    border-radius: 12px;
-    box-shadow: 0 8px 18px rgba(7, 57, 58, 0.12);
-    min-width: 128px;
+    border-radius: 6px;
 }
 
 .login-cps-badge {
-    background: rgba(19, 161, 161, 0.12);
-    color: #0A5F5C;
-    border: 1px solid rgba(19, 161, 161, 0.28);
+    background: rgba(19, 161, 161, 0.18);
+    border: 1px solid rgba(19, 161, 161, 0.45);
+    color: #07393A;
     border-radius: 999px;
-    padding: 4px 10px;
+    padding: 3px 10px;
+    font-size: 0.72rem;
     font-weight: 700;
 }
 
 .login-cps-title {
+    font-size: 0.84rem;
+    font-weight: 700;
     color: #07393A;
-    font-size: 0.98rem;
-    font-weight: 780;
-    letter-spacing: 0.01em;
 }
 
 .login-cps-copy {
-    color: #5F7E80;
-    font-size: 0.86rem;
-    font-weight: 500;
+    font-size: 0.76rem;
+    color: #4A6572;
 }
 
 .login-field-label {
-    color: #07393A;
+    font-size: 0.72rem;
     font-weight: 700;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #07393A;
+}
+
+.login-field-label-caps {
+    text-transform: uppercase;
 }
 
 .login-support-copy,
@@ -1632,6 +1662,12 @@ entry.login-totp-entry {
     letter-spacing: 0.18rem;
 }
 
+.login-totp-icon {
+    color: #13A1A1;
+    margin-top: 8px;
+    margin-bottom: 4px;
+}
+
 button.primary-pill,
 button.secondary-pill {
     border-radius: 999px;
@@ -1643,12 +1679,17 @@ button.secondary-pill {
 button.primary-pill {
     background: linear-gradient(120deg, #13A1A1, #1F8678);
     color: #FFFFFF;
-    box-shadow: 0 12px 22px rgba(19, 161, 161, 0.24);
+    box-shadow: 0 8px 20px rgba(19, 161, 161, 0.28);
 }
 
 button.primary-pill:hover {
     transform: translateY(-2px);
-    box-shadow: 0 16px 26px rgba(19, 161, 161, 0.32);
+    box-shadow: 0 12px 26px rgba(19, 161, 161, 0.38);
+}
+
+.login-sec-dot {
+    color: #13A1A1;
+    font-weight: 900;
 }
 
 button.secondary-pill {
@@ -1693,6 +1734,17 @@ headerbar.main-headerbar {
 .main-title {
     color: #FFFFFF;
     font-weight: 800;
+}
+
+.header-beta-badge {
+    background: rgba(247, 214, 110, 0.92);
+    color: #4D2600;
+    border: 1px solid rgba(255, 255, 255, 0.35);
+    padding: 2px 10px;
+    font-size: 0.66rem;
+    margin-left: 2px;
+    min-height: 20px;
+    box-shadow: 0 4px 12px rgba(7, 57, 58, 0.22);
 }
 
 button.main-add-button {

@@ -1,6 +1,6 @@
 # Quickstart (Rust)
 
-Version rapide documentée: `0.2.0`
+Version rapide documentée: `0.9.0-beta`
 
 ## 1. Build Check
 
@@ -44,7 +44,7 @@ cargo build --release
 
 The production launcher expects:
 
-- Binary path: `/opt/heelonvault/target/release/heelonvault-rust`
+- Binary path: `/opt/heelonvault/target/release/heelonvault`
 - Launcher: `/opt/heelonvault/run.sh`
 - Production database path: `/var/lib/heelonvault-rust-shared/heelonvault.db`
 

@@ -1,6 +1,6 @@
 # Architecture du projet (Rust)
 
-Version cible documentée: `0.2.0`
+Version cible documentée: `0.9.0-beta`
 
 ## Vue d'ensemble
 
@@ -32,7 +32,7 @@ HeelonVault/
 │   ├── repositories/               # Acces DB (SQLx)
 │   ├── models/                     # Types metier
 │   ├── config/                     # Constantes/config runtime
-│   └── errors/                     # Erreurs applicatives
+│   └── errors.rs                   # Erreurs applicatives
 ├── migrations/                     # Migrations SQL appliquees au demarrage
 ├── tests/                          # Tests integration/securite
 ├── Cargo.toml
@@ -98,7 +98,7 @@ Le moteur applique:
 
 - Dev: `data/heelonvault-rust-dev.db`
 - Prod: `/var/lib/heelonvault-rust-shared/heelonvault.db`
-- Legacy Python a ne pas toucher: `/var/lib/heelonvault-shared`
+- Legacy Python a ne pas toucher: `/var/lib/heelonvault-shared` (hors runtime actif)
 
 ## Logs (runtime)
 
@@ -108,7 +108,7 @@ Le moteur applique:
 - Defauts launchers:
   - Dev (`run-dev.sh`): `HEELONVAULT_LOG_LEVEL=debug`, `HEELONVAULT_LOG_DIR=./logs`
   - Prod (`run.sh`): `HEELONVAULT_LOG_LEVEL=info`, `HEELONVAULT_LOG_DIR=/var/lib/heelonvault-rust-shared/logs`
-- Fichiers de rotation: `heelonvault.log.YYYY-MM-DD` dans le dossier configure.
+- Fichiers de rotation: `heelonvault_YYYYMMDD.log` dans le dossier configure.
 
 Exemples:
 
@@ -131,5 +131,6 @@ cargo test
 
 ## Notes migration
 
-- Le code legacy Python a ete retire du repository actif.
+- Le runtime et les scripts operationnels actifs sont Rust-only.
+- Des artefacts legacy peuvent subsister (ex. repertoires vides), sans impact sur l'execution courante.
 - Les docs et scripts operationnels doivent rester alignes sur le flux Rust-only.

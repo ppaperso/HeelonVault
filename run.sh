@@ -4,7 +4,7 @@
 set -euo pipefail
 
 APP_DIR="/opt/heelonvault"
-BIN_PATH="${APP_DIR}/target/release/heelonvault-rust"
+BIN_PATH="${APP_DIR}/target/release/heelonvault"
 PROD_DB_DIR="/var/lib/heelonvault-rust-shared"
 PROD_DB_PATH="${PROD_DB_DIR}/heelonvault.db"
 PROD_LOG_DIR="${PROD_DB_DIR}/logs"

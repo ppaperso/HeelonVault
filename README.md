@@ -1,8 +1,8 @@
-# HeelonVault 0.2.0
+# HeelonVault 0.9.0-beta
 
 HeelonVault est un gestionnaire de secrets desktop en Rust, construit avec GTK4/libadwaita et SQLite.
 
-La version 0.2.0 stabilise le runtime Rust-only et introduit une passe UI/UX importante:
+La version 0.9.0-beta stabilise le runtime Rust-only et introduit une passe UI/UX importante:
 
 - vue principale dimensionnée dynamiquement au lancement;
 - navigation inline `Profil & Sécurité` dans la page principale;
@@ -71,7 +71,7 @@ cargo test
 - `SECURITY.md`
 - `docs/PLAN_ADD_UPDATE_TRASH_SECRET.md`
 
-## Notes de version 0.2.0
+## Notes de version 0.9.0-beta
 
 ### UI / UX
 

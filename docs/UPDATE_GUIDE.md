@@ -1,6 +1,6 @@
 # Guide de Mise a Jour en Production (Rust)
 
-Version documentée: `0.2.0`
+Version documentée: `0.9.0-beta`
 
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
@@ -34,7 +34,7 @@ Le script effectue:
 5. Build release Rust (`cargo build --release`).
 6. Ajustement des permissions du dossier de donnees Rust.
 
-## Changements applicatifs 0.2.0 a verifier apres update
+## Changements applicatifs 0.9.0-beta a verifier apres update
 
 - migration `0007_login_history.sql` appliquee;
 - migration `0008_user_show_passwords_in_edit.sql` appliquee;

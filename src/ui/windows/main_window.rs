@@ -166,6 +166,7 @@ impl MainWindow {
 		let session_master_key = Rc::new(RefCell::new(admin_master_key));
 		let on_auto_lock: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
 		let on_logout: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+		let critical_ops_in_flight = Rc::new(Cell::new(0_u32));
 
 		let header_bar = adw::HeaderBar::new();
 		header_bar.add_css_class("main-headerbar");
@@ -174,7 +175,17 @@ impl MainWindow {
 		header_bar.set_decoration_layout(Some(":close"));
 
 		let on_logout_for_close = Rc::clone(&on_logout);
-		window.connect_close_request(move |_| {
+		let critical_ops_for_close = Rc::clone(&critical_ops_in_flight);
+		window.connect_close_request(move |win| {
+			if critical_ops_for_close.get() > 0 {
+				Self::show_feedback_dialog(
+					win,
+					"Opération en cours",
+					"Une opération d'import/export est en cours. Attendez la fin avant de fermer la fenêtre.",
+				);
+				return glib::Propagation::Stop;
+			}
+
 			if let Some(callback) = on_logout_for_close.borrow().as_ref() {
 				callback();
 			}
@@ -196,8 +207,12 @@ impl MainWindow {
 		let title_label = gtk4::Label::new(Some("HeelonVault"));
 		title_label.add_css_class("title-3");
 		title_label.add_css_class("main-title");
+		let header_beta_badge = gtk4::Label::new(Some("BETA"));
+		header_beta_badge.add_css_class("beta-badge");
+		header_beta_badge.add_css_class("header-beta-badge");
 		title_box.append(&logo);
 		title_box.append(&title_label);
+		title_box.append(&header_beta_badge);
 		header_bar.set_title_widget(Some(&title_box));
 
 		let profile_button = gtk4::MenuButton::new();
@@ -391,6 +406,7 @@ impl MainWindow {
 			database_path.clone(),
 			admin_user_id,
 			profile_button.clone(),
+				Rc::clone(&critical_ops_in_flight),
 			Rc::clone(&auto_lock_timeout_secs),
 			Rc::clone(&auto_lock_source),
 			Rc::clone(&auto_lock_armed),
@@ -1280,6 +1296,7 @@ impl MainWindow {
 		database_path: PathBuf,
 		user_id: Uuid,
 		profile_badge: gtk4::MenuButton,
+		critical_ops_in_flight: Rc<Cell<u32>>,
 		auto_lock_timeout_secs: Rc<Cell<u64>>,
 		auto_lock_source: Rc<RefCell<Option<glib::SourceId>>>,
 		auto_lock_armed: Rc<Cell<bool>>,
@@ -1838,6 +1855,32 @@ impl MainWindow {
 			}
 			glib::ControlFlow::Continue
 		});
+
+		let begin_critical_operation: Rc<dyn Fn()> = {
+			let counter = Rc::clone(&critical_ops_in_flight);
+			let export_btn = export_button.clone();
+			let import_btn = import_button.clone();
+			Rc::new(move || {
+				let next = counter.get().saturating_add(1);
+				counter.set(next);
+				export_btn.set_sensitive(false);
+				import_btn.set_sensitive(false);
+			})
+		};
+
+		let end_critical_operation: Rc<dyn Fn()> = {
+			let counter = Rc::clone(&critical_ops_in_flight);
+			let export_btn = export_button.clone();
+			let import_btn = import_button.clone();
+			Rc::new(move || {
+				let next = counter.get().saturating_sub(1);
+				counter.set(next);
+				if next == 0 {
+					export_btn.set_sensitive(true);
+					import_btn.set_sensitive(true);
+				}
+			})
+		};
 
 		let loading_lock = Rc::new(Cell::new(true));
 		let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -2448,6 +2491,8 @@ impl MainWindow {
 		let window_for_export = window.clone();
 		let backup_for_export = Arc::clone(&backup_service);
 		let database_path_for_export = database_path.clone();
+		let begin_critical_for_export = Rc::clone(&begin_critical_operation);
+		let end_critical_for_export = Rc::clone(&end_critical_operation);
 		export_button.connect_clicked(move |_| {
 			let chooser = gtk4::FileChooserNative::builder()
 				.title("Exporter la base chiffrée")
@@ -2461,6 +2506,8 @@ impl MainWindow {
 			let window_for_response = window_for_export.clone();
 			let backup_for_response = Arc::clone(&backup_for_export);
 			let db_path_for_response = database_path_for_export.clone();
+			let begin_critical_for_response = Rc::clone(&begin_critical_for_export);
+			let end_critical_for_response = Rc::clone(&end_critical_for_export);
 			chooser.connect_response(move |dialog, response| {
 				if response != gtk4::ResponseType::Accept {
 					dialog.destroy();
@@ -2499,6 +2546,7 @@ impl MainWindow {
 				let db_for_task = db_path_for_response.clone();
 				let path_for_task = export_path.clone();
 				let phrase_for_task = recovery.recovery_phrase.clone();
+				begin_critical_for_response();
 				std::thread::spawn(move || {
 					let result = backup_for_task.export_hvb_with_recovery_key(
 						db_for_task.as_path(),
@@ -2509,8 +2557,11 @@ impl MainWindow {
 				});
 
 				let window_for_result = window_for_response.clone();
+				let end_critical_for_result = Rc::clone(&end_critical_for_response);
 				glib::MainContext::default().spawn_local(async move {
-					match receiver.await {
+					let result = receiver.await;
+					end_critical_for_result();
+					match result {
 						Ok(Ok(_)) => {
 							let message = format!(
 								"Export terminé. Notez votre Recovery Key:\n\n{}",
@@ -2535,6 +2586,8 @@ impl MainWindow {
 		let runtime_for_import = runtime_handle.clone();
 		let session_for_import = Rc::clone(&session_master_key);
 		let refresh_for_import = Rc::clone(&on_import_completed_refresh);
+		let begin_critical_for_import = Rc::clone(&begin_critical_operation);
+		let end_critical_for_import = Rc::clone(&end_critical_operation);
 		import_button.connect_clicked(move |_| {
 			let chooser = gtk4::FileChooserNative::builder()
 				.title("Importer des données CSV")
@@ -2551,6 +2604,8 @@ impl MainWindow {
 			let runtime_for_response = runtime_for_import.clone();
 			let session_for_response = Rc::clone(&session_for_import);
 			let refresh_for_response = Rc::clone(&refresh_for_import);
+			let begin_critical_for_response = Rc::clone(&begin_critical_for_import);
+			let end_critical_for_response = Rc::clone(&end_critical_for_import);
 			chooser.connect_response(move |dialog, response| {
 				if response != gtk4::ResponseType::Accept {
 					dialog.destroy();
@@ -2582,6 +2637,7 @@ impl MainWindow {
 				let secret_for_task = Arc::clone(&secret_for_response);
 				let vault_for_task = Arc::clone(&vault_for_response);
 				let runtime_for_task = runtime_for_response.clone();
+				begin_critical_for_response();
 				std::thread::spawn(move || {
 					let result = runtime_for_task.block_on(async move {
 						import_for_task
@@ -2599,8 +2655,11 @@ impl MainWindow {
 
 				let window_for_result = window_for_response.clone();
 				let refresh_for_result = Rc::clone(&refresh_for_response);
+				let end_critical_for_result = Rc::clone(&end_critical_for_response);
 				glib::MainContext::default().spawn_local(async move {
-					match receiver.await {
+					let result = receiver.await;
+					end_critical_for_result();
+					match result {
 						Ok(Ok(count)) => {
 							refresh_for_result();
 							let message = format!("Import CSV terminé: {} secrets.", count);
