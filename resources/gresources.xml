@@ -5,6 +5,7 @@
     <file>icons/hicolor/48x48/apps/heelonvault.png</file>
     <file>icons/hicolor/128x128/apps/heelonvault.png</file>
     <file>icons/hicolor/256x256/apps/heelonvault.png</file>
+    <file>images/cps_card.png</file>
     <file>style.css</file>
   </gresource>
 </gresources>

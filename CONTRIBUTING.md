@@ -4,7 +4,7 @@ Thanks for contributing to HeelonVault.
 
 ## Scope
 
-- Main application code lives in `rust/`.
+- Main application code lives at the repository root.
 - Legacy Python code was removed from this repository.
 - Keep contributions Rust-first and security-focused.
 
@@ -21,7 +21,6 @@ Setup:
 ```bash
 git clone <repo-url>
 cd HeelonVault
-cd rust
 cargo check
 ```
 
@@ -46,7 +45,7 @@ Database paths:
 
 ## Test Commands
 
-From `rust/`:
+From repository root:
 
 ```bash
 cargo check

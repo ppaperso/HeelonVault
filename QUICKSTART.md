@@ -5,7 +5,6 @@ Version rapide documentée: `0.2.0`
 ## 1. Build Check
 
 ```bash
-cd rust
 cargo check
 ```
 
@@ -24,7 +23,7 @@ Development database path:
 ## 3. Run Tests
 
 ```bash
-cd rust
+cargo test secret_repository:: -- --nocapture
 cargo test secret_repository:: -- --nocapture
 cargo test secret_service:: -- --nocapture
 cargo test --test login_history_integration
@@ -40,13 +39,12 @@ cargo test --test login_history_integration
 ## 4. Production Build
 
 ```bash
-cd rust
 cargo build --release
 ```
 
 The production launcher expects:
 
-- Binary path: `/opt/heelonvault/rust/target/release/heelonvault-rust`
+- Binary path: `/opt/heelonvault/target/release/heelonvault-rust`
 - Launcher: `/opt/heelonvault/run.sh`
 - Production database path: `/var/lib/heelonvault-rust-shared/heelonvault.db`
 

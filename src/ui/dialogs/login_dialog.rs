@@ -168,6 +168,52 @@ impl LoginDialog {
 		security_hint.set_wrap(true);
 		security_hint.set_halign(Align::Start);
 
+		let cps_frame = gtk4::Frame::new(None);
+		cps_frame.add_css_class("login-cps-teaser");
+
+		let cps_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(14)
+			.margin_top(14)
+			.margin_bottom(14)
+			.margin_start(14)
+			.margin_end(14)
+			.build();
+
+		let cps_image = gtk4::Image::from_resource("/com/heelonvault/rust/images/cps_card.png");
+		cps_image.add_css_class("login-cps-image");
+		cps_image.set_halign(Align::Center);
+		cps_image.set_valign(Align::Center);
+
+		let cps_text_box = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(4)
+			.hexpand(true)
+			.build();
+
+		let cps_badge = gtk4::Label::new(Some("CPS · En préparation"));
+		cps_badge.add_css_class("login-cps-badge");
+		cps_badge.set_halign(Align::Start);
+
+		let cps_title = gtk4::Label::new(Some("Authentification par carte CPS bientôt disponible"));
+		cps_title.add_css_class("login-cps-title");
+		cps_title.set_wrap(true);
+		cps_title.set_halign(Align::Start);
+
+		let cps_subtitle = gtk4::Label::new(Some(
+			"Le développement est en cours pour cette fonctionnalité. Utilisez votre identifiant et votre mot de passe en attendant.",
+		));
+		cps_subtitle.add_css_class("login-cps-copy");
+		cps_subtitle.set_wrap(true);
+		cps_subtitle.set_halign(Align::Start);
+
+		cps_text_box.append(&cps_badge);
+		cps_text_box.append(&cps_title);
+		cps_text_box.append(&cps_subtitle);
+		cps_box.append(&cps_image);
+		cps_box.append(&cps_text_box);
+		cps_frame.set_child(Some(&cps_box));
+
 		let username_label = gtk4::Label::new(Some("Identifiant"));
 		username_label.add_css_class("login-field-label");
 		username_label.set_halign(Align::Start);
@@ -297,8 +343,10 @@ impl LoginDialog {
 		let totp_back_button = gtk4::Button::with_label("← Retour");
 		totp_back_button.add_css_class("flat");
 		totp_back_button.set_halign(Align::Start);
+		totp_back_button.set_visible(false);
 
 		form_box.append(&security_hint);
+		form_box.append(&cps_frame);
 		form_box.append(&step_stack);
 		form_box.append(&error_label);
 		form_box.append(&restore_button);
@@ -440,9 +488,11 @@ impl LoginDialog {
 		let step_for_button = step_stack.clone();
 		let button_label_for_step = button_label.clone();
 		let step_for_button_watch = step_stack.clone();
+		let totp_back_button_for_step = totp_back_button.clone();
 		step_stack.connect_visible_child_name_notify(move |_| {
 			let is_totp_step = step_for_button_watch.visible_child_name().as_ref().map_or(false, |n| n == "totp");
 			button_label_for_step.set_text(if is_totp_step { "Vérifier" } else { "Connexion" });
+			totp_back_button_for_step.set_visible(is_totp_step);
 		});
 
 		let dialog_for_submit = window.clone();

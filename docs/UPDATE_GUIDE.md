@@ -61,16 +61,16 @@ sudo tar -xzf /var/backups/heelonvault/heelonvault_YYYYMMDD_HHMMSS.tar.gz -C /
 
 ```bash
 # binaire release present
-test -x /opt/heelonvault/rust/target/release/heelonvault-rust && echo OK
+test -x /opt/heelonvault/target/release/heelonvault-rust && echo OK
 
 # variable de chemin DB attendue par le launcher
 sed -n '1,80p' /opt/heelonvault/run.sh
 
 # build local de controle (optionnel)
-cd /opt/heelonvault/rust && cargo check
+cd /opt/heelonvault && cargo check
 
 # migrations presentes
-ls -1 /opt/heelonvault/rust/migrations
+ls -1 /opt/heelonvault/migrations
 ```
 
 Vérifications fonctionnelles recommandées:

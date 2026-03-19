@@ -1,7 +1,7 @@
 # ─── Rust ───────────────────────────────────────
-rust/target/
-rust/**/*.rs.bk
-rust/Cargo.lock.bak
+/target/
+/**/*.rs.bk
+/Cargo.lock.bak
 
 # Database files (SENSITIVE)
 *.db

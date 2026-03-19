@@ -6,7 +6,7 @@ Version cible documentée: `0.2.0`
 
 HeelonVault est désormais un runtime Rust-only orienté desktop GTK.
 
-- Runtime applicatif: `rust/`
+- Runtime applicatif: racine du dépôt
 - UI desktop: GTK4 + libadwaita
 - Base de donnees: SQLite
 - Migrations SQL: `sqlx::migrate!` au demarrage
@@ -25,18 +25,17 @@ UI (gtk4/libadwaita)
 
 ```text
 HeelonVault/
-├── rust/
-│   ├── src/
-│   │   ├── main.rs                 # Bootstrap runtime + UI
-│   │   ├── ui/                     # Fenetres + dialogues GTK/adw
-│   │   ├── services/               # Regles metier
-│   │   ├── repositories/           # Acces DB (SQLx)
-│   │   ├── models/                 # Types metier
-│   │   ├── config/                 # Constantes/config runtime
-│   │   └── errors/                 # Erreurs applicatives
-│   ├── migrations/                 # Migrations SQL appliquees au demarrage
-│   ├── tests/                      # Tests integration/securite
-│   └── Cargo.toml
+├── src/
+│   ├── main.rs                     # Bootstrap runtime + UI
+│   ├── ui/                         # Fenetres + dialogues GTK/adw
+│   ├── services/                   # Regles metier
+│   ├── repositories/               # Acces DB (SQLx)
+│   ├── models/                     # Types metier
+│   ├── config/                     # Constantes/config runtime
+│   └── errors/                     # Erreurs applicatives
+├── migrations/                     # Migrations SQL appliquees au demarrage
+├── tests/                          # Tests integration/securite
+├── Cargo.toml
 ├── run.sh                          # Launcher production
 ├── run-dev.sh                      # Launcher developpement
 ├── install.sh                      # Installation Rust-only
@@ -123,7 +122,7 @@ HEELONVAULT_LOG_LEVEL=warn ./run.sh
 
 ## Tests et validation
 
-Depuis `rust/`:
+Depuis la racine du dépôt:
 
 ```bash
 cargo check

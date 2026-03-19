@@ -14,8 +14,8 @@ For development and tests, use root-level scripts and Rust commands:
 
 ```bash
 ./run-dev.sh
-cd rust && cargo check
-cd rust && cargo test
+cargo check
+cargo test
 ```
 
 Data path notes:

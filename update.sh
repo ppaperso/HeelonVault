@@ -49,7 +49,7 @@ rsync -a --delete \
 chmod +x "$INSTALL_DIR/run.sh" "$INSTALL_DIR/run-dev.sh"
 
 echo "[INFO] Building release binary"
-cd "$INSTALL_DIR/rust"
+cd "$INSTALL_DIR"
 cargo build --release
 
 mkdir -p "$DATA_DIR"

@@ -1565,6 +1565,41 @@ window {
     background: linear-gradient(135deg, #FFFFFF, #F3F6F3);
 }
 
+.login-cps-teaser {
+    background: linear-gradient(140deg, rgba(255, 255, 255, 0.97), rgba(234, 248, 246, 0.94));
+    border-radius: 16px;
+    border: 1px solid rgba(87, 185, 177, 0.55);
+    box-shadow: 0 12px 24px rgba(7, 57, 58, 0.10);
+}
+
+.login-cps-image {
+    border-radius: 12px;
+    box-shadow: 0 8px 18px rgba(7, 57, 58, 0.12);
+    min-width: 128px;
+}
+
+.login-cps-badge {
+    background: rgba(19, 161, 161, 0.12);
+    color: #0A5F5C;
+    border: 1px solid rgba(19, 161, 161, 0.28);
+    border-radius: 999px;
+    padding: 4px 10px;
+    font-weight: 700;
+}
+
+.login-cps-title {
+    color: #07393A;
+    font-size: 0.98rem;
+    font-weight: 780;
+    letter-spacing: 0.01em;
+}
+
+.login-cps-copy {
+    color: #5F7E80;
+    font-size: 0.86rem;
+    font-weight: 500;
+}
+
 .login-field-label {
     color: #07393A;
     font-weight: 700;

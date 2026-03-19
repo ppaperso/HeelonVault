@@ -1087,7 +1087,7 @@ impl MainWindow {
 	fn map_twofa_error(error: &crate::errors::AppError, fallback: &str) -> String {
 		match error {
 			crate::errors::AppError::Authorization(_) => {
-				"Mot de passe actuel invalide. Impossible de valider l'activation 2FA.".to_string()
+				"Code TOTP invalide. Vérifiez l'horloge de votre appareil puis réessayez.".to_string()
 			}
 			crate::errors::AppError::Validation(message) => {
 				if message.to_ascii_lowercase().contains("code") {
@@ -1641,10 +1641,9 @@ impl MainWindow {
 		twofa_setup_copy.set_wrap(true);
 		twofa_setup_copy.add_css_class("dim-label");
 		twofa_setup_copy.add_css_class("profile-section-subtitle");
-		let twofa_qr_label = gtk4::Label::new(None);
-		twofa_qr_label.set_halign(Align::Start);
-		twofa_qr_label.set_selectable(true);
-		twofa_qr_label.add_css_class("monospace");
+		let twofa_qr_picture = gtk4::Picture::new();
+		twofa_qr_picture.set_size_request(200, 200);
+		twofa_qr_picture.add_css_class("totp-qr-container");
 		let twofa_secret_label = gtk4::Label::new(Some("Secret Base32"));
 		twofa_secret_label.set_halign(Align::Start);
 		twofa_secret_label.add_css_class("profile-field-label");
@@ -1673,7 +1672,7 @@ impl MainWindow {
 		twofa_setup_actions.append(&twofa_cancel_setup_button);
 		for widget in [
 			twofa_setup_copy.upcast_ref::<gtk4::Widget>(),
-			twofa_qr_label.upcast_ref::<gtk4::Widget>(),
+			twofa_qr_picture.upcast_ref::<gtk4::Widget>(),
 			twofa_secret_label.upcast_ref::<gtk4::Widget>(),
 			twofa_secret_entry.upcast_ref::<gtk4::Widget>(),
 			twofa_code_label.upcast_ref::<gtk4::Widget>(),
@@ -2198,7 +2197,7 @@ impl MainWindow {
 
 		let username_for_twofa_activate = username_entry.clone();
 		let twofa_stack_for_activate = twofa_stack.clone();
-		let twofa_qr_for_activate = twofa_qr_label.clone();
+		let twofa_qr_for_activate = twofa_qr_picture.clone();
 		let twofa_secret_for_activate = twofa_secret_entry.clone();
 		let twofa_code_for_activate = twofa_code_entry.clone();
 		let twofa_status_for_activate = twofa_status_label.clone();
@@ -2218,7 +2217,13 @@ impl MainWindow {
 			match totp_for_activate.create_setup_payload(username.as_str()) {
 				Ok(payload) => {
 					*pending_secret_for_activate.borrow_mut() = Some(payload.base32_secret.clone());
-					twofa_qr_for_activate.set_text(payload.qr_ascii.as_str());
+					let loader = gtk4::gdk_pixbuf::PixbufLoader::new();
+					if loader.write(&payload.qr_png).is_ok() && loader.close().is_ok() {
+						if let Some(pixbuf) = loader.pixbuf() {
+							let texture = gtk4::gdk::Texture::for_pixbuf(&pixbuf);
+							twofa_qr_for_activate.set_paintable(Some(&texture));
+						}
+					}
 					twofa_secret_for_activate.set_text(payload.base32_secret.as_str());
 					twofa_code_for_activate.set_text("");
 					twofa_stack_for_activate.set_visible_child_name("setup");
@@ -2256,7 +2261,6 @@ impl MainWindow {
 		});
 
 		let username_for_twofa_confirm = username_entry.clone();
-		let current_pw_for_twofa_confirm = current_pw_entry.clone();
 		let twofa_code_for_confirm = twofa_code_entry.clone();
 		let twofa_stack_for_confirm = twofa_stack.clone();
 		let twofa_status_for_confirm = twofa_status_label.clone();
@@ -2267,7 +2271,6 @@ impl MainWindow {
 		twofa_confirm_button.connect_clicked(move |_| {
 			let username = username_for_twofa_confirm.text().trim().to_string();
 			let code = twofa_code_for_confirm.text().trim().to_string();
-			let current_password = current_pw_for_twofa_confirm.text().trim().to_string();
 
 			if username.is_empty() {
 				Self::set_inline_status(
@@ -2286,15 +2289,6 @@ impl MainWindow {
 				);
 				return;
 			};
-
-			if current_password.is_empty() {
-				Self::set_inline_status(
-					&twofa_status_for_confirm,
-					"Le mot de passe actuel est requis pour activer la 2FA.",
-					"error",
-				);
-				return;
-			}
 
 			if let Some(validation_message) = messages::validate_totp_code_format(code.as_str()) {
 				Self::set_inline_status(
@@ -2322,8 +2316,8 @@ impl MainWindow {
 								.enable_totp(
 									user_id,
 									username.as_str(),
-									SecretBox::new(Box::new(current_password.into_bytes())),
 									secret.as_str(),
+									code.as_str(),
 								)
 								.await
 						});

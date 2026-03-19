@@ -599,7 +599,44 @@ fn resolve_database_path() -> Result<PathBuf> {
 	}
 
 	let current_dir = env::current_dir().context("failed to resolve current directory")?;
-	Ok(current_dir.join("data").join("heelonvault-rust-dev.db"))
+	Ok(resolve_default_database_path(&current_dir))
+}
+
+fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
+	let db_name = "heelonvault-rust-dev.db";
+	if current_dir.file_name().is_some_and(|name| name == "rust") {
+		if let Some(project_root) = current_dir.parent() {
+			return project_root.join("data").join(db_name);
+		}
+	}
+
+	current_dir.join("data").join(db_name)
+}
+
+#[cfg(test)]
+mod tests {
+	use super::resolve_default_database_path;
+	use std::path::Path;
+
+	#[test]
+	fn default_database_path_uses_root_data_when_cwd_is_project_root() {
+		let project_root = Path::new("/tmp/heelonvault");
+		assert_eq!(
+			resolve_default_database_path(project_root),
+			project_root.join("data").join("heelonvault-rust-dev.db")
+		);
+	}
+
+	#[test]
+	fn default_database_path_uses_parent_data_when_cwd_is_rust_dir() {
+		let rust_dir = Path::new("/tmp/heelonvault/rust");
+		assert_eq!(
+			resolve_default_database_path(rust_dir),
+			Path::new("/tmp/heelonvault")
+				.join("data")
+				.join("heelonvault-rust-dev.db")
+		);
+	}
 }
 
 fn build_restore_staging_path(database_path: &Path) -> PathBuf {

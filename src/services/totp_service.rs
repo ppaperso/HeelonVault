@@ -1,4 +1,4 @@
-use qrcode::render::unicode;
+use image::ImageFormat;
 use qrcode::QrCode;
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::{Row, SqlitePool};
@@ -12,12 +12,15 @@ use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN
 const TOTP_DIGITS: usize = 6;
 const TOTP_STEP: u64 = 30;
 const TOTP_SKEW: u8 = 1;
+const PASSWORD_ENVELOPE_VERSION: u8 = 1;
+const LEGACY_DEV_MASTER_KEY_BYTE: u8 = 0x41;
+const LEGACY_DEV_MASTER_KEY_LEN: usize = 32;
 
 #[derive(Debug, Clone)]
 pub struct TotpSetupPayload {
     pub base32_secret: String,
     pub otpauth_url: String,
-    pub qr_ascii: String,
+    pub qr_png: Vec<u8>,
 }
 
 #[allow(async_fn_in_trait)]
@@ -35,8 +38,8 @@ pub trait TotpService {
         &self,
         user_id: Uuid,
         username: &str,
-        password: SecretBox<Vec<u8>>,
         base32_secret: &str,
+        code: &str,
     ) -> Result<(), AppError>;
     async fn disable_totp(&self, user_id: Uuid) -> Result<(), AppError>;
     async fn verify_login_totp(
@@ -123,6 +126,36 @@ where
         })
     }
 
+    fn derive_key_from_password_envelope(
+        password_envelope: &SecretBox<Vec<u8>>,
+    ) -> Result<SecretBox<Vec<u8>>, AppError> {
+        let bytes = password_envelope.expose_secret();
+        if bytes.len() < 5 {
+            return Err(AppError::Validation(
+                "invalid password envelope: too short".to_string(),
+            ));
+        }
+
+        if bytes[0] != PASSWORD_ENVELOPE_VERSION {
+            return Err(AppError::Validation(
+                "invalid password envelope: unsupported version".to_string(),
+            ));
+        }
+
+        let salt_len = u16::from_be_bytes([bytes[1], bytes[2]]) as usize;
+        let hash_len = u16::from_be_bytes([bytes[3], bytes[4]]) as usize;
+        let hash_start = 5 + salt_len;
+        let expected_len = hash_start + hash_len;
+
+        if hash_len == 0 || bytes.len() != expected_len {
+            return Err(AppError::Validation(
+                "invalid password envelope: malformed payload".to_string(),
+            ));
+        }
+
+        Ok(SecretBox::new(Box::new(bytes[hash_start..expected_len].to_vec())))
+    }
+
     async fn load_totp_secret_by_username(
         &self,
         username: &str,
@@ -200,15 +233,15 @@ where
 
         let qr_code = QrCode::new(otpauth_url.as_bytes())
             .map_err(|error| AppError::Validation(format!("failed to generate QR: {error}")))?;
-        let qr_ascii = qr_code
-            .render::<unicode::Dense1x2>()
-            .quiet_zone(true)
-            .build();
+        let img = qr_code.render::<image::Luma<u8>>().min_dimensions(200, 200).build();
+        let mut qr_png: Vec<u8> = Vec::new();
+        img.write_to(&mut std::io::Cursor::new(&mut qr_png), ImageFormat::Png)
+            .map_err(|error| AppError::Validation(format!("failed to encode QR as PNG: {error}")))?;
 
         Ok(TotpSetupPayload {
             base32_secret,
             otpauth_url,
-            qr_ascii,
+            qr_png,
         })
     }
 
@@ -231,18 +264,20 @@ where
         &self,
         user_id: Uuid,
         username: &str,
-        password: SecretBox<Vec<u8>>,
         base32_secret: &str,
+        code: &str,
     ) -> Result<(), AppError> {
         if username.trim().is_empty() {
             return Err(AppError::Validation("username must not be empty".to_string()));
         }
 
-        let key_opt = self
-            .auth_service
-            .derive_key_if_valid(username, password)
-            .await?;
-        let key = key_opt.ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+        let password_envelope = self.auth_service.get_password_envelope(username).await?;
+        let key = Self::derive_key_from_password_envelope(&password_envelope)?;
+
+        let is_code_valid = self.verify_setup_code(username, base32_secret, code)?;
+        if !is_code_valid {
+            return Err(AppError::Authorization("invalid TOTP setup code".to_string()));
+        }
 
         let encrypted = self
             .crypto_service
@@ -305,7 +340,45 @@ where
         };
 
         let payload = Self::deserialize_envelope(&encrypted_secret)?;
-        let decrypted = self.crypto_service.decrypt(&payload, &key).await?;
+        let decrypted = match self.crypto_service.decrypt(&payload, &key).await {
+            Ok(value) => value,
+            Err(_) => {
+                let legacy_key = SecretBox::new(Box::new(
+                    vec![LEGACY_DEV_MASTER_KEY_BYTE; LEGACY_DEV_MASTER_KEY_LEN],
+                ));
+                let legacy_decrypted = match self.crypto_service.decrypt(&payload, &legacy_key).await {
+                    Ok(value) => value,
+                    Err(_) => return Ok(false),
+                };
+
+                let legacy_secret = String::from_utf8(legacy_decrypted.expose_secret().clone())
+                    .map_err(|_| AppError::Validation("invalid decrypted TOTP secret".to_string()))?;
+                let legacy_totp = self.build_totp(username, legacy_secret.as_str())?;
+                let is_valid = legacy_totp
+                    .check_current(code)
+                    .map_err(|error| {
+                        AppError::Validation(format!("failed to verify login TOTP code: {error}"))
+                    })?;
+
+                if is_valid {
+                    let reencrypted = self
+                        .crypto_service
+                        .encrypt(
+                            &SecretBox::new(Box::new(legacy_secret.into_bytes())),
+                            &key,
+                        )
+                        .await?;
+                    let envelope = Self::serialize_envelope(&reencrypted);
+                    let _ = sqlx::query("UPDATE users SET totp_secret = ?1 WHERE username = ?2")
+                        .bind(envelope.expose_secret().as_slice())
+                        .bind(username)
+                        .execute(&self.pool)
+                        .await;
+                }
+
+                return Ok(is_valid);
+            }
+        };
         let base32_secret = String::from_utf8(decrypted.expose_secret().clone())
             .map_err(|_| AppError::Validation("invalid decrypted TOTP secret".to_string()))?;
 

@@ -25,10 +25,14 @@ La version 0.2.0 stabilise le runtime Rust-only et introduit une passe UI/UX imp
 
 ```text
 HeelonVault/
-├── rust/                  # Runtime principal Rust
+├── src/                   # Runtime principal Rust
+├── migrations/            # Migrations SQL
+├── resources/             # Ressources GTK/libadwaita
+├── tests/                 # Tests d'integration Rust
 ├── docs/                  # Documentation fonctionnelle et technique
 ├── data/                  # Base de données dev locale
 ├── logs/                  # Logs runtime
+├── Cargo.toml             # Manifest Cargo racine
 ├── run-dev.sh             # Lancement développement
 ├── run.sh                 # Lancement production
 ├── install.sh             # Installation
@@ -50,14 +54,12 @@ Base dev utilisée:
 ### Vérification build
 
 ```bash
-cd rust
 cargo check
 ```
 
 ### Tests
 
 ```bash
-cd rust
 cargo test
 ```
 
