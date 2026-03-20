@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Install Linux build dependencies (GTK4/libadwaita/sqlite)
         run: |
@@ -50,8 +50,14 @@ jobs:
           tar -C dist -czf heelonvault-linux-x86_64.tar.gz .
 
       - name: Publish GitHub prerelease
-        uses: softprops/action-gh-release@v2
-        with:
-          prerelease: true
-          generate_release_notes: true
-          files: heelonvault-linux-x86_64.tar.gz
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ASSET="heelonvault-linux-x86_64.tar.gz"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" --clobber
+          else
+            gh release create "$TAG" "$ASSET" --prerelease --generate-notes
+          fi
