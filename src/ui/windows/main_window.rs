@@ -196,6 +196,7 @@ impl MainWindow {
 			.orientation(Orientation::Vertical)
 			.spacing(0)
 			.build();
+		let toast_overlay = adw::ToastOverlay::new();
 
 		let title_box = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
@@ -218,8 +219,14 @@ impl MainWindow {
 		let profile_button = gtk4::MenuButton::new();
 		profile_button.add_css_class("header-badge");
 		profile_button.add_css_class("admin-badge");
-		profile_button.set_label(&format!("Connecté: {}", connected_identity_label));
-		profile_button.set_tooltip_text(Some("Dernières connexions"));
+		profile_button.set_label(
+			crate::i18n::tr_args(
+				"main-connected-label",
+				&[("name", crate::i18n::I18nArg::Str(connected_identity_label.as_str()))],
+			)
+			.as_str(),
+		);
+		profile_button.set_tooltip_text(Some(crate::tr!("main-last-logins-tooltip").as_str()));
 
 		let profile_popover = gtk4::Popover::new();
 		profile_popover.set_has_arrow(true);
@@ -234,7 +241,7 @@ impl MainWindow {
 			.build();
 		profile_box.add_css_class("profile-login-history-popover");
 
-		let profile_title = gtk4::Label::new(Some("Dernières connexions"));
+		let profile_title = gtk4::Label::new(Some(crate::tr!("main-last-logins-title").as_str()));
 		profile_title.set_halign(Align::Start);
 		profile_title.add_css_class("profile-login-history-title");
 		profile_box.append(&profile_title);
@@ -280,14 +287,14 @@ impl MainWindow {
 		add_button.add_css_class("flat");
 		add_button.add_css_class("accent");
 		add_button.add_css_class("main-add-button");
-		add_button.set_tooltip_text(Some("Ajouter"));
+		add_button.set_tooltip_text(Some(crate::tr!("main-add-tooltip").as_str()));
 
 		let trash_button = gtk4::Button::builder()
 			.icon_name("user-trash-symbolic")
 			.build();
 		trash_button.add_css_class("flat");
 		trash_button.add_css_class("main-add-button");
-		trash_button.set_tooltip_text(Some("Corbeille"));
+		trash_button.set_tooltip_text(Some(crate::tr!("main-trash-tooltip").as_str()));
 
 		let app_for_trash = application.clone();
 		let window_for_trash = window.clone();
@@ -361,6 +368,7 @@ impl MainWindow {
 			let runtime = runtime_handle.clone();
 			let secret_service = Arc::clone(&secret_service);
 			let vault_service = Arc::clone(&vault_service);
+			let toast_overlay = toast_overlay.clone();
 			let session_master = Rc::clone(&session_master_key);
 			let secret_flow = secret_flow_for_refresh.clone();
 			let stack = stack_for_refresh.clone();
@@ -370,8 +378,8 @@ impl MainWindow {
 			let editor_launcher = Rc::clone(&editor_launcher);
 			Rc::new(move || {
 				let Some(master_key) = Self::snapshot_session_master_key(&session_master) else {
-					empty_title.set_text("Session verrouillée");
-					empty_copy.set_text("Reconnectez-vous pour réactiver l'accès aux secrets.");
+					empty_title.set_text(crate::tr!("main-session-locked-title").as_str());
+					empty_copy.set_text(crate::tr!("main-session-locked-description").as_str());
 					stack.set_visible_child_name("empty");
 					return;
 				};
@@ -387,6 +395,7 @@ impl MainWindow {
 					stack.clone(),
 					empty_title.clone(),
 					empty_copy.clone(),
+					toast_overlay.clone(),
 					filter_runtime.clone(),
 					editor_launcher.clone(),
 				);
@@ -417,7 +426,7 @@ impl MainWindow {
 		);
 		center_panel
 			.main_stack
-			.add_titled(&profile_view.container, Some("profile_view"), "Profil & Sécurité");
+			.add_titled(&profile_view.container, Some("profile_view"), crate::tr!("main-profile-security").as_str());
 
 		let main_stack_for_back = center_panel.main_stack.clone();
 		profile_view.back_button.connect_clicked(move |_| {
@@ -444,6 +453,7 @@ impl MainWindow {
 			let vault_for_editor = Arc::clone(&vault_service);
 			let session_for_editor = Rc::clone(&session_master_key);
 			let refresh_after_save = Rc::clone(&refresh_list);
+			let toast_overlay_for_editor = toast_overlay.clone();
 			let show_passwords_in_edit_pref = Rc::clone(&show_passwords_in_edit_pref);
 			let stack_for_editor = center_panel.main_stack.clone();
 			let host_for_editor = secret_editor_host.clone();
@@ -471,8 +481,11 @@ impl MainWindow {
 					},
 					{
 						let refresh_after_save = Rc::clone(&refresh_after_save);
-						move || {
+						let toast_overlay_for_save = toast_overlay_for_editor.clone();
+						move |saved_title: String| {
 							refresh_after_save();
+							let toast_message = messages::toast_secret_saved(saved_title.as_str());
+							toast_overlay_for_save.add_toast(adw::Toast::new(toast_message.as_str()));
 						}
 					},
 				);
@@ -488,9 +501,7 @@ impl MainWindow {
 		// séparé des actions habituelles.
 		let panic_button = gtk4::Button::new();
 		panic_button.add_css_class("panic-badge");
-		panic_button.set_tooltip_text(Some(
-			"Fermeture d'urgence — Efface les données sensibles et ferme l'application",
-		));
+		panic_button.set_tooltip_text(Some(crate::tr!("main-panic-tooltip").as_str()));
 
 		let panic_inner = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
@@ -499,7 +510,7 @@ impl MainWindow {
 			.build();
 		let panic_icon = gtk4::Image::from_icon_name("system-shutdown-symbolic");
 		panic_icon.add_css_class("panic-badge-label");
-		let panic_lbl = gtk4::Label::new(Some("Urgence"));
+		let panic_lbl = gtk4::Label::new(Some(crate::tr!("main-panic-label").as_str()));
 		panic_lbl.add_css_class("panic-badge-label");
 		panic_inner.append(&panic_icon);
 		panic_inner.append(&panic_lbl);
@@ -509,15 +520,11 @@ impl MainWindow {
 		panic_button.connect_clicked(move |_| {
 			let dialog = adw::MessageDialog::new(
 				Some(&window_for_panic),
-				Some("Fermeture d'urgence"),
-				Some(
-					"Les structures sensibles (clés, SecretBox) seront libérées \
-					par le système d'exploitation lors de la terminaison du processus. \
-					\n\nCette action est irréversible.",
-				),
+				Some(crate::tr!("main-panic-title").as_str()),
+				Some(crate::tr!("main-panic-body").as_str()),
 			);
-			dialog.add_response("cancel", "Annuler");
-			dialog.add_response("wipe_exit", "Effacer et quitter");
+			dialog.add_response("cancel", crate::tr!("main-panic-cancel").as_str());
+			dialog.add_response("wipe_exit", crate::tr!("main-panic-confirm").as_str());
 			dialog.set_response_appearance(
 				"wipe_exit",
 				adw::ResponseAppearance::Destructive,
@@ -606,7 +613,8 @@ impl MainWindow {
 		content.append(&actions_row);
 		content.append(&split);
 		root.append(&content);
-		window.set_content(Some(&root));
+		toast_overlay.set_child(Some(&root));
+		window.set_content(Some(&toast_overlay));
 
 		let flow_for_search = center_panel.secret_flow.clone();
 		let filter_for_search = filter_runtime.clone();
@@ -850,10 +858,10 @@ impl MainWindow {
 				.filter(|&&v| v)
 				.count();
 			if complexity >= 3 {
-				return "Robuste".to_string();
+				return crate::tr!("main-strength-strong");
 			}
 		}
-		"Faible".to_string()
+		crate::tr!("main-strength-weak")
 	}
 
 	fn apply_filters(secret_flow: &gtk4::FlowBox, filter_runtime: &FilterRuntime) {
@@ -1062,7 +1070,7 @@ impl MainWindow {
 
 	fn show_feedback_dialog(parent: &adw::ApplicationWindow, title: &str, body: &str) {
 		let dialog = adw::MessageDialog::new(Some(parent), Some(title), Some(body));
-		dialog.add_response("ok", "OK");
+		dialog.add_response("ok", crate::tr!("common-ok").as_str());
 		dialog.set_default_response(Some("ok"));
 		dialog.set_close_response("ok");
 		dialog.present();
@@ -1092,10 +1100,12 @@ impl MainWindow {
 		label.remove_css_class("status-role-admin");
 		label.remove_css_class("status-role-user");
 		if enabled {
-			label.set_text(messages::TWOFA_BADGE_ENABLED);
+			let text = messages::twofa_badge_enabled();
+			label.set_text(text.as_str());
 			label.add_css_class("status-role-admin");
 		} else {
-			label.set_text(messages::TWOFA_BADGE_DISABLED);
+			let text = messages::twofa_badge_disabled();
+			label.set_text(text.as_str());
 			label.add_css_class("status-role-user");
 		}
 	}
@@ -1103,20 +1113,20 @@ impl MainWindow {
 	fn map_twofa_error(error: &crate::errors::AppError, fallback: &str) -> String {
 		match error {
 			crate::errors::AppError::Authorization(_) => {
-				"Code TOTP invalide. Vérifiez l'horloge de votre appareil puis réessayez.".to_string()
+				crate::tr!("twofa-error-invalid-clock")
 			}
 			crate::errors::AppError::Validation(message) => {
 				if message.to_ascii_lowercase().contains("code") {
-					"Code TOTP invalide. Vérifiez l'horloge de votre appareil puis réessayez.".to_string()
+					crate::tr!("twofa-error-invalid-clock")
 				} else {
-					"Configuration 2FA invalide. Relancez l'activation puis recommencez.".to_string()
+					crate::tr!("twofa-error-invalid-setup")
 				}
 			}
 			crate::errors::AppError::Storage(_) => {
-				"Erreur de stockage locale pendant l'opération 2FA. Réessayez dans quelques secondes.".to_string()
+				crate::tr!("twofa-error-storage")
 			}
 			crate::errors::AppError::Crypto(_) => {
-				"Impossible de sécuriser le secret 2FA localement. Réessayez.".to_string()
+				crate::tr!("twofa-error-crypto")
 			}
 			_ => fallback.to_string(),
 		}
@@ -1171,7 +1181,7 @@ impl MainWindow {
 			list_box.remove(&child);
 		}
 
-		let loading_label = gtk4::Label::new(Some("Chargement..."));
+		let loading_label = gtk4::Label::new(Some(crate::tr!("login-history-loading").as_str()));
 		loading_label.set_halign(Align::Start);
 		loading_label.add_css_class("profile-login-history-muted");
 		list_box.append(&loading_label);
@@ -1237,7 +1247,7 @@ impl MainWindow {
 				Ok(Ok(entries)) => {
 					info!(user_id = %user_id, count = entries.len(), "login history loaded for popover");
 					if entries.is_empty() {
-						let row_label = gtk4::Label::new(Some("Aucune connexion recente"));
+						let row_label = gtk4::Label::new(Some(crate::tr!("login-history-empty").as_str()));
 						row_label.set_halign(Align::Start);
 						row_label.add_css_class("profile-login-history-muted");
 						list_box.append(&row_label);
@@ -1271,9 +1281,7 @@ impl MainWindow {
 					}
 				}
 				_ => {
-					let row_label = gtk4::Label::new(Some(
-						"Historique indisponible (chargement échoué).",
-					));
+					let row_label = gtk4::Label::new(Some(crate::tr!("login-history-unavailable").as_str()));
 					row_label.set_halign(Align::Start);
 					row_label.add_css_class("profile-login-history-muted");
 					list_box.append(&row_label);
@@ -1335,10 +1343,10 @@ impl MainWindow {
 			.spacing(10)
 			.build();
 		header.add_css_class("profile-view-header");
-		let back_button = gtk4::Button::with_label("← Retour");
+		let back_button = gtk4::Button::with_label(crate::tr!("profile-view-back").as_str());
 		back_button.add_css_class("flat");
 		back_button.set_halign(Align::Start);
-		let title = gtk4::Label::new(Some("Profil & Sécurité"));
+		let title = gtk4::Label::new(Some(crate::tr!("profile-view-title").as_str()));
 		title.add_css_class("title-3");
 		title.add_css_class("heading");
 		title.set_hexpand(true);
@@ -1347,9 +1355,7 @@ impl MainWindow {
 		header.append(&title);
 		content.append(&header);
 
-		let profile_intro = gtk4::Label::new(Some(
-			"Gérez vos informations de compte, paramètres de sécurité et opérations de données.",
-		));
+		let profile_intro = gtk4::Label::new(Some(crate::tr!("profile-view-intro").as_str()));
 		profile_intro.set_halign(Align::Start);
 		profile_intro.set_wrap(true);
 		profile_intro.add_css_class("dim-label");
@@ -1381,7 +1387,7 @@ impl MainWindow {
 		sections_columns.append(&sections_right);
 		content.append(&sections_columns);
 
-		let info_frame = gtk4::Frame::builder().label("Informations").build();
+		let info_frame = gtk4::Frame::builder().label(crate::tr!("profile-section-info").as_str()).build();
 		info_frame.add_css_class("profile-section-frame");
 		let info_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -1391,34 +1397,32 @@ impl MainWindow {
 			.margin_start(12)
 			.margin_end(12)
 			.build();
-		let info_subtitle = gtk4::Label::new(Some(
-			"Les changements d'email nécessitent votre mot de passe actuel.",
-		));
+		let info_subtitle = gtk4::Label::new(Some(crate::tr!("profile-section-info-subtitle").as_str()));
 		info_subtitle.set_halign(Align::Start);
 		info_subtitle.set_wrap(true);
 		info_subtitle.add_css_class("profile-section-subtitle");
 		info_subtitle.add_css_class("dim-label");
 		info_box.append(&info_subtitle);
-		let username_label = gtk4::Label::new(Some("Nom d'utilisateur"));
+		let username_label = gtk4::Label::new(Some(crate::tr!("profile-field-username").as_str()));
 		username_label.set_halign(Align::Start);
 		username_label.add_css_class("profile-field-label");
 		let username_entry = gtk4::Entry::new();
 		username_entry.set_sensitive(false);
 		username_entry.set_hexpand(true);
 		username_entry.add_css_class("profile-field-entry");
-		let display_label = gtk4::Label::new(Some("Nom d'affichage"));
+		let display_label = gtk4::Label::new(Some(crate::tr!("profile-field-display-name").as_str()));
 		display_label.set_halign(Align::Start);
 		display_label.add_css_class("profile-field-label");
 		let display_entry = gtk4::Entry::new();
 		display_entry.set_hexpand(true);
 		display_entry.add_css_class("profile-field-entry");
-		let email_label = gtk4::Label::new(Some("Email"));
+		let email_label = gtk4::Label::new(Some(crate::tr!("profile-field-email").as_str()));
 		email_label.set_halign(Align::Start);
 		email_label.add_css_class("profile-field-label");
 		let email_entry = gtk4::Entry::new();
 		email_entry.set_hexpand(true);
 		email_entry.add_css_class("profile-field-entry");
-		let current_email_pw_label = gtk4::Label::new(Some("Mot de passe actuel (si changement email)"));
+		let current_email_pw_label = gtk4::Label::new(Some(crate::tr!("profile-field-current-password-email-change").as_str()));
 		current_email_pw_label.set_halign(Align::Start);
 		current_email_pw_label.add_css_class("profile-field-label");
 		let current_email_pw_entry = gtk4::PasswordEntry::new();
@@ -1436,7 +1440,7 @@ impl MainWindow {
 			.halign(Align::End)
 			.build();
 		save_profile_row.add_css_class("profile-actions-row");
-		let save_profile_button = gtk4::Button::with_label("Sauvegarder");
+		let save_profile_button = gtk4::Button::with_label(crate::tr!("profile-save").as_str());
 		save_profile_button.add_css_class("suggested-action");
 		save_profile_button.add_css_class("profile-action-btn");
 		save_profile_row.append(&save_profile_button);
@@ -1459,7 +1463,7 @@ impl MainWindow {
 		info_frame.set_hexpand(true);
 		sections_left.append(&info_frame);
 
-		let password_change_frame = gtk4::Frame::builder().label("Changement de mot de passe").build();
+		let password_change_frame = gtk4::Frame::builder().label(crate::tr!("profile-section-password-change").as_str()).build();
 		password_change_frame.add_css_class("profile-section-frame");
 		let password_change_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -1469,30 +1473,28 @@ impl MainWindow {
 			.margin_start(12)
 			.margin_end(12)
 			.build();
-		let password_change_subtitle = gtk4::Label::new(Some(
-			"Mettez à jour votre mot de passe maître avec vérification de l'ancien.",
-		));
+		let password_change_subtitle = gtk4::Label::new(Some(crate::tr!("profile-section-password-change-subtitle").as_str()));
 		password_change_subtitle.set_halign(Align::Start);
 		password_change_subtitle.set_wrap(true);
 		password_change_subtitle.add_css_class("profile-section-subtitle");
 		password_change_subtitle.add_css_class("dim-label");
 		password_change_box.append(&password_change_subtitle);
 
-		let current_pw_label = gtk4::Label::new(Some("Mot de passe actuel"));
+		let current_pw_label = gtk4::Label::new(Some(crate::tr!("profile-field-current-password").as_str()));
 		current_pw_label.set_halign(Align::Start);
 		current_pw_label.add_css_class("profile-field-label");
 		let current_pw_entry = gtk4::PasswordEntry::new();
 		current_pw_entry.set_hexpand(true);
 		current_pw_entry.add_css_class("profile-field-entry");
 
-		let new_pw_label = gtk4::Label::new(Some("Nouveau mot de passe"));
+		let new_pw_label = gtk4::Label::new(Some(crate::tr!("profile-field-new-password").as_str()));
 		new_pw_label.set_halign(Align::Start);
 		new_pw_label.add_css_class("profile-field-label");
 		let new_pw_entry = gtk4::PasswordEntry::new();
 		new_pw_entry.set_hexpand(true);
 		new_pw_entry.add_css_class("profile-field-entry");
 
-		let confirm_pw_label = gtk4::Label::new(Some("Confirmer le nouveau mot de passe"));
+		let confirm_pw_label = gtk4::Label::new(Some(crate::tr!("profile-field-confirm-new-password").as_str()));
 		confirm_pw_label.set_halign(Align::Start);
 		confirm_pw_label.add_css_class("profile-field-label");
 		let confirm_pw_entry = gtk4::PasswordEntry::new();
@@ -1513,18 +1515,14 @@ impl MainWindow {
 			.halign(Align::End)
 			.build();
 		security_actions.add_css_class("profile-actions-row");
-		let change_pw_button = gtk4::Button::with_label("Changer");
+		let change_pw_button = gtk4::Button::with_label(crate::tr!("profile-change-button").as_str());
 		change_pw_button.add_css_class("suggested-action");
 		change_pw_button.add_css_class("profile-action-btn");
-		change_pw_button.set_tooltip_text(Some(
-			"Prépare le changement: place le focus sur les champs mot de passe et rappelle la marche à suivre.",
-		));
-		let rotate_master_key_button = gtk4::Button::with_label("Mettre à jour la master key");
+		change_pw_button.set_tooltip_text(Some(crate::tr!("profile-change-button-tooltip").as_str()));
+		let rotate_master_key_button = gtk4::Button::with_label(crate::tr!("profile-rotate-button").as_str());
 		rotate_master_key_button.add_css_class("suggested-action");
 		rotate_master_key_button.add_css_class("profile-action-btn");
-		rotate_master_key_button.set_tooltip_text(Some(
-			"Applique le changement de mot de passe maître avec validation (ancien mot de passe, confirmation).",
-		));
+		rotate_master_key_button.set_tooltip_text(Some(crate::tr!("profile-rotate-button-tooltip").as_str()));
 		security_actions.append(&change_pw_button);
 		security_actions.append(&rotate_master_key_button);
 
@@ -1544,7 +1542,7 @@ impl MainWindow {
 		password_change_frame.set_hexpand(true);
 		sections_right.append(&password_change_frame);
 
-		let security_prefs_frame = gtk4::Frame::builder().label("Préférences de sécurité").build();
+		let security_prefs_frame = gtk4::Frame::builder().label(crate::tr!("profile-section-security-prefs").as_str()).build();
 		security_prefs_frame.add_css_class("profile-section-frame");
 		let security_prefs_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -1555,21 +1553,32 @@ impl MainWindow {
 			.margin_end(12)
 			.build();
 
-		let auto_lock_label = gtk4::Label::new(Some("Délai de verrouillage automatique"));
+		let auto_lock_label = gtk4::Label::new(Some(crate::tr!("profile-auto-lock-title").as_str()));
 		auto_lock_label.set_halign(Align::Start);
 		auto_lock_label.add_css_class("profile-field-label");
-		let auto_lock_items = gtk4::StringList::new(&["1 min", "5 min", "15 min", "30 min", "jamais"]);
+		let auto_lock_items = gtk4::StringList::new(&[
+			crate::tr!("profile-auto-lock-1").as_str(),
+			crate::tr!("profile-auto-lock-5").as_str(),
+			crate::tr!("profile-auto-lock-15").as_str(),
+			crate::tr!("profile-auto-lock-30").as_str(),
+			crate::tr!("profile-auto-lock-never").as_str(),
+		]);
 		let auto_lock_dropdown = gtk4::DropDown::new(Some(auto_lock_items.clone()), None::<gtk4::Expression>);
 		auto_lock_dropdown.add_css_class("profile-field-entry");
+		let language_row = adw::ComboRow::new();
+		language_row.set_title(crate::tr!("profile-language-title").as_str());
+		language_row.set_subtitle(crate::tr!("profile-language-subtitle").as_str());
+		let language_items = gtk4::StringList::new(&[
+			crate::tr!("language-option-fr").as_str(),
+			crate::tr!("language-option-en").as_str(),
+		]);
+		language_row.set_model(Some(&language_items));
+		language_row.set_selected(0);
 
-		let show_edit_passwords_label = gtk4::Label::new(Some(
-			"Affichage du mot de passe actuel en mode modification",
-		));
+		let show_edit_passwords_label = gtk4::Label::new(Some(crate::tr!("profile-show-edit-passwords-title").as_str()));
 		show_edit_passwords_label.set_halign(Align::Start);
 		show_edit_passwords_label.add_css_class("profile-field-label");
-		let show_edit_passwords_hint = gtk4::Label::new(Some(
-			"Affiche des étoiles dans le champ mot de passe de l'éditeur, avec icône oeil pour le révéler.",
-		));
+		let show_edit_passwords_hint = gtk4::Label::new(Some(crate::tr!("profile-show-edit-passwords-hint").as_str()));
 		show_edit_passwords_hint.set_halign(Align::Start);
 		show_edit_passwords_hint.set_wrap(true);
 		show_edit_passwords_hint.add_css_class("dim-label");
@@ -1587,6 +1596,7 @@ impl MainWindow {
 		for widget in [
 			auto_lock_label.upcast_ref::<gtk4::Widget>(),
 			auto_lock_dropdown.upcast_ref::<gtk4::Widget>(),
+			language_row.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_label.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_switch.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_hint.upcast_ref::<gtk4::Widget>(),
@@ -1604,10 +1614,11 @@ impl MainWindow {
 			.orientation(Orientation::Horizontal)
 			.spacing(8)
 			.build();
-		let twofa_title = gtk4::Label::new(Some("2FA"));
+		let twofa_title = gtk4::Label::new(Some(crate::tr!("profile-section-2fa-title").as_str()));
 		twofa_title.add_css_class("profile-field-label");
 		twofa_title.set_halign(Align::Start);
-		let twofa_state_badge = gtk4::Label::new(Some(messages::TWOFA_BADGE_DISABLED));
+		let twofa_badge_text = messages::twofa_badge_disabled();
+		let twofa_state_badge = gtk4::Label::new(Some(twofa_badge_text.as_str()));
 		twofa_state_badge.add_css_class("status-role-pill");
 		twofa_state_badge.add_css_class("status-role-user");
 		twofa_state_badge.set_halign(Align::Start);
@@ -1633,14 +1644,12 @@ impl MainWindow {
 			.orientation(Orientation::Vertical)
 			.spacing(8)
 			.build();
-		let twofa_disabled_copy = gtk4::Label::new(Some(
-			"La 2FA n'est pas activée. Activez-la pour ajouter un code TOTP à la connexion.",
-		));
+		let twofa_disabled_copy = gtk4::Label::new(Some(crate::tr!("profile-2fa-disabled-copy").as_str()));
 		twofa_disabled_copy.set_halign(Align::Start);
 		twofa_disabled_copy.set_wrap(true);
 		twofa_disabled_copy.add_css_class("dim-label");
 		twofa_disabled_copy.add_css_class("profile-section-subtitle");
-		let twofa_activate_button = gtk4::Button::with_label("Activer");
+		let twofa_activate_button = gtk4::Button::with_label(crate::tr!("profile-2fa-activate").as_str());
 		twofa_activate_button.add_css_class("suggested-action");
 		twofa_activate_button.add_css_class("profile-action-btn");
 		twofa_activate_button.set_halign(Align::Start);
@@ -1651,9 +1660,7 @@ impl MainWindow {
 			.orientation(Orientation::Vertical)
 			.spacing(8)
 			.build();
-		let twofa_setup_copy = gtk4::Label::new(Some(
-			"Scannez le code QR, puis saisissez un code TOTP à 6 chiffres pour confirmer l'activation.",
-		));
+		let twofa_setup_copy = gtk4::Label::new(Some(crate::tr!("profile-2fa-setup-copy").as_str()));
 		twofa_setup_copy.set_halign(Align::Start);
 		twofa_setup_copy.set_wrap(true);
 		twofa_setup_copy.add_css_class("dim-label");
@@ -1661,13 +1668,13 @@ impl MainWindow {
 		let twofa_qr_picture = gtk4::Picture::new();
 		twofa_qr_picture.set_size_request(200, 200);
 		twofa_qr_picture.add_css_class("totp-qr-container");
-		let twofa_secret_label = gtk4::Label::new(Some("Secret Base32"));
+		let twofa_secret_label = gtk4::Label::new(Some(crate::tr!("profile-2fa-secret-base32").as_str()));
 		twofa_secret_label.set_halign(Align::Start);
 		twofa_secret_label.add_css_class("profile-field-label");
 		let twofa_secret_entry = gtk4::Entry::new();
 		twofa_secret_entry.set_editable(false);
 		twofa_secret_entry.add_css_class("profile-field-entry");
-		let twofa_code_label = gtk4::Label::new(Some("Code TOTP (6 chiffres)"));
+		let twofa_code_label = gtk4::Label::new(Some(crate::tr!("profile-2fa-code").as_str()));
 		twofa_code_label.set_halign(Align::Start);
 		twofa_code_label.add_css_class("profile-field-label");
 		let twofa_code_entry = gtk4::Entry::new();
@@ -1679,10 +1686,10 @@ impl MainWindow {
 			.spacing(8)
 			.build();
 		twofa_setup_actions.add_css_class("profile-actions-row");
-		let twofa_confirm_button = gtk4::Button::with_label("Confirmer");
+		let twofa_confirm_button = gtk4::Button::with_label(crate::tr!("profile-2fa-confirm").as_str());
 		twofa_confirm_button.add_css_class("suggested-action");
 		twofa_confirm_button.add_css_class("profile-action-btn");
-		let twofa_cancel_setup_button = gtk4::Button::with_label("Annuler");
+		let twofa_cancel_setup_button = gtk4::Button::with_label(crate::tr!("profile-2fa-cancel").as_str());
 		twofa_cancel_setup_button.add_css_class("flat");
 		twofa_cancel_setup_button.add_css_class("profile-action-btn");
 		twofa_setup_actions.append(&twofa_confirm_button);
@@ -1703,14 +1710,12 @@ impl MainWindow {
 			.orientation(Orientation::Vertical)
 			.spacing(8)
 			.build();
-		let twofa_enabled_copy = gtk4::Label::new(Some(
-			"2FA activée. La connexion demandera un code TOTP après vérification du mot de passe.",
-		));
+		let twofa_enabled_copy = gtk4::Label::new(Some(crate::tr!("profile-2fa-enabled-copy").as_str()));
 		twofa_enabled_copy.set_halign(Align::Start);
 		twofa_enabled_copy.set_wrap(true);
 		twofa_enabled_copy.add_css_class("dim-label");
 		twofa_enabled_copy.add_css_class("profile-section-subtitle");
-		let twofa_disable_toggle_button = gtk4::Button::with_label("Désactiver");
+		let twofa_disable_toggle_button = gtk4::Button::with_label(crate::tr!("profile-2fa-disable").as_str());
 		twofa_disable_toggle_button.add_css_class("flat");
 		twofa_disable_toggle_button.add_css_class("profile-action-btn");
 		twofa_disable_toggle_button.set_halign(Align::Start);
@@ -1720,10 +1725,10 @@ impl MainWindow {
 			.visible(false)
 			.build();
 		twofa_disable_confirm_row.add_css_class("profile-actions-row");
-		let twofa_disable_confirm_button = gtk4::Button::with_label("Confirmer désactivation");
+		let twofa_disable_confirm_button = gtk4::Button::with_label(crate::tr!("profile-2fa-disable-confirm").as_str());
 		twofa_disable_confirm_button.add_css_class("suggested-action");
 		twofa_disable_confirm_button.add_css_class("profile-action-btn");
-		let twofa_disable_cancel_button = gtk4::Button::with_label("Annuler");
+		let twofa_disable_cancel_button = gtk4::Button::with_label(crate::tr!("profile-2fa-cancel").as_str());
 		twofa_disable_cancel_button.add_css_class("flat");
 		twofa_disable_cancel_button.add_css_class("profile-action-btn");
 		twofa_disable_confirm_row.append(&twofa_disable_confirm_button);
@@ -1732,9 +1737,9 @@ impl MainWindow {
 		twofa_enabled_box.append(&twofa_disable_toggle_button);
 		twofa_enabled_box.append(&twofa_disable_confirm_row);
 
-		twofa_stack.add_titled(&twofa_disabled_box, Some("disabled"), "Désactivée");
-		twofa_stack.add_titled(&twofa_setup_box, Some("setup"), "Activation");
-		twofa_stack.add_titled(&twofa_enabled_box, Some("enabled"), "Activée");
+		twofa_stack.add_titled(&twofa_disabled_box, Some("disabled"), crate::tr!("profile-2fa-stack-disabled").as_str());
+		twofa_stack.add_titled(&twofa_setup_box, Some("setup"), crate::tr!("profile-2fa-stack-setup").as_str());
+		twofa_stack.add_titled(&twofa_enabled_box, Some("enabled"), crate::tr!("profile-2fa-stack-enabled").as_str());
 		twofa_stack.set_visible_child_name("disabled");
 
 		let twofa_status_label = gtk4::Label::new(None);
@@ -1750,7 +1755,7 @@ impl MainWindow {
 		twofa_frame.set_hexpand(true);
 		sections_right.append(&twofa_frame);
 
-		let data_frame = gtk4::Frame::builder().label("Gestion des données").build();
+		let data_frame = gtk4::Frame::builder().label(crate::tr!("profile-section-data").as_str()).build();
 		data_frame.add_css_class("profile-section-frame");
 		let data_box = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -1760,30 +1765,30 @@ impl MainWindow {
 			.margin_start(12)
 			.margin_end(12)
 			.build();
-		let export_title = gtk4::Label::new(Some("Exporter ma base (.hvb)"));
+		let export_title = gtk4::Label::new(Some(crate::tr!("profile-export-title").as_str()));
 		export_title.set_halign(Align::Start);
 		export_title.add_css_class("heading");
 		export_title.add_css_class("profile-field-label");
-		let export_subtitle = gtk4::Label::new(Some("Sauvegarde chiffrée AES-256-GCM avec Recovery Key"));
+		let export_subtitle = gtk4::Label::new(Some(crate::tr!("profile-export-subtitle").as_str()));
 		export_subtitle.set_halign(Align::Start);
 		export_subtitle.add_css_class("dim-label");
 		export_subtitle.add_css_class("profile-section-subtitle");
 		export_subtitle.set_wrap(true);
-		let export_button = gtk4::Button::with_label("Exporter ma base");
+		let export_button = gtk4::Button::with_label(crate::tr!("profile-export-button").as_str());
 		export_button.add_css_class("suggested-action");
 		export_button.add_css_class("profile-action-btn");
 		export_button.set_halign(Align::End);
 
-		let import_title = gtk4::Label::new(Some("Importer des données (CSV)"));
+		let import_title = gtk4::Label::new(Some(crate::tr!("profile-import-title").as_str()));
 		import_title.set_halign(Align::Start);
 		import_title.add_css_class("heading");
 		import_title.add_css_class("profile-field-label");
-		let import_subtitle = gtk4::Label::new(Some("Colonnes attendues: name, url, username, password, notes"));
+		let import_subtitle = gtk4::Label::new(Some(crate::tr!("profile-import-subtitle").as_str()));
 		import_subtitle.set_halign(Align::Start);
 		import_subtitle.add_css_class("dim-label");
 		import_subtitle.add_css_class("profile-section-subtitle");
 		import_subtitle.set_wrap(true);
-		let import_button = gtk4::Button::with_label("Importer des données (CSV)");
+		let import_button = gtk4::Button::with_label(crate::tr!("profile-import-button").as_str());
 		import_button.add_css_class("suggested-action");
 		import_button.add_css_class("profile-action-btn");
 		import_button.set_halign(Align::End);
@@ -1902,6 +1907,7 @@ impl MainWindow {
 		let display_entry_for_load = display_entry.clone();
 		let email_entry_for_load = email_entry.clone();
 		let auto_lock_for_load = auto_lock_dropdown.clone();
+		let language_row_for_load = language_row.clone();
 		let show_edit_passwords_for_load = show_edit_passwords_switch.clone();
 		let show_passwords_pref_for_load = Rc::clone(&show_passwords_in_edit_pref);
 		let twofa_stack_for_load = twofa_stack.clone();
@@ -1912,9 +1918,12 @@ impl MainWindow {
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
 				Ok(Ok((user, delay, totp_enabled))) => {
+					let language = user.preferred_language.trim().to_ascii_lowercase();
+					let _ = crate::i18n::set_language(language.as_str());
 					username_entry_for_load.set_text(user.username.as_str());
 					display_entry_for_load.set_text(user.display_name.as_deref().unwrap_or_default());
 					email_entry_for_load.set_text(user.email.as_deref().unwrap_or_default());
+					language_row_for_load.set_selected(if language.starts_with("en") { 1 } else { 0 });
 					let selected = match delay {
 						1 => 0,
 						5 => 1,
@@ -1937,11 +1946,7 @@ impl MainWindow {
 				}
 				_ => {
 					loading_lock_for_load.set(false);
-					Self::set_inline_status(
-						&profile_status_for_load,
-						"Chargement du profil indisponible pour le moment.",
-						"error",
-					);
+					Self::set_inline_status(&profile_status_for_load, crate::tr!("profile-status-load-failed").as_str(), "error");
 				}
 			}
 		});
@@ -1971,11 +1976,7 @@ impl MainWindow {
 				4 => 0,
 				_ => 5,
 			};
-			Self::set_inline_status(
-				&security_status_for_delay,
-				"Mise à jour du délai de verrouillage...",
-				"loading",
-			);
+			Self::set_inline_status(&security_status_for_delay, crate::tr!("profile-status-lock-delay-updating").as_str(), "loading");
 
 			let (sender, receiver) = tokio::sync::oneshot::channel();
 			let runtime_for_task = runtime_for_delay.clone();
@@ -2013,18 +2014,10 @@ impl MainWindow {
 								&session_for_result,
 							);
 						}
-						Self::set_inline_status(
-							&security_status_for_result,
-							"Délai de verrouillage automatique mis à jour.",
-							"success",
-						);
+						Self::set_inline_status(&security_status_for_result, crate::tr!("profile-status-lock-delay-updated").as_str(), "success");
 					}
 					_ => {
-						Self::set_inline_status(
-							&security_status_for_result,
-							"Impossible de mettre à jour le délai de verrouillage.",
-							"error",
-						);
+						Self::set_inline_status(&security_status_for_result, crate::tr!("profile-status-lock-delay-failed").as_str(), "error");
 					}
 				}
 			});
@@ -2034,6 +2027,7 @@ impl MainWindow {
 		let runtime_for_profile_save = runtime_handle.clone();
 		let display_for_save = display_entry.clone();
 		let email_for_save = email_entry.clone();
+		let language_row_for_save = language_row.clone();
 		let current_email_pw_for_save = current_email_pw_entry.clone();
 		let show_edit_passwords_for_save = show_edit_passwords_switch.clone();
 		let show_passwords_pref_for_save = Rc::clone(&show_passwords_in_edit_pref);
@@ -2045,11 +2039,7 @@ impl MainWindow {
 		let show_passwords_pref_for_toggle = Rc::clone(&show_passwords_in_edit_pref);
 		show_edit_passwords_switch.connect_active_notify(move |switch_widget| {
 			let enabled = switch_widget.is_active();
-			Self::set_inline_status(
-				&profile_status_for_toggle,
-				"Mise à jour de la préférence d'affichage...",
-				"loading",
-			);
+			Self::set_inline_status(&profile_status_for_toggle, crate::tr!("profile-status-show-passwords-updating").as_str(), "loading");
 
 			let (sender, receiver) = tokio::sync::oneshot::channel();
 			let runtime_for_task = runtime_for_toggle.clone();
@@ -2069,28 +2059,16 @@ impl MainWindow {
 				match receiver.await {
 					Ok((_, Ok(user))) => {
 						show_passwords_pref_for_result.set(user.show_passwords_in_edit);
-						Self::set_inline_status(
-							&profile_status_for_result,
-							"Préférence d'affichage mot de passe mise à jour.",
-							"success",
-						);
+						Self::set_inline_status(&profile_status_for_result, crate::tr!("profile-status-show-passwords-updated").as_str(), "success");
 					}
 					_ => {
-						Self::set_inline_status(
-							&profile_status_for_result,
-							"Impossible de mettre à jour cette préférence.",
-							"error",
-						);
+						Self::set_inline_status(&profile_status_for_result, crate::tr!("profile-status-show-passwords-failed").as_str(), "error");
 					}
 				}
 			});
 		});
 		save_profile_button.connect_clicked(move |_| {
-			Self::set_inline_status(
-				&profile_status_for_save,
-				"Enregistrement des modifications...",
-				"loading",
-			);
+			Self::set_inline_status(&profile_status_for_save, crate::tr!("profile-status-saving").as_str(), "loading");
 			let payload = crate::services::user_service::UserProfileUpdate {
 				email: {
 					let value = email_for_save.text().trim().to_string();
@@ -2100,6 +2078,11 @@ impl MainWindow {
 					let value = display_for_save.text().trim().to_string();
 					if value.is_empty() { None } else { Some(value) }
 				},
+				preferred_language: Some(if language_row_for_save.selected() == 1 {
+					"en".to_string()
+				} else {
+					"fr".to_string()
+				}),
 				show_passwords_in_edit: Some(show_edit_passwords_for_save.is_active()),
 				current_password: {
 					let value = current_email_pw_for_save.text().trim().to_string();
@@ -2127,21 +2110,24 @@ impl MainWindow {
 			glib::MainContext::default().spawn_local(async move {
 				match receiver.await {
 					Ok(Ok(user)) => {
+						let _ = crate::i18n::set_language(user.preferred_language.as_str());
 						let display = user
 							.display_name
 							.clone()
 							.filter(|value| !value.trim().is_empty())
 							.unwrap_or(user.username.clone());
 						show_passwords_pref_for_result.set(user.show_passwords_in_edit);
-						badge_for_result.set_label(&format!("Connecté: {}", display));
-						Self::set_inline_status(&profile_status_for_result, "Profil mis à jour.", "success");
+						badge_for_result.set_label(
+							crate::i18n::tr_args(
+								"main-connected-label",
+								&[("name", crate::i18n::I18nArg::Str(display.as_str()))],
+							)
+							.as_str(),
+						);
+						Self::set_inline_status(&profile_status_for_result, crate::tr!("profile-status-saved").as_str(), "success");
 					}
 					_ => {
-						Self::set_inline_status(
-							&profile_status_for_result,
-							"Échec de la mise à jour du profil.",
-							"error",
-						);
+						Self::set_inline_status(&profile_status_for_result, crate::tr!("profile-status-save-failed").as_str(), "error");
 					}
 				}
 			});
@@ -2152,11 +2138,7 @@ impl MainWindow {
 		let current_pw_for_change = current_pw_entry.clone();
 		let security_status_for_pw_change = password_change_status_label.clone();
 		change_pw_button.connect_clicked(move |_| {
-			Self::set_inline_status(
-				&security_status_for_pw_change,
-				"Changement prêt: renseignez les champs puis cliquez sur 'Mettre à jour la master key'.",
-				"success",
-			);
+			Self::set_inline_status(&security_status_for_pw_change, crate::tr!("profile-status-password-change-ready").as_str(), "success");
 			current_pw_for_change.grab_focus();
 		});
 
@@ -2171,27 +2153,15 @@ impl MainWindow {
 			let new_raw = new_pw_for_rotate.text().trim().to_string();
 			let confirm_raw = confirm_pw_for_rotate.text().trim().to_string();
 			if current_raw.is_empty() || new_raw.is_empty() || confirm_raw.is_empty() {
-				Self::set_inline_status(
-					&security_status_for_rotate,
-					"Tous les champs mot de passe sont obligatoires pour mettre à jour la master key.",
-					"error",
-				);
+				Self::set_inline_status(&security_status_for_rotate, crate::tr!("profile-status-password-fields-required").as_str(), "error");
 				return;
 			}
 			if new_raw != confirm_raw {
-				Self::set_inline_status(
-					&security_status_for_rotate,
-					"La confirmation ne correspond pas au nouveau mot de passe.",
-					"error",
-				);
+				Self::set_inline_status(&security_status_for_rotate, crate::tr!("profile-status-password-confirm-mismatch").as_str(), "error");
 				return;
 			}
 
-			Self::set_inline_status(
-				&security_status_for_rotate,
-				"Mise à jour de la master key...",
-				"loading",
-			);
+			Self::set_inline_status(&security_status_for_rotate, crate::tr!("profile-status-password-updating").as_str(), "loading");
 
 			let (sender, receiver) = tokio::sync::oneshot::channel();
 			let runtime_for_task = runtime_for_rotate.clone();
@@ -2219,18 +2189,10 @@ impl MainWindow {
 						current_for_result.set_text("");
 						new_for_result.set_text("");
 						confirm_for_result.set_text("");
-						Self::set_inline_status(
-							&security_status_for_result,
-							"Master key mise à jour.",
-							"success",
-						);
+						Self::set_inline_status(&security_status_for_result, crate::tr!("profile-status-password-updated").as_str(), "success");
 					}
 					_ => {
-						Self::set_inline_status(
-							&security_status_for_result,
-							"Échec du changement de mot de passe.",
-							"error",
-						);
+						Self::set_inline_status(&security_status_for_result, crate::tr!("profile-status-password-failed").as_str(), "error");
 					}
 				}
 			});
@@ -2249,11 +2211,7 @@ impl MainWindow {
 		twofa_activate_button.connect_clicked(move |_| {
 			let username = username_for_twofa_activate.text().trim().to_string();
 			if username.is_empty() {
-				Self::set_inline_status(
-					&twofa_status_for_activate,
-					"Profil non chargé: impossible de démarrer la configuration 2FA.",
-					"error",
-				);
+				Self::set_inline_status(&twofa_status_for_activate, crate::tr!("profile-status-twofa-profile-missing-start").as_str(), "error");
 				return;
 			}
 
@@ -2270,18 +2228,14 @@ impl MainWindow {
 					twofa_secret_for_activate.set_text(payload.base32_secret.as_str());
 					twofa_code_for_activate.set_text("");
 					twofa_stack_for_activate.set_visible_child_name("setup");
-					Self::set_inline_status(
-						&twofa_status_for_activate,
-						"Configuration 2FA prête. Scannez le QR puis confirmez avec un code TOTP.",
-						"success",
-					);
+					Self::set_inline_status(&twofa_status_for_activate, crate::tr!("profile-status-twofa-ready").as_str(), "success");
 				}
 				Err(error) => {
 					Self::set_inline_status(
 						&twofa_status_for_activate,
 						Self::map_twofa_error(
 							&error,
-							"Impossible de préparer la configuration 2FA.",
+							crate::tr!("profile-status-twofa-prepare-failed").as_str(),
 						)
 						.as_str(),
 						"error",
@@ -2296,11 +2250,7 @@ impl MainWindow {
 		twofa_cancel_setup_button.connect_clicked(move |_| {
 			*pending_secret_for_cancel.borrow_mut() = None;
 			twofa_stack_for_cancel.set_visible_child_name("disabled");
-			Self::set_inline_status(
-				&twofa_status_for_cancel,
-				"Activation 2FA annulée.",
-				"success",
-			);
+			Self::set_inline_status(&twofa_status_for_cancel, crate::tr!("profile-status-twofa-cancelled").as_str(), "success");
 		});
 
 		let username_for_twofa_confirm = username_entry.clone();
@@ -2316,27 +2266,19 @@ impl MainWindow {
 			let code = twofa_code_for_confirm.text().trim().to_string();
 
 			if username.is_empty() {
-				Self::set_inline_status(
-					&twofa_status_for_confirm,
-					"Profil non chargé: impossible de finaliser l'activation 2FA.",
-					"error",
-				);
+				Self::set_inline_status(&twofa_status_for_confirm, crate::tr!("profile-status-twofa-profile-missing-finish").as_str(), "error");
 				return;
 			}
 
 			let Some(secret) = pending_secret_for_confirm.borrow().clone() else {
-				Self::set_inline_status(
-					&twofa_status_for_confirm,
-					"Aucune configuration 2FA en cours.",
-					"error",
-				);
+				Self::set_inline_status(&twofa_status_for_confirm, crate::tr!("profile-status-twofa-none-pending").as_str(), "error");
 				return;
 			};
 
 			if let Some(validation_message) = messages::validate_totp_code_format(code.as_str()) {
 				Self::set_inline_status(
 					&twofa_status_for_confirm,
-					validation_message,
+					validation_message.as_str(),
 					"error",
 				);
 				return;
@@ -2344,11 +2286,7 @@ impl MainWindow {
 
 			match totp_for_confirm.verify_setup_code(username.as_str(), secret.as_str(), code.as_str()) {
 				Ok(true) => {
-					Self::set_inline_status(
-						&twofa_status_for_confirm,
-						"Activation 2FA en cours...",
-						"loading",
-					);
+					Self::set_inline_status(&twofa_status_for_confirm, crate::tr!("profile-status-twofa-enabling").as_str(), "loading");
 
 					let (sender, receiver) = tokio::sync::oneshot::channel();
 					let runtime_for_task = runtime_for_twofa_confirm.clone();
@@ -2379,29 +2317,21 @@ impl MainWindow {
 								twofa_code_for_result.set_text("");
 								twofa_stack_for_result.set_visible_child_name("enabled");
 								Self::set_twofa_badge_state(&twofa_badge_for_result, true);
-								Self::set_inline_status(
-									&twofa_status_for_result,
-									"2FA activée avec succès.",
-									"success",
-								);
+								Self::set_inline_status(&twofa_status_for_result, crate::tr!("profile-status-twofa-enabled").as_str(), "success");
 							}
 							Ok(Err(error)) => {
 								Self::set_inline_status(
 									&twofa_status_for_result,
 									Self::map_twofa_error(
 										&error,
-										"Impossible d'activer la 2FA. Vérifiez vos informations puis réessayez.",
+										crate::tr!("profile-status-twofa-enable-failed").as_str(),
 									)
 									.as_str(),
 									"error",
 								);
 							}
 							Err(_) => {
-								Self::set_inline_status(
-									&twofa_status_for_result,
-									"Opération 2FA interrompue. Réessayez.",
-									"error",
-								);
+								Self::set_inline_status(&twofa_status_for_result, crate::tr!("profile-status-twofa-interrupted").as_str(), "error");
 							}
 						}
 					});
@@ -2409,7 +2339,7 @@ impl MainWindow {
 				Ok(false) => {
 					Self::set_inline_status(
 						&twofa_status_for_confirm,
-						messages::PROFILE_TOTP_CODE_INVALID_ERROR,
+						messages::profile_totp_code_invalid_error().as_str(),
 						"error",
 					);
 				}
@@ -2418,7 +2348,7 @@ impl MainWindow {
 						&twofa_status_for_confirm,
 						Self::map_twofa_error(
 							&error,
-							"Impossible de vérifier le code TOTP. Réessayez.",
+							crate::tr!("profile-status-twofa-verify-failed").as_str(),
 						)
 						.as_str(),
 						"error",
@@ -2444,7 +2374,7 @@ impl MainWindow {
 		let twofa_badge_for_disable = twofa_state_badge.clone();
 		let twofa_confirm_row_for_disable = twofa_disable_confirm_row.clone();
 		twofa_disable_confirm_button.connect_clicked(move |_| {
-			Self::set_inline_status(&twofa_status_for_disable, "Désactivation 2FA en cours...", "loading");
+			Self::set_inline_status(&twofa_status_for_disable, crate::tr!("profile-status-twofa-disabling").as_str(), "loading");
 
 			let (sender, receiver) = tokio::sync::oneshot::channel();
 			let runtime_for_task = runtime_for_disable.clone();
@@ -2464,25 +2394,21 @@ impl MainWindow {
 						twofa_confirm_row_for_result.set_visible(false);
 						twofa_stack_for_result.set_visible_child_name("disabled");
 						Self::set_twofa_badge_state(&twofa_badge_for_result, false);
-						Self::set_inline_status(&twofa_status_for_result, "2FA désactivée.", "success");
+						Self::set_inline_status(&twofa_status_for_result, crate::tr!("profile-status-twofa-disabled").as_str(), "success");
 					}
 					Ok(Err(error)) => {
 						Self::set_inline_status(
 							&twofa_status_for_result,
 							Self::map_twofa_error(
 								&error,
-								"Impossible de désactiver la 2FA.",
+								crate::tr!("profile-status-twofa-disable-failed").as_str(),
 							)
 							.as_str(),
 							"error",
 						);
 					}
 					Err(_) => {
-						Self::set_inline_status(
-							&twofa_status_for_result,
-							"Opération 2FA interrompue. Réessayez.",
-							"error",
-						);
+						Self::set_inline_status(&twofa_status_for_result, crate::tr!("profile-status-twofa-interrupted").as_str(), "error");
 					}
 				}
 			});
@@ -2495,10 +2421,10 @@ impl MainWindow {
 		let end_critical_for_export = Rc::clone(&end_critical_operation);
 		export_button.connect_clicked(move |_| {
 			let chooser = gtk4::FileChooserNative::builder()
-				.title("Exporter la base chiffrée")
+				.title(crate::tr!("profile-export-chooser-title").as_str())
 				.transient_for(&window_for_export)
-				.accept_label("Exporter")
-				.cancel_label("Annuler")
+				.accept_label(crate::tr!("profile-export-accept").as_str())
+				.cancel_label(crate::tr!("trash-dialog-cancel").as_str())
 				.action(gtk4::FileChooserAction::Save)
 				.build();
 			chooser.set_current_name("heelonvault_backup.hvb");
@@ -2517,11 +2443,11 @@ impl MainWindow {
 				let selected = dialog.file();
 				dialog.destroy();
 				let Some(file) = selected else {
-					Self::show_feedback_dialog(&window_for_response, "Export", "Destination invalide.");
+					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-invalid-destination").as_str());
 					return;
 				};
 				let Some(mut export_path) = file.path() else {
-					Self::show_feedback_dialog(&window_for_response, "Export", "Chemin invalide.");
+					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-invalid-path").as_str());
 					return;
 				};
 				if export_path.extension().is_none() {
@@ -2533,8 +2459,8 @@ impl MainWindow {
 					Err(_) => {
 						Self::show_feedback_dialog(
 							&window_for_response,
-							"Export",
-							"Impossible de générer la Recovery Key.",
+							crate::tr!("profile-export-accept").as_str(),
+							crate::tr!("profile-export-recovery-key-failed").as_str(),
 						);
 						return;
 					}
@@ -2563,14 +2489,14 @@ impl MainWindow {
 					end_critical_for_result();
 					match result {
 						Ok(Ok(_)) => {
-							let message = format!(
-								"Export terminé. Notez votre Recovery Key:\n\n{}",
-								recovery_text
+							let message = crate::i18n::tr_args(
+								"profile-export-success-body",
+								&[("key", crate::i18n::I18nArg::Str(recovery_text.as_str()))],
 							);
-							Self::show_feedback_dialog(&window_for_result, "Export .hvb", message.as_str());
+							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-export-success-title").as_str(), message.as_str());
 						}
 						_ => {
-							Self::show_feedback_dialog(&window_for_result, "Export", "Échec de l'export .hvb.");
+							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-failed").as_str());
 						}
 					}
 				});
@@ -2590,10 +2516,10 @@ impl MainWindow {
 		let end_critical_for_import = Rc::clone(&end_critical_operation);
 		import_button.connect_clicked(move |_| {
 			let chooser = gtk4::FileChooserNative::builder()
-				.title("Importer des données CSV")
+				.title(crate::tr!("profile-import-chooser-title").as_str())
 				.transient_for(&window_for_import)
-				.accept_label("Importer")
-				.cancel_label("Annuler")
+				.accept_label(crate::tr!("profile-import-accept").as_str())
+				.cancel_label(crate::tr!("trash-dialog-cancel").as_str())
 				.action(gtk4::FileChooserAction::Open)
 				.build();
 
@@ -2615,19 +2541,19 @@ impl MainWindow {
 				let selected = dialog.file();
 				dialog.destroy();
 				let Some(file) = selected else {
-					Self::show_feedback_dialog(&window_for_response, "Import", "Fichier CSV invalide.");
+					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-import-accept").as_str(), crate::tr!("profile-import-invalid-file").as_str());
 					return;
 				};
 				let Some(csv_path) = file.path() else {
-					Self::show_feedback_dialog(&window_for_response, "Import", "Chemin CSV invalide.");
+					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-import-accept").as_str(), crate::tr!("profile-import-invalid-path").as_str());
 					return;
 				};
 
 				let Some(master_key) = Self::snapshot_session_master_key(&session_for_response) else {
 					Self::show_feedback_dialog(
 						&window_for_response,
-						"Import",
-						"Session verrouillée, reconnectez-vous.",
+						crate::tr!("profile-import-accept").as_str(),
+						crate::tr!("profile-import-session-locked").as_str(),
 					);
 					return;
 				};
@@ -2662,11 +2588,14 @@ impl MainWindow {
 					match result {
 						Ok(Ok(count)) => {
 							refresh_for_result();
-							let message = format!("Import CSV terminé: {} secrets.", count);
-							Self::show_feedback_dialog(&window_for_result, "Import", message.as_str());
+							let message = crate::i18n::tr_args(
+								"profile-import-success-body",
+								&[("count", crate::i18n::I18nArg::Num(count as i64))],
+							);
+							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-import-accept").as_str(), message.as_str());
 						}
 						_ => {
-							Self::show_feedback_dialog(&window_for_result, "Import", "Échec de l'import CSV.");
+							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-import-accept").as_str(), crate::tr!("profile-import-failed").as_str());
 						}
 					}
 				});
@@ -2694,7 +2623,7 @@ impl MainWindow {
 			.margin_end(14)
 			.build();
 
-		let audit_title = gtk4::Label::new(Some("Audit de Sécurité"));
+		let audit_title = gtk4::Label::new(Some(crate::tr!("main-audit-title").as_str()));
 		audit_title.add_css_class("main-section-title");
 		audit_title.set_halign(Align::Start);
 		sidebar_box.append(&audit_title);
@@ -2704,20 +2633,20 @@ impl MainWindow {
 		audit_list.add_css_class("main-audit-list");
 		audit_list.set_selection_mode(gtk4::SelectionMode::Single);
 
-		let (audit_all_row, audit_all_badge) = Self::build_audit_sidebar_row("Tous", "view-grid-symbolic");
+		let (audit_all_row, audit_all_badge) = Self::build_audit_sidebar_row(crate::tr!("main-audit-all").as_str(), "view-grid-symbolic");
 		let (audit_weak_row, audit_weak_badge) = Self::build_audit_sidebar_row(
-			"Mots de passe faibles",
+			crate::tr!("main-audit-weak").as_str(),
 			"dialog-warning-symbolic",
 		);
 		let (audit_duplicate_row, audit_duplicate_badge) =
-			Self::build_audit_sidebar_row("Doublons", "content-copy-symbolic");
+			Self::build_audit_sidebar_row(crate::tr!("main-audit-duplicates").as_str(), "content-copy-symbolic");
 		audit_list.append(&audit_all_row);
 		audit_list.append(&audit_weak_row);
 		audit_list.append(&audit_duplicate_row);
 		audit_list.select_row(Some(&audit_all_row));
 		sidebar_box.append(&audit_list);
 
-		let sidebar_title = gtk4::Label::new(Some("Catégories"));
+		let sidebar_title = gtk4::Label::new(Some(crate::tr!("main-categories-title").as_str()));
 		sidebar_title.add_css_class("main-section-title");
 		sidebar_title.set_halign(Align::Start);
 		sidebar_box.append(&sidebar_title);
@@ -2728,15 +2657,15 @@ impl MainWindow {
 		category_list.set_selection_mode(gtk4::SelectionMode::Single);
 
 		let rows = [
-			("Toutes les catégories", "view-grid-symbolic"),
-			("Mots de passe", "dialog-password-symbolic"),
-			("Tokens API", "dialog-key-symbolic"),
-			("Clés SSH", "network-wired-symbolic"),
-			("Documents sécurisés", "folder-documents-symbolic"),
+			(crate::tr!("main-category-all"), "view-grid-symbolic"),
+			(crate::tr!("main-category-passwords"), "dialog-password-symbolic"),
+			(crate::tr!("main-category-api-tokens"), "dialog-key-symbolic"),
+			(crate::tr!("main-category-ssh-keys"), "network-wired-symbolic"),
+			(crate::tr!("main-category-documents"), "folder-documents-symbolic"),
 		];
 
 		for (index, (title, icon_name)) in rows.into_iter().enumerate() {
-			let row = Self::build_sidebar_row(title, icon_name);
+			let row = Self::build_sidebar_row(title.as_str(), icon_name);
 			category_list.append(&row);
 			if index == 0 {
 				category_list.select_row(Some(&row));
@@ -2745,7 +2674,7 @@ impl MainWindow {
 
 		sidebar_box.append(&category_list);
 
-		let account_title = gtk4::Label::new(Some("Compte"));
+		let account_title = gtk4::Label::new(Some(crate::tr!("main-account-title").as_str()));
 		account_title.add_css_class("main-section-title");
 		account_title.set_halign(Align::Start);
 		sidebar_box.append(&account_title);
@@ -2765,7 +2694,7 @@ impl MainWindow {
 		let profile_security_icon = gtk4::Image::from_icon_name("preferences-system-symbolic");
 		profile_security_icon.set_pixel_size(18);
 		profile_security_icon.add_css_class("main-sidebar-icon");
-		let profile_security_label = gtk4::Label::new(Some("Profil & Sécurité"));
+		let profile_security_label = gtk4::Label::new(Some(crate::tr!("main-profile-security").as_str()));
 		profile_security_label.add_css_class("main-sidebar-label");
 		profile_security_label.set_halign(Align::Start);
 		profile_security_label.set_hexpand(true);
@@ -2877,8 +2806,8 @@ impl MainWindow {
 		list_scroll.set_child(Some(&secret_flow));
 
 		let filtered_status_page = adw::StatusPage::builder()
-			.title("Aucun secret trouvé")
-			.description("Ajustez votre recherche ou vos filtres.")
+			.title(crate::tr!("main-filtered-empty-title").as_str())
+			.description(crate::tr!("main-filtered-empty-description").as_str())
 			.icon_name("edit-find-symbolic")
 			.build();
 		filtered_status_page.set_visible(false);
@@ -2903,13 +2832,11 @@ impl MainWindow {
 		empty_icon.set_pixel_size(64);
 		empty_icon.add_css_class("main-empty-icon");
 
-		let empty_title = gtk4::Label::new(Some("Aucun secret pour le moment"));
+		let empty_title = gtk4::Label::new(Some(crate::tr!("main-empty-title").as_str()));
 		empty_title.add_css_class("title-3");
 		empty_title.add_css_class("main-empty-title");
 
-		let empty_description = gtk4::Label::new(Some(
-			"Utilisez le bouton Ajouter en haut a droite pour creer votre premier secret.",
-		));
+		let empty_description = gtk4::Label::new(Some(crate::tr!("main-empty-description").as_str()));
 		empty_description.set_wrap(true);
 		empty_description.set_justify(gtk4::Justification::Center);
 		empty_description.set_max_width_chars(54);
@@ -2957,14 +2884,15 @@ impl MainWindow {
 		stack: gtk4::Stack,
 		empty_title: gtk4::Label,
 		empty_copy: gtk4::Label,
+		toast_overlay: adw::ToastOverlay,
 		filter_runtime: FilterRuntime,
 		editor_launcher: Rc<RefCell<Option<Rc<dyn Fn(DialogMode)>>>>,
 	) where
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
 	{
-		empty_title.set_text("Chargement des secrets...");
-		empty_copy.set_text("Veuillez patienter.");
+		empty_title.set_text(crate::tr!("main-secrets-loading-title").as_str());
+		empty_copy.set_text(crate::tr!("main-secrets-loading-description").as_str());
 		stack.set_visible_child_name("empty");
 
 		let runtime_for_loader = runtime_handle.clone();
@@ -3053,11 +2981,11 @@ impl MainWindow {
 					};
 
 					let (icon_name, type_label_text) = match item.secret_type {
-						crate::models::SecretType::Password => ("dialog-password-symbolic", "Mot de passe"),
-						crate::models::SecretType::ApiToken => ("dialog-key-symbolic", "Token API"),
-						crate::models::SecretType::SshKey => ("network-wired-symbolic", "Clé SSH"),
+						crate::models::SecretType::Password => ("dialog-password-symbolic", crate::tr!("secret-type-password")),
+						crate::models::SecretType::ApiToken => ("dialog-key-symbolic", crate::tr!("secret-type-api-token")),
+						crate::models::SecretType::SshKey => ("network-wired-symbolic", crate::tr!("secret-type-ssh-key")),
 						crate::models::SecretType::SecureDocument => {
-							("folder-documents-symbolic", "Document sécurisé")
+							("folder-documents-symbolic", crate::tr!("secret-type-secure-document"))
 						}
 					};
 					let (color_class, kind) = match item.secret_type {
@@ -3069,10 +2997,10 @@ impl MainWindow {
 						}
 					};
 
-					let title = item.title.unwrap_or_else(|| type_label_text.to_string());
+					let title = item.title.unwrap_or_else(|| type_label_text.clone());
 					let created_at = item
 						.created_at
-						.unwrap_or_else(|| "date indisponible".to_string());
+						.unwrap_or_else(|| crate::tr!("login-history-unavailable"));
 					let health = Self::evaluate_password_strength_label(secret_value.as_str());
 					let tags = item.tags.clone().unwrap_or_default();
 
@@ -3115,10 +3043,8 @@ impl MainWindow {
 					}
 
 					if items.is_empty() {
-						empty_title.set_text("Aucun secret pour le moment");
-						empty_copy.set_text(
-							"Utilisez le bouton Ajouter en haut a droite pour creer votre premier secret.",
-						);
+						empty_title.set_text(crate::tr!("main-empty-title").as_str());
+						empty_copy.set_text(crate::tr!("main-empty-description").as_str());
 						stack.set_visible_child_name("empty");
 						return;
 					}
@@ -3177,6 +3103,8 @@ impl MainWindow {
 						let filter_for_delete = filter_runtime.clone();
 						let editor_launcher_for_delete = editor_launcher.clone();
 						let secret_id_for_delete = item.secret_id;
+						let secret_title_for_delete = item.title.clone();
+						let toast_overlay_for_delete = toast_overlay.clone();
 						card.get_trash_button().connect_clicked(move |_| {
 							let (sender, receiver) = tokio::sync::oneshot::channel();
 							let secret_service_for_task = Arc::clone(&secret_for_delete);
@@ -3200,8 +3128,12 @@ impl MainWindow {
 							let master_for_refresh = master_for_delete.clone();
 							let filter_for_refresh = filter_for_delete.clone();
 							let editor_launcher_for_refresh = editor_launcher_for_delete.clone();
+							let secret_title_for_refresh = secret_title_for_delete.clone();
+							let toast_overlay_for_refresh = toast_overlay_for_delete.clone();
 							glib::MainContext::default().spawn_local(async move {
 								if matches!(receiver.await, Ok(Ok(()))) {
+									let toast_message = messages::toast_secret_deleted(secret_title_for_refresh.as_str());
+									toast_overlay_for_refresh.add_toast(adw::Toast::new(toast_message.as_str()));
 									Self::refresh_secret_flow(
 										app_for_refresh.clone(),
 										parent_for_refresh.clone(),
@@ -3214,6 +3146,7 @@ impl MainWindow {
 										stack_for_refresh.clone(),
 										empty_title_refresh.clone(),
 										empty_copy_refresh.clone(),
+										toast_overlay_for_refresh.clone(),
 										filter_for_refresh.clone(),
 										editor_launcher_for_refresh.clone(),
 									);
@@ -3297,7 +3230,7 @@ impl MainWindow {
 									.as_str(),
 								),
 								kind,
-								is_weak: item.health == "Faible",
+								is_weak: item.health == crate::tr!("main-strength-weak"),
 								is_duplicate,
 							},
 						);
@@ -3308,10 +3241,8 @@ impl MainWindow {
 					stack.set_visible_child_name("list");
 				}
 				Ok(Err(_)) | Err(_) => {
-					empty_title.set_text("Liste indisponible");
-					empty_copy.set_text(
-						"Impossible de charger les secrets pour le moment. Réessayez dans un instant.",
-					);
+					empty_title.set_text(crate::tr!("main-list-unavailable-title").as_str());
+					empty_copy.set_text(crate::tr!("main-list-unavailable-description").as_str());
 					stack.set_visible_child_name("empty");
 				}
 			}

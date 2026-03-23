@@ -13,6 +13,7 @@ use tokio::runtime::Handle;
 use tracing::warn;
 
 use crate::errors::AppError;
+use crate::i18n::I18nArg;
 use crate::services::auth_policy_service::AuthPolicyService;
 use crate::services::auth_service::AuthService;
 use crate::services::totp_service::TotpService;
@@ -68,7 +69,7 @@ impl LoginDialog {
 		let window = gtk4::Window::builder()
 			.application(application)
 			.transient_for(parent)
-			.title("Connexion")
+			.title(crate::tr!("login-window-title").as_str())
 			.modal(true)
 			.resizable(false)
 			.default_width(460)
@@ -127,12 +128,12 @@ impl LoginDialog {
 		hero_beta_badge.add_css_class("login-beta-badge");
 		hero_beta_badge.set_halign(Align::Start);
 
-		let title_label = gtk4::Label::new(Some("Accès sécurisé\nà votre coffre"));
+		let title_label = gtk4::Label::new(Some(crate::tr!("login-hero-title").as_str()));
 		title_label.add_css_class("title-1");
 		title_label.add_css_class("login-hero-title");
 		title_label.set_halign(Align::Start);
 
-		let subtitle_label = gtk4::Label::new(Some("Chiffrement local · Aucune fuite de données"));
+		let subtitle_label = gtk4::Label::new(Some(crate::tr!("login-hero-subtitle").as_str()));
 		subtitle_label.add_css_class("login-hero-copy");
 		subtitle_label.set_wrap(true);
 		subtitle_label.set_halign(Align::Start);
@@ -173,6 +174,29 @@ impl LoginDialog {
 			.margin_end(20)
 			.build();
 
+		let language_row = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.halign(Align::Fill)
+			.build();
+		let language_label = gtk4::Label::new(Some(crate::tr!("login-language-label").as_str()));
+		language_label.add_css_class("login-field-label");
+		language_label.set_halign(Align::Start);
+		language_label.set_hexpand(true);
+		let language_selector = gtk4::DropDown::from_strings(&[
+			crate::tr!("login-language-fr").as_str(),
+			crate::tr!("login-language-en").as_str(),
+		]);
+		language_selector.set_halign(Align::End);
+		let current_lang = crate::i18n::current_language();
+		if current_lang.to_ascii_lowercase().starts_with("en") {
+			language_selector.set_selected(1);
+		} else {
+			language_selector.set_selected(0);
+		}
+		language_row.append(&language_label);
+		language_row.append(&language_selector);
+
 		let cps_frame = gtk4::Frame::new(None);
 		cps_frame.add_css_class("login-cps-teaser");
 		cps_frame.set_sensitive(false);
@@ -199,15 +223,15 @@ impl LoginDialog {
 			.hexpand(true)
 			.build();
 
-		let cps_name = gtk4::Label::new(Some("Carte CPS"));
+		let cps_name = gtk4::Label::new(Some(crate::tr!("login-cps-name").as_str()));
 		cps_name.add_css_class("login-cps-title");
 		cps_name.set_halign(Align::Start);
 
-		let cps_sub = gtk4::Label::new(Some("Authentification professionnelle"));
+		let cps_sub = gtk4::Label::new(Some(crate::tr!("login-cps-subtitle").as_str()));
 		cps_sub.add_css_class("login-cps-copy");
 		cps_sub.set_halign(Align::Start);
 
-		let cps_badge = gtk4::Label::new(Some("En cours"));
+		let cps_badge = gtk4::Label::new(Some(crate::tr!("login-cps-badge").as_str()));
 		cps_badge.add_css_class("login-cps-badge");
 		cps_badge.set_halign(Align::End);
 		cps_badge.set_valign(Align::Center);
@@ -219,25 +243,25 @@ impl LoginDialog {
 		cps_box.append(&cps_badge);
 		cps_frame.set_child(Some(&cps_box));
 
-		let username_label = gtk4::Label::new(Some("IDENTIFIANT"));
+		let username_label = gtk4::Label::new(Some(crate::tr!("login-username-label").as_str()));
 		username_label.add_css_class("login-field-label");
 		username_label.add_css_class("login-field-label-caps");
 		username_label.set_halign(Align::Start);
 
 		let username_entry = gtk4::Entry::builder()
-			.placeholder_text("username, nom affiche ou email")
+			.placeholder_text(crate::tr!("login-username-placeholder").as_str())
 			.hexpand(true)
 			.build();
 		username_entry.add_css_class("login-entry");
 		username_entry.set_activates_default(true);
 
-		let password_label = gtk4::Label::new(Some("MOT DE PASSE"));
+		let password_label = gtk4::Label::new(Some(crate::tr!("login-password-label").as_str()));
 		password_label.add_css_class("login-field-label");
 		password_label.add_css_class("login-field-label-caps");
 		password_label.set_halign(Align::Start);
 
 		let password_entry = gtk4::PasswordEntry::builder()
-			.placeholder_text("Saisissez votre mot de passe")
+			.placeholder_text(crate::tr!("login-password-placeholder").as_str())
 			.hexpand(true)
 			.show_peek_icon(true)
 			.build();
@@ -249,7 +273,7 @@ impl LoginDialog {
 		strength_label.set_halign(Align::Start);
 		strength_label.set_visible(false);
 
-		let restore_button = gtk4::Button::with_label("Recuperer ma base (.hvb)");
+		let restore_button = gtk4::Button::with_label(crate::tr!("login-restore-button").as_str());
 		restore_button.add_css_class("flat");
 		restore_button.set_halign(Align::End);
 
@@ -280,7 +304,7 @@ impl LoginDialog {
 			.build();
 		totp_step_box.add_css_class("login-totp-block");
 
-		let totp_back_button = gtk4::Button::with_label("← Retour aux identifiants");
+		let totp_back_button = gtk4::Button::with_label(crate::tr!("login-totp-back").as_str());
 		totp_back_button.add_css_class("flat");
 		totp_back_button.set_halign(Align::Start);
 
@@ -293,13 +317,11 @@ impl LoginDialog {
 		totp_icon.set_halign(Align::Center);
 		totp_icon.add_css_class("login-totp-icon");
 
-		let totp_title = gtk4::Label::new(Some("Vérification en deux étapes"));
+		let totp_title = gtk4::Label::new(Some(crate::tr!("login-totp-title").as_str()));
 		totp_title.add_css_class("login-field-label");
 		totp_title.set_halign(Align::Center);
 
-		let totp_subtitle = gtk4::Label::new(Some(
-			"Saisissez le code à 6 chiffres\nde votre application d'authentification.",
-		));
+		let totp_subtitle = gtk4::Label::new(Some(crate::tr!("login-totp-subtitle").as_str()));
 		totp_subtitle.add_css_class("login-support-copy");
 		totp_subtitle.set_wrap(true);
 		totp_subtitle.set_justify(Justification::Center);
@@ -350,7 +372,7 @@ impl LoginDialog {
 			.spacing(10)
 			.build();
 
-		let back_button = gtk4::Button::with_label("Quitter");
+		let back_button = gtk4::Button::with_label(crate::tr!("login-back-button").as_str());
 		back_button.add_css_class("secondary-pill");
 		back_button.set_hexpand(false);
 
@@ -369,7 +391,8 @@ impl LoginDialog {
 		let spinner = gtk4::Spinner::new();
 		spinner.set_visible(false);
 
-		let button_label = gtk4::Label::new(Some("Connexion"));
+		let login_button_text = crate::tr!("login-button");
+		let button_label = gtk4::Label::new(Some(login_button_text.as_str()));
 		button_label.add_css_class("heading");
 
 		button_content.append(&spinner);
@@ -390,12 +413,14 @@ impl LoginDialog {
 			.build();
 		let sec_dot = gtk4::Label::new(Some("·"));
 		sec_dot.add_css_class("login-sec-dot");
-		let sec_text = gtk4::Label::new(Some("Vos données ne quittent jamais cet appareil"));
+		let sec_text = gtk4::Label::new(Some(crate::tr!("login-security-note").as_str()));
 		sec_text.add_css_class("login-support-copy");
 		sec_text.set_halign(Align::Center);
 		sec_strip.append(&sec_dot);
 		sec_strip.append(&sec_text);
 		form_box.append(&sec_strip);
+
+		form_box.prepend(&language_row);
 
 		form_card.set_child(Some(&form_box));
 
@@ -439,7 +464,80 @@ impl LoginDialog {
 		let step_for_button_watch = step_stack.clone();
 		step_stack.connect_visible_child_name_notify(move |_| {
 			let is_totp_step = step_for_button_watch.visible_child_name().as_ref().map_or(false, |n| n == "totp");
-			button_label_for_step.set_text(if is_totp_step { "Vérifier" } else { "Connexion" });
+			if is_totp_step {
+				button_label_for_step.set_text(crate::tr!("login-button-verify").as_str());
+			} else {
+				button_label_for_step.set_text(crate::tr!("login-button").as_str());
+			}
+		});
+
+		let window_for_i18n = window.clone();
+		let title_for_i18n = title_label.clone();
+		let subtitle_for_i18n = subtitle_label.clone();
+		let cps_name_for_i18n = cps_name.clone();
+		let cps_sub_for_i18n = cps_sub.clone();
+		let cps_badge_for_i18n = cps_badge.clone();
+		let username_label_for_i18n = username_label.clone();
+		let username_entry_for_i18n = username_entry.clone();
+		let password_label_for_i18n = password_label.clone();
+		let password_entry_for_i18n = password_entry.clone();
+		let restore_button_for_i18n = restore_button.clone();
+		let totp_back_for_i18n = totp_back_button.clone();
+		let totp_title_for_i18n = totp_title.clone();
+		let totp_subtitle_for_i18n = totp_subtitle.clone();
+		let back_button_for_i18n = back_button.clone();
+		let sec_text_for_i18n = sec_text.clone();
+		let language_label_for_i18n = language_label.clone();
+		let language_selector_for_i18n = language_selector.clone();
+		let step_for_i18n = step_stack.clone();
+		let button_label_for_i18n = button_label.clone();
+		let apply_login_i18n: Rc<dyn Fn()> = Rc::new(move || {
+			window_for_i18n.set_title(Some(crate::tr!("login-window-title").as_str()));
+			title_for_i18n.set_text(crate::tr!("login-hero-title").as_str());
+			subtitle_for_i18n.set_text(crate::tr!("login-hero-subtitle").as_str());
+			cps_name_for_i18n.set_text(crate::tr!("login-cps-name").as_str());
+			cps_sub_for_i18n.set_text(crate::tr!("login-cps-subtitle").as_str());
+			cps_badge_for_i18n.set_text(crate::tr!("login-cps-badge").as_str());
+			username_label_for_i18n.set_text(crate::tr!("login-username-label").as_str());
+			username_entry_for_i18n.set_placeholder_text(Some(
+				crate::tr!("login-username-placeholder").as_str(),
+			));
+			password_label_for_i18n.set_text(crate::tr!("login-password-label").as_str());
+			password_entry_for_i18n.set_placeholder_text(Some(
+				crate::tr!("login-password-placeholder").as_str(),
+			));
+			restore_button_for_i18n.set_label(crate::tr!("login-restore-button").as_str());
+			totp_back_for_i18n.set_label(crate::tr!("login-totp-back").as_str());
+			totp_title_for_i18n.set_text(crate::tr!("login-totp-title").as_str());
+			totp_subtitle_for_i18n.set_text(crate::tr!("login-totp-subtitle").as_str());
+			back_button_for_i18n.set_label(crate::tr!("login-back-button").as_str());
+			sec_text_for_i18n.set_text(crate::tr!("login-security-note").as_str());
+			language_label_for_i18n.set_text(crate::tr!("login-language-label").as_str());
+
+			let selected = language_selector_for_i18n.selected();
+			language_selector_for_i18n.set_model(Some(&gtk4::StringList::new(&[
+				crate::tr!("login-language-fr").as_str(),
+				crate::tr!("login-language-en").as_str(),
+			])));
+			language_selector_for_i18n.set_selected(selected.min(1));
+
+			let is_totp_step = step_for_i18n
+				.visible_child_name()
+				.as_ref()
+				.map_or(false, |name| name == "totp");
+			if is_totp_step {
+				button_label_for_i18n.set_text(crate::tr!("login-button-verify").as_str());
+			} else {
+				button_label_for_i18n.set_text(crate::tr!("login-button").as_str());
+			}
+		});
+		apply_login_i18n();
+
+		let apply_login_i18n_for_selector = Rc::clone(&apply_login_i18n);
+		language_selector.connect_selected_notify(move |dropdown| {
+			let target_lang = if dropdown.selected() == 1 { "en" } else { "fr" };
+			let _ = crate::i18n::set_language(target_lang);
+			apply_login_i18n_for_selector();
 		});
 
 		let dialog_for_submit = window.clone();
@@ -575,7 +673,7 @@ impl LoginDialog {
 				if username.is_empty() {
 					Self::show_feedback(
 						&error_for_submit,
-						"Saisissez votre identifiant (username, nom affiche ou email) pour continuer.",
+						crate::tr!("login-error-username-required").as_str(),
 					);
 					return;
 				}
@@ -583,7 +681,7 @@ impl LoginDialog {
 				if password.is_empty() {
 					Self::show_feedback(
 						&error_for_submit,
-						"Saisissez votre mot de passe avant de vous connecter.",
+						crate::tr!("login-error-password-required").as_str(),
 					);
 					return;
 				}
@@ -721,7 +819,7 @@ impl LoginDialog {
 							} else {
 								Self::show_feedback(
 									&error_for_result,
-									"Identifiants invalides. Merci de patienter avant une nouvelle tentative.",
+									crate::tr!("login-error-invalid-credentials").as_str(),
 								);
 								let button_after_delay = button_for_result.clone();
 								let spinner_after_delay = spinner_for_result.clone();
@@ -742,13 +840,13 @@ impl LoginDialog {
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							Self::show_feedback(
 								&error_for_result,
-								"Une erreur interne est survenue. Merci de reessayer.",
+								crate::tr!("login-error-internal").as_str(),
 							);
 						}
 						Ok(Err(_)) => {
 							Self::show_feedback(
 								&error_for_result,
-								"Connexion indisponible pour le moment. Merci de patienter.",
+								crate::tr!("login-error-unavailable").as_str(),
 							);
 							let button_after_delay = button_for_result.clone();
 							let spinner_after_delay = spinner_for_result.clone();
@@ -766,7 +864,7 @@ impl LoginDialog {
 						Err(_) => {
 							Self::show_feedback(
 								&error_for_result,
-								"La tentative de connexion a ete interrompue. Merci de patienter.",
+								crate::tr!("login-error-interrupted").as_str(),
 							);
 							let button_after_delay = button_for_result.clone();
 							let spinner_after_delay = spinner_for_result.clone();
@@ -896,7 +994,7 @@ impl LoginDialog {
 								);
 								Self::show_feedback(
 									&error_for_result,
-									totp_feedback,
+									totp_feedback.as_str(),
 								);
 								let button_after_delay = button_for_result.clone();
 								let spinner_after_delay = spinner_for_result.clone();
@@ -928,7 +1026,7 @@ impl LoginDialog {
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							Self::show_feedback(
 								&error_for_result,
-								"Une erreur est survenue. Merci de reessayer.",
+								crate::tr!("login-error-internal").as_str(),
 							);
 						}
 						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {
@@ -938,7 +1036,7 @@ impl LoginDialog {
 						Ok(Err(_)) => {
 							Self::show_feedback(
 								&error_for_result,
-								"Connexion indisponible pour le moment. Merci de patienter.",
+								crate::tr!("login-error-unavailable").as_str(),
 							);
 							let button_after_delay = button_for_result.clone();
 							let spinner_after_delay = spinner_for_result.clone();
@@ -956,7 +1054,7 @@ impl LoginDialog {
 						Err(_) => {
 							Self::show_feedback(
 								&error_for_result,
-								"La tentative de connexion a ete interrompue. Merci de patienter.",
+								crate::tr!("login-error-interrupted").as_str(),
 							);
 							let button_after_delay = button_for_result.clone();
 							let spinner_after_delay = spinner_for_result.clone();
@@ -1018,7 +1116,7 @@ impl LoginDialog {
 		if current_secs == 0 {
 			lock_active.set(false);
 			Self::set_pending_state(button, spinner, false);
-			Self::show_feedback(error_label, "Vous pouvez reessayer maintenant.");
+			Self::show_feedback(error_label, crate::tr!("login-error-retry-now").as_str());
 			return;
 		}
 
@@ -1029,10 +1127,11 @@ impl LoginDialog {
 
 		Self::show_feedback(
 			error_label,
-			&format!(
-				"Compte temporairement verrouille. Nouvelle tentative dans {}s.",
-				current_secs
-			),
+			crate::i18n::tr_args(
+				"login-error-account-locked",
+				&[("seconds", I18nArg::Num(current_secs))],
+			)
+			.as_str(),
 		);
 
 		let button_for_tick = button.clone();
@@ -1045,16 +1144,17 @@ impl LoginDialog {
 			if current_secs == 0 {
 				lock_active_for_tick.set(false);
 				Self::set_pending_state(&button_for_tick, &spinner_for_tick, false);
-				Self::show_feedback(&error_for_tick, "Vous pouvez reessayer maintenant.");
+				Self::show_feedback(&error_for_tick, crate::tr!("login-error-retry-now").as_str());
 				let _ = lock_timer_for_tick.borrow_mut().take();
 				glib::ControlFlow::Break
 			} else {
 				Self::show_feedback(
 					&error_for_tick,
-					&format!(
-						"Compte temporairement verrouille. Nouvelle tentative dans {}s.",
-						current_secs
-					),
+					crate::i18n::tr_args(
+						"login-error-account-locked",
+						&[("seconds", I18nArg::Num(current_secs))],
+					)
+					.as_str(),
 				);
 				glib::ControlFlow::Continue
 			}
@@ -1075,11 +1175,14 @@ impl LoginDialog {
 
 	fn update_greeting(title_label: &gtk4::Label, username: &str) {
 		if username.is_empty() {
-			title_label.set_text("Connexion securisee");
+			title_label.set_text(crate::tr!("login-greeting-empty").as_str());
 			return;
 		}
 
-		title_label.set_text(&format!("Bonjour, {username}"));
+		title_label.set_text(
+			crate::i18n::tr_args("login-greeting-hello", &[("username", I18nArg::Str(username))])
+				.as_str(),
+		);
 	}
 
 	fn update_strength_feedback(password: &str, strength_label: &gtk4::Label) {
@@ -1118,18 +1221,18 @@ impl LoginDialog {
 		}
 
 		let (label, css_class) = if score >= 4 {
-			("Robustesse : tres forte", "success")
+			(crate::tr!("login-password-strength-very-strong"), "success")
 		} else if score >= 3 {
-			("Robustesse : forte", "success")
+			(crate::tr!("login-password-strength-strong"), "success")
 		} else if score >= 2 {
-			("Robustesse : moyenne", "warning")
+			(crate::tr!("login-password-strength-medium"), "warning")
 		} else {
-			("Robustesse : faible", "error")
+			(crate::tr!("login-password-strength-weak"), "error")
 		};
 
 		strength_label.remove_css_class("dim-label");
 		strength_label.add_css_class(css_class);
-		strength_label.set_text(label);
+		strength_label.set_text(label.as_str());
 		strength_label.set_visible(true);
 	}
 
@@ -1150,7 +1253,7 @@ impl LoginDialog {
 	) {
 		let dialog = gtk4::Window::builder()
 			.transient_for(parent)
-			.title("Recuperation de la base")
+			.title(crate::tr!("login-restore-dialog-title").as_str())
 			.modal(true)
 			.resizable(false)
 			.default_width(520)
@@ -1167,12 +1270,12 @@ impl LoginDialog {
 			.build();
 
 		let title = gtk4::Label::new(Some(
-			"Restaurez un export chiffre .hvb avec votre phrase de recuperation.",
+			crate::tr!("login-restore-description").as_str(),
 		));
 		title.set_wrap(true);
 		title.set_halign(Align::Start);
 
-		let file_label = gtk4::Label::new(Some("Fichier .hvb"));
+		let file_label = gtk4::Label::new(Some(crate::tr!("login-restore-file-label").as_str()));
 		file_label.add_css_class("login-field-label");
 		file_label.set_halign(Align::Start);
 
@@ -1182,33 +1285,33 @@ impl LoginDialog {
 			.build();
 
 		let file_entry = gtk4::Entry::builder()
-			.placeholder_text("/chemin/vers/sauvegarde.hvb")
+			.placeholder_text(crate::tr!("login-restore-file-placeholder").as_str())
 			.hexpand(true)
 			.build();
 		file_entry.add_css_class("login-entry");
 
-		let browse_button = gtk4::Button::with_label("Parcourir");
+		let browse_button = gtk4::Button::with_label(crate::tr!("login-restore-browse").as_str());
 		browse_button.add_css_class("secondary-pill");
 
 		file_row.append(&file_entry);
 		file_row.append(&browse_button);
 
-		let phrase_label = gtk4::Label::new(Some("Phrase de recuperation (24 mots)"));
+		let phrase_label = gtk4::Label::new(Some(crate::tr!("login-restore-phrase-label").as_str()));
 		phrase_label.add_css_class("login-field-label");
 		phrase_label.set_halign(Align::Start);
 
 		let phrase_entry = gtk4::Entry::builder()
-			.placeholder_text("word1 word2 ... word24")
+			.placeholder_text(crate::tr!("login-restore-phrase-placeholder").as_str())
 			.hexpand(true)
 			.build();
 		phrase_entry.add_css_class("login-entry");
 
-		let password_label = gtk4::Label::new(Some("Nouveau mot de passe principal"));
+		let password_label = gtk4::Label::new(Some(crate::tr!("login-restore-password-label").as_str()));
 		password_label.add_css_class("login-field-label");
 		password_label.set_halign(Align::Start);
 
 		let new_password_entry = gtk4::PasswordEntry::builder()
-			.placeholder_text("Choisissez un nouveau mot de passe")
+			.placeholder_text(crate::tr!("login-restore-password-placeholder").as_str())
 			.hexpand(true)
 			.show_peek_icon(true)
 			.build();
@@ -1217,12 +1320,12 @@ impl LoginDialog {
 		let strength_bar = PasswordStrengthBar::new();
 		strength_bar.connect_to_password_entry(&new_password_entry);
 
-		let confirm_label = gtk4::Label::new(Some("Confirmer le mot de passe"));
+		let confirm_label = gtk4::Label::new(Some(crate::tr!("login-restore-confirm-label").as_str()));
 		confirm_label.add_css_class("login-field-label");
 		confirm_label.set_halign(Align::Start);
 
 		let confirm_password_entry = gtk4::PasswordEntry::builder()
-			.placeholder_text("Retapez le mot de passe")
+			.placeholder_text(crate::tr!("login-restore-confirm-placeholder").as_str())
 			.hexpand(true)
 			.show_peek_icon(true)
 			.build();
@@ -1239,7 +1342,7 @@ impl LoginDialog {
 			.spacing(10)
 			.build();
 
-		let cancel_button = gtk4::Button::with_label("Annuler");
+		let cancel_button = gtk4::Button::with_label(crate::tr!("login-restore-cancel").as_str());
 		cancel_button.add_css_class("secondary-pill");
 
 		let restore_button = gtk4::Button::builder()
@@ -1256,7 +1359,7 @@ impl LoginDialog {
 			.build();
 		let restore_spinner = gtk4::Spinner::new();
 		restore_spinner.set_visible(false);
-		let restore_label = gtk4::Label::new(Some("Restaurer et redemarrer"));
+		let restore_label = gtk4::Label::new(Some(crate::tr!("login-restore-submit").as_str()));
 		restore_content.append(&restore_spinner);
 		restore_content.append(&restore_label);
 		restore_button.set_child(Some(&restore_content));

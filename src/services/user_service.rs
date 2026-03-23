@@ -12,6 +12,7 @@ use crate::services::auth_service::AuthService;
 pub struct UserProfileUpdate {
     pub email: Option<String>,
     pub display_name: Option<String>,
+    pub preferred_language: Option<String>,
     pub show_passwords_in_edit: Option<bool>,
     pub current_password: Option<SecretBox<Vec<u8>>>,
 }
@@ -101,6 +102,12 @@ where
             .map(str::trim)
             .filter(|value| !value.is_empty())
             .map(ToOwned::to_owned);
+        let next_preferred_language = update
+            .preferred_language
+            .as_deref()
+            .map(str::trim)
+            .filter(|value| !value.is_empty())
+            .map(ToOwned::to_owned);
 
         let email_changed = next_email != current_user.email;
         if email_changed {
@@ -125,6 +132,7 @@ where
                 user_id,
                 next_email.as_deref(),
                 next_display_name.as_deref(),
+                next_preferred_language.as_deref(),
                 update.show_passwords_in_edit,
             )
             .await?;

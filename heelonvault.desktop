@@ -1,12 +1,13 @@
 [Desktop Entry]
-Version=0.5.0
+Version=1.0
 Type=Application
 Name=HeelonVault
-Comment=Secure secret manager (Rust edition)
+Comment=Gestionnaire de mots de passe
 Exec=/opt/heelonvault/run.sh
+TryExec=/opt/heelonvault/run.sh
 Icon=heelonvault
 Terminal=false
-Categories=Utility;Security;
-Keywords=security;secret;encryption;vault;rust;
+Categories=System;Security;
+Keywords=security;secret;encryption;vault;password;
 StartupNotify=true
-StartupWMClass=org.heelonys.heelonvault
+StartupWMClass=com.heelonvault.rust

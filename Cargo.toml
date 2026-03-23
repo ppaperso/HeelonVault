@@ -1,8 +1,8 @@
 [package]
 name = "heelonvault-rust"
-version = "0.9.0-beta"
+version = "0.9.1-beta"
 edition = "2021"
-license = "MIT"
+license-file = "LICENSE"
 description = "HeelonVault Rust migration skeleton (security-first architecture)"
 repository = "<private>"
 
@@ -41,6 +41,8 @@ base64 = "0.22"
 csv = "1.3"
 qrcode = "0.14"
 image = { version = "0.25", features = ["png"] }
+fluent-templates = "0.9"
+unic-langid = "0.9"
 
 [build-dependencies]
 glib-build-tools = "0.20"

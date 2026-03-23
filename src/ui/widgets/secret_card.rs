@@ -85,7 +85,7 @@ impl SecretCard {
 
 		// Duplicate badge
 		if data.is_duplicate {
-			let dup_badge = Label::new(Some("Doublon"));
+			let dup_badge = Label::new(Some(crate::tr!("secret-card-duplicate-badge").as_str()));
 			dup_badge.set_single_line_mode(true);
 			dup_badge.add_css_class("secret-badge");
 			dup_badge.add_css_class("badge-duplicate");

@@ -15,6 +15,7 @@ use tracing::{info, warn};
 use uuid::Uuid;
 
 use crate::errors::AppError;
+use crate::i18n::{self, I18nArg};
 use crate::services::auth_policy_service::AuthPolicyService;
 use crate::services::backup_service::BackupService;
 use crate::services::import_service::ImportService;
@@ -56,37 +57,38 @@ impl ProfileDialog {
             .application(app)
             .transient_for(parent)
             .modal(true)
-            .title("Mon profil")
+            .title(crate::tr!("profile-window-title").as_str())
             .default_width(560)
             .default_height(680)
             .build();
 
         let profile_page = adw::PreferencesPage::new();
-        profile_page.set_title("Profil");
+        profile_page.set_title(crate::tr!("profile-view-title").as_str());
 
         let info_group = adw::PreferencesGroup::new();
-        info_group.set_title("Informations");
+        info_group.set_title(crate::tr!("profile-section-info").as_str());
 
         let username_row = adw::EntryRow::new();
-        username_row.set_title("Nom d'utilisateur");
+        username_row.set_title(crate::tr!("profile-field-username").as_str());
         username_row.set_sensitive(false);
         username_row.add_css_class("profile-entry-row");
 
         let display_name_row = adw::EntryRow::new();
-        display_name_row.set_title("Nom d'affichage");
+        display_name_row.set_title(crate::tr!("profile-field-display-name").as_str());
         display_name_row.add_css_class("profile-entry-row");
 
         let email_row = adw::EntryRow::new();
-        email_row.set_title("Email");
+        email_row.set_title(crate::tr!("profile-field-email").as_str());
         email_row.add_css_class("profile-entry-row");
 
         let current_password_row = adw::PasswordEntryRow::new();
-        current_password_row.set_title("Mot de passe actuel (si changement email)");
+        current_password_row
+            .set_title(crate::tr!("profile-field-current-password-email-change").as_str());
         current_password_row.add_css_class("profile-entry-row");
 
         let save_row = adw::ActionRow::new();
-        save_row.set_title("Enregistrer les modifications");
-        let save_button = gtk4::Button::with_label("Sauvegarder");
+        save_row.set_title(crate::tr!("profile-status-saving").as_str());
+        let save_button = gtk4::Button::with_label(crate::tr!("profile-save").as_str());
         save_button.add_css_class("suggested-action");
         save_row.add_suffix(&save_button);
 
@@ -98,24 +100,24 @@ impl ProfileDialog {
         profile_page.add(&info_group);
 
         let security_group = adw::PreferencesGroup::new();
-        security_group.set_title("Sécurité");
+        security_group.set_title(crate::tr!("profile-section-security").as_str());
 
         let auto_lock_delay_row = adw::ComboRow::new();
-        auto_lock_delay_row.set_title("Délai de verrouillage automatique");
+        auto_lock_delay_row.set_title(crate::tr!("profile-auto-lock-title").as_str());
         let auto_lock_options = gtk4::StringList::new(&[
-            "1 minute",
-            "5 minutes",
-            "10 minutes",
-            "30 minutes",
+            crate::tr!("profile-auto-lock-1").as_str(),
+            crate::tr!("profile-auto-lock-5").as_str(),
+            crate::tr!("profile-auto-lock-10").as_str(),
+            crate::tr!("profile-auto-lock-30").as_str(),
         ]);
         auto_lock_delay_row.set_model(Some(&auto_lock_options));
 
         let current_master_password_row = adw::PasswordEntryRow::new();
-        current_master_password_row.set_title("Mot de passe actuel");
+        current_master_password_row.set_title(crate::tr!("profile-field-current-password").as_str());
         current_master_password_row.add_css_class("profile-entry-row");
 
         let new_master_password_row = adw::PasswordEntryRow::new();
-        new_master_password_row.set_title("Nouveau mot de passe");
+        new_master_password_row.set_title(crate::tr!("profile-field-new-password").as_str());
         new_master_password_row.add_css_class("profile-entry-row");
 
         let master_strength_bar = PasswordStrengthBar::new();
@@ -123,12 +125,14 @@ impl ProfileDialog {
         let master_strength_row = master_strength_bar.into_action_row();
 
         let confirm_master_password_row = adw::PasswordEntryRow::new();
-        confirm_master_password_row.set_title("Confirmer le nouveau mot de passe");
+        confirm_master_password_row
+            .set_title(crate::tr!("profile-field-confirm-new-password").as_str());
         confirm_master_password_row.add_css_class("profile-entry-row");
 
         let password_save_row = adw::ActionRow::new();
-        password_save_row.set_title("Mettre à jour la master key");
-        let change_password_button = gtk4::Button::with_label("Changer");
+        password_save_row.set_title(crate::tr!("profile-rotate-button").as_str());
+        let change_password_button =
+            gtk4::Button::with_label(crate::tr!("profile-change-button").as_str());
         change_password_button.add_css_class("suggested-action");
         change_password_button.set_sensitive(false);
         master_strength_bar.connect_and_gate_button(
@@ -147,10 +151,8 @@ impl ProfileDialog {
 
         // ─── Progress panel for master key change (hidden initially) ───────────
         let mkchange_group = adw::PreferencesGroup::new();
-        mkchange_group.set_title("Changement de la master key");
-        mkchange_group.set_description(Some(
-            "Dérivation Argon2id sécurisée \u{2022} Ne fermez pas cette fenêtre",
-        ));
+        mkchange_group.set_title(crate::tr!("profile-mkchange-title").as_str());
+        mkchange_group.set_description(Some(crate::tr!("profile-mkchange-description").as_str()));
         mkchange_group.add_css_class("mkchange-progress-group");
         mkchange_group.set_visible(false);
 
@@ -175,30 +177,30 @@ impl ProfileDialog {
         };
 
         let (step1_row, step1_spinner, step1_icon) =
-            build_step("Vérification du mot de passe actuel");
+            build_step(crate::tr!("profile-mkchange-step-verify").as_str());
         let (step2_row, step2_spinner, step2_icon) =
-            build_step("Dérivation de la nouvelle clé (Argon2id)");
+            build_step(crate::tr!("profile-mkchange-step-derive").as_str());
         let (step3_row, step3_spinner, step3_icon) =
-            build_step("Enregistrement sécurisé dans la base");
+            build_step(crate::tr!("profile-mkchange-step-store").as_str());
 
         mkchange_group.add(&step1_row);
         mkchange_group.add(&step2_row);
         mkchange_group.add(&step3_row);
 
         let data_group = adw::PreferencesGroup::new();
-        data_group.set_title("Gestion des données");
+        data_group.set_title(crate::tr!("profile-section-data").as_str());
 
         let export_row = adw::ActionRow::new();
-        export_row.set_title("Exporter ma base (.hvb)");
-        export_row.set_subtitle("Sauvegarde chiffrée AES-256-GCM avec Recovery Key");
-        let export_button = gtk4::Button::with_label("Exporter ma base");
+        export_row.set_title(crate::tr!("profile-export-title").as_str());
+        export_row.set_subtitle(crate::tr!("profile-export-subtitle").as_str());
+        let export_button = gtk4::Button::with_label(crate::tr!("profile-export-button").as_str());
         export_button.add_css_class("suggested-action");
         export_row.add_suffix(&export_button);
 
         let import_row = adw::ActionRow::new();
-        import_row.set_title("Importer des données (CSV)");
-        import_row.set_subtitle("Colonnes attendues: name, url, username, password, notes");
-        let import_button = gtk4::Button::with_label("Importer des données (CSV)");
+        import_row.set_title(crate::tr!("profile-import-title").as_str());
+        import_row.set_subtitle(crate::tr!("profile-import-subtitle").as_str());
+        let import_button = gtk4::Button::with_label(crate::tr!("profile-import-button").as_str());
         import_button.add_css_class("flat");
         import_row.add_suffix(&import_button);
 
@@ -265,13 +267,13 @@ impl ProfileDialog {
                 }
                 Ok(Err(err)) => {
                     warn!("failed to load user profile: {err:?}");
-                    let toast = adw::Toast::new("Impossible de charger le profil");
+                    let toast = adw::Toast::new(crate::tr!("profile-status-load-failed").as_str());
                     window_for_load.add_toast(toast);
                     auto_lock_loading_for_load.set(false);
                 }
                 Err(err) => {
                     warn!("failed to receive profile load result: {err:?}");
-                    let toast = adw::Toast::new("Impossible de charger le profil");
+                    let toast = adw::Toast::new(crate::tr!("profile-status-load-failed").as_str());
                     window_for_load.add_toast(toast);
                     auto_lock_loading_for_load.set(false);
                 }
@@ -322,11 +324,14 @@ impl ProfileDialog {
                 match receiver.await {
                     Ok((updated_mins, Ok(()))) => {
                         delay_callback_for_result(updated_mins as u64);
-                        window_for_result.add_toast(adw::Toast::new("Délai auto-lock mis à jour"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-lock-delay-updated").as_str(),
+                        ));
                     }
                     Ok((_, Err(_))) | Err(_) => {
-                        window_for_result
-                            .add_toast(adw::Toast::new("Échec de la mise à jour du délai auto-lock"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-lock-delay-failed").as_str(),
+                        ));
                     }
                 }
             });
@@ -337,10 +342,10 @@ impl ProfileDialog {
         let db_path_for_export = database_path.clone();
         export_button.connect_clicked(move |_| {
             let chooser = gtk4::FileChooserNative::builder()
-                .title("Exporter la base chiffrée")
+                .title(crate::tr!("profile-export-chooser-title").as_str())
                 .transient_for(&window_for_export)
-                .accept_label("Exporter")
-                .cancel_label("Annuler")
+                .accept_label(crate::tr!("profile-export-accept").as_str())
+                .cancel_label(crate::tr!("common-cancel").as_str())
                 .action(gtk4::FileChooserAction::Save)
                 .build();
             chooser.set_current_name("heelonvault_backup.hvb");
@@ -357,11 +362,15 @@ impl ProfileDialog {
                 let file_opt = dialog.file();
                 dialog.destroy();
                 let Some(file) = file_opt else {
-                    window_for_response.add_toast(adw::Toast::new("Fichier de destination invalide"));
+                    window_for_response.add_toast(adw::Toast::new(
+                        crate::tr!("profile-export-invalid-destination").as_str(),
+                    ));
                     return;
                 };
                 let Some(mut backup_path) = file.path() else {
-                    window_for_response.add_toast(adw::Toast::new("Chemin de destination invalide"));
+                    window_for_response.add_toast(adw::Toast::new(
+                        crate::tr!("profile-export-invalid-path").as_str(),
+                    ));
                     return;
                 };
                 if backup_path.extension().is_none() {
@@ -371,8 +380,9 @@ impl ProfileDialog {
                 let recovery = match backup_for_response.generate_recovery_key() {
                     Ok(value) => value,
                     Err(_) => {
-                        window_for_response
-                            .add_toast(adw::Toast::new("Impossible de générer la Recovery Key"));
+                        window_for_response.add_toast(adw::Toast::new(
+                            crate::tr!("profile-export-recovery-key-failed").as_str(),
+                        ));
                         return;
                     }
                 };
@@ -385,18 +395,21 @@ impl ProfileDialog {
 
                 if recovery_words.len() != 24 {
                     window_for_response.add_toast(adw::Toast::new(
-                        "Recovery Key invalide: 24 mots attendus",
+                        crate::tr!("profile-export-recovery-invalid").as_str(),
                     ));
                     return;
                 }
 
                 let confirm_dialog = adw::MessageDialog::new(
                     Some(&window_for_response),
-                    Some("Recovery Key - à noter maintenant"),
-                    Some("Conservez cette phrase de récupération en lieu sûr avant de lancer l'export."),
+                    Some(crate::tr!("profile-export-recovery-dialog-title").as_str()),
+                    Some(crate::tr!("profile-export-recovery-dialog-body").as_str()),
                 );
-                confirm_dialog.add_response("cancel", "Annuler");
-                confirm_dialog.add_response("confirm", "J'ai noté");
+                confirm_dialog.add_response("cancel", crate::tr!("common-cancel").as_str());
+                confirm_dialog.add_response(
+                    "confirm",
+                    crate::tr!("profile-export-recovery-confirm").as_str(),
+                );
                 confirm_dialog.set_response_appearance(
                     "confirm",
                     adw::ResponseAppearance::Suggested,
@@ -411,7 +424,7 @@ impl ProfileDialog {
                     .build();
 
                 let helper_label = gtk4::Label::new(Some(
-                    "Sauvegardez votre clé via Copier, Imprimer ou Enregistrer (TXT).",
+                    crate::tr!("profile-export-recovery-dialog-helper").as_str(),
                 ));
                 helper_label.set_wrap(true);
                 helper_label.set_halign(gtk4::Align::Start);
@@ -482,9 +495,18 @@ impl ProfileDialog {
                     button
                 };
 
-                let copy_button = make_action_button("edit-copy-symbolic", "Copier");
-                let print_button = make_action_button("printer-symbolic", "Imprimer");
-                let save_button = make_action_button("document-save-symbolic", "Enregistrer (TXT)");
+                let copy_button = make_action_button(
+                    "edit-copy-symbolic",
+                    crate::tr!("profile-export-copy").as_str(),
+                );
+                let print_button = make_action_button(
+                    "printer-symbolic",
+                    crate::tr!("profile-export-print").as_str(),
+                );
+                let save_button = make_action_button(
+                    "document-save-symbolic",
+                    crate::tr!("profile-export-save-txt").as_str(),
+                );
 
                 actions_box.append(&copy_button);
                 actions_box.append(&print_button);
@@ -510,7 +532,9 @@ impl ProfileDialog {
                 let enable_for_copy = Rc::clone(&enable_confirm);
                 copy_button.connect_clicked(move |_| {
                     let Some(display) = gtk4::gdk::Display::default() else {
-                        window_for_copy.add_toast(adw::Toast::new("Presse-papier indisponible"));
+                        window_for_copy.add_toast(adw::Toast::new(
+                            crate::tr!("profile-export-clipboard-unavailable").as_str(),
+                        ));
                         return;
                     };
 
@@ -521,7 +545,9 @@ impl ProfileDialog {
                         clipboard_for_clear.set_text("");
                         glib::ControlFlow::Break
                     });
-                    window_for_copy.add_toast(adw::Toast::new("Recovery Key copiée (effacement dans 60s)"));
+                    window_for_copy.add_toast(adw::Toast::new(
+                        crate::tr!("profile-export-copied").as_str(),
+                    ));
                     enable_for_copy();
                 });
 
@@ -537,6 +563,8 @@ impl ProfileDialog {
                     });
 
                     let words = words_for_print.clone();
+                    let header_text = crate::tr!("profile-export-print-header");
+                    let date_label = crate::tr!("profile-export-print-date");
                     print_operation.connect_draw_page(move |_, print_context, _| {
                         let cr = print_context.cairo_context();
 
@@ -548,7 +576,7 @@ impl ProfileDialog {
                         );
                         cr.set_font_size(16.0);
                         cr.move_to(36.0, y);
-                        let _ = cr.show_text("HeelonVault - Cle de Secours");
+                        let _ = cr.show_text(header_text.as_str());
 
                         y += 24.0;
                         cr.select_font_face(
@@ -559,7 +587,9 @@ impl ProfileDialog {
                         cr.set_font_size(11.0);
                         let printed_at = Local::now().format("%d/%m/%Y %H:%M").to_string();
                         cr.move_to(36.0, y);
-                        let _ = cr.show_text(format!("Date: {}", printed_at).as_str());
+                        let _ = cr.show_text(
+                            format!("{}: {}", date_label.as_str(), printed_at).as_str(),
+                        );
 
                         y += 28.0;
                         cr.set_font_size(12.0);
@@ -580,8 +610,9 @@ impl ProfileDialog {
                             }
                         }
                         Err(_) => {
-                            window_for_print
-                                .add_toast(adw::Toast::new("Impossible de lancer l'impression"));
+                            window_for_print.add_toast(adw::Toast::new(
+                                crate::tr!("profile-export-print-failed").as_str(),
+                            ));
                         }
                     }
                 });
@@ -591,10 +622,10 @@ impl ProfileDialog {
                 let enable_for_save = Rc::clone(&enable_confirm);
                 save_button.connect_clicked(move |_| {
                     let chooser = gtk4::FileChooserNative::builder()
-                        .title("Enregistrer la Recovery Key (TXT)")
+                        .title(crate::tr!("profile-export-save-key-title").as_str())
                         .transient_for(&window_for_save)
-                        .accept_label("Enregistrer")
-                        .cancel_label("Annuler")
+                        .accept_label(crate::tr!("profile-export-save-key-accept").as_str())
+                        .cancel_label(crate::tr!("common-cancel").as_str())
                         .action(gtk4::FileChooserAction::Save)
                         .build();
                     chooser.set_current_name("heelonvault_recovery_key.txt");
@@ -611,14 +642,16 @@ impl ProfileDialog {
                         let file_opt = dialog.file();
                         dialog.destroy();
                         let Some(file) = file_opt else {
-                            window_for_response
-                                .add_toast(adw::Toast::new("Fichier TXT invalide"));
+                            window_for_response.add_toast(adw::Toast::new(
+                                crate::tr!("profile-export-save-key-invalid-file").as_str(),
+                            ));
                             return;
                         };
 
                         let Some(mut txt_path) = file.path() else {
-                            window_for_response
-                                .add_toast(adw::Toast::new("Chemin TXT invalide"));
+                            window_for_response.add_toast(adw::Toast::new(
+                                crate::tr!("profile-export-save-key-invalid-path").as_str(),
+                            ));
                             return;
                         };
 
@@ -626,21 +659,30 @@ impl ProfileDialog {
                             txt_path.set_extension("txt");
                         }
 
-                        let mut content = String::from("HeelonVault - Cle de Secours\n");
-                        content.push_str(format!("Date: {}\n\n", Local::now().format("%d/%m/%Y %H:%M")).as_str());
+                        let mut content = format!("{}\n", crate::tr!("profile-export-print-header"));
+                        content.push_str(
+                            format!(
+                                "{}: {}\n\n",
+                                crate::tr!("profile-export-print-date"),
+                                Local::now().format("%d/%m/%Y %H:%M")
+                            )
+                            .as_str(),
+                        );
                         for (index, word) in words_for_response.iter().enumerate() {
                             content.push_str(format!("{:02}. {}\n", index + 1, word).as_str());
                         }
 
                         match fs::write(txt_path.as_path(), content.as_bytes()) {
                             Ok(()) => {
-                                window_for_response
-                                    .add_toast(adw::Toast::new("Recovery Key enregistrée en TXT"));
+                                window_for_response.add_toast(adw::Toast::new(
+                                    crate::tr!("profile-export-save-key-saved").as_str(),
+                                ));
                                 enable_for_response();
                             }
                             Err(_) => {
-                                window_for_response
-                                    .add_toast(adw::Toast::new("Échec de l'enregistrement TXT"));
+                                window_for_response.add_toast(adw::Toast::new(
+                                    crate::tr!("profile-export-save-key-failed").as_str(),
+                                ));
                             }
                         }
                     });
@@ -675,10 +717,14 @@ impl ProfileDialog {
                     glib::MainContext::default().spawn_local(async move {
                         match receiver.await {
                             Ok(Ok(_)) => {
-                                window_for_result.add_toast(adw::Toast::new("Export .hvb terminé"));
+                                window_for_result.add_toast(adw::Toast::new(
+                                    crate::tr!("profile-export-success-title").as_str(),
+                                ));
                             }
                             Ok(Err(_)) | Err(_) => {
-                                window_for_result.add_toast(adw::Toast::new("Échec de l'export .hvb"));
+                                window_for_result.add_toast(adw::Toast::new(
+                                    crate::tr!("profile-export-failed").as_str(),
+                                ));
                             }
                         }
                     });
@@ -697,10 +743,10 @@ impl ProfileDialog {
         let session_key_for_import = Rc::clone(&session_master_key_provider);
         import_button.connect_clicked(move |_| {
             let chooser = gtk4::FileChooserNative::builder()
-                .title("Importer des données CSV")
+                .title(crate::tr!("profile-import-chooser-title").as_str())
                 .transient_for(&window_for_import)
-                .accept_label("Importer")
-                .cancel_label("Annuler")
+                .accept_label(crate::tr!("profile-import-accept").as_str())
+                .cancel_label(crate::tr!("common-cancel").as_str())
                 .action(gtk4::FileChooserAction::Open)
                 .build();
 
@@ -719,16 +765,22 @@ impl ProfileDialog {
                 let file_opt = dialog.file();
                 dialog.destroy();
                 let Some(file) = file_opt else {
-                    window_for_response.add_toast(adw::Toast::new("Fichier CSV invalide"));
+                    window_for_response.add_toast(adw::Toast::new(
+                        crate::tr!("profile-import-invalid-file").as_str(),
+                    ));
                     return;
                 };
                 let Some(csv_path) = file.path() else {
-                    window_for_response.add_toast(adw::Toast::new("Chemin CSV invalide"));
+                    window_for_response.add_toast(adw::Toast::new(
+                        crate::tr!("profile-import-invalid-path").as_str(),
+                    ));
                     return;
                 };
 
                 let Some(master_key) = session_key_for_response() else {
-                    window_for_response.add_toast(adw::Toast::new("Session verrouillée, reconnectez-vous"));
+                    window_for_response.add_toast(adw::Toast::new(
+                        crate::tr!("profile-import-session-locked").as_str(),
+                    ));
                     return;
                 };
 
@@ -756,12 +808,16 @@ impl ProfileDialog {
                 glib::MainContext::default().spawn_local(async move {
                     match receiver.await {
                         Ok(Ok(count)) => {
-                            window_for_result.add_toast(adw::Toast::new(
-                                format!("Import CSV terminé: {} secrets", count).as_str(),
-                            ));
+                            let message = i18n::tr_args(
+                                "profile-import-success-body",
+                                &[("count", I18nArg::Num(count as i64))],
+                            );
+                            window_for_result.add_toast(adw::Toast::new(message.as_str()));
                         }
                         Ok(Err(_)) | Err(_) => {
-                            window_for_result.add_toast(adw::Toast::new("Échec de l'import CSV"));
+                            window_for_result.add_toast(adw::Toast::new(
+                                crate::tr!("profile-import-failed").as_str(),
+                            ));
                         }
                     }
                 });
@@ -790,6 +846,7 @@ impl ProfileDialog {
                 } else {
                     Some(display_name)
                 },
+                preferred_language: None,
                 show_passwords_in_edit: None,
                 current_password: if current_password_raw.is_empty() {
                     None
@@ -819,19 +876,23 @@ impl ProfileDialog {
                             .filter(|value| !value.trim().is_empty())
                             .unwrap_or(user.username);
                         callback_for_result(label);
-                        window_for_result.add_toast(adw::Toast::new("Profil mis à jour"));
+                        window_for_result
+                            .add_toast(adw::Toast::new(crate::tr!("profile-status-saved").as_str()));
                     }
                     Ok(Err(AppError::Authorization(_))) => {
-                        window_for_result
-                            .add_toast(adw::Toast::new("Mot de passe actuel invalide"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-current-password-invalid").as_str(),
+                        ));
                     }
                     Ok(Err(AppError::Conflict(_))) => {
-                        window_for_result
-                            .add_toast(adw::Toast::new("Cet email est déjà utilisé"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-email-conflict").as_str(),
+                        ));
                     }
                     Ok(Err(_)) | Err(_) => {
-                        window_for_result
-                            .add_toast(adw::Toast::new("Échec de la mise à jour du profil"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-save-failed").as_str(),
+                        ));
                     }
                 }
             });
@@ -862,14 +923,16 @@ impl ProfileDialog {
                 || new_password_raw.is_empty()
                 || confirm_password_raw.is_empty()
             {
-                window_for_password_change
-                    .add_toast(adw::Toast::new("Tous les champs mot de passe sont obligatoires"));
+                window_for_password_change.add_toast(adw::Toast::new(
+                    crate::tr!("profile-status-password-fields-required").as_str(),
+                ));
                 return;
             }
 
             if new_password_raw != confirm_password_raw {
-                window_for_password_change
-                    .add_toast(adw::Toast::new("La confirmation ne correspond pas"));
+                window_for_password_change.add_toast(adw::Toast::new(
+                    crate::tr!("profile-status-password-confirm-mismatch").as_str(),
+                ));
                 return;
             }
 
@@ -1011,8 +1074,9 @@ impl ProfileDialog {
                                         password_save_row_c.grab_focus();
                                         btn_c.set_sensitive(true);
                                         is_changing_c.set(false);
-                                        window_for_result
-                                            .add_toast(adw::Toast::new("Master key mise à jour"));
+                                        window_for_result.add_toast(adw::Toast::new(
+                                            crate::tr!("profile-status-password-updated").as_str(),
+                                        ));
                                     },
                                 );
                             },
@@ -1031,8 +1095,9 @@ impl ProfileDialog {
                                 security_group_c.set_visible(true);
                                 btn_c.set_sensitive(true);
                                 is_changing_c.set(false);
-                                window_for_result
-                                    .add_toast(adw::Toast::new("Mot de passe actuel invalide"));
+                                window_for_result.add_toast(adw::Toast::new(
+                                    crate::tr!("profile-status-current-password-invalid").as_str(),
+                                ));
                             },
                         );
                     }
@@ -1054,8 +1119,9 @@ impl ProfileDialog {
                         security_group_c.set_visible(true);
                         btn_c.set_sensitive(true);
                         is_changing_c.set(false);
-                        window_for_result
-                            .add_toast(adw::Toast::new("Échec du changement de master key"));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-password-failed").as_str(),
+                        ));
                     }
                 }
             });

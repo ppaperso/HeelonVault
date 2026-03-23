@@ -51,13 +51,14 @@ impl AddEditDialog {
 		TVault: VaultService + Send + Sync + 'static,
 	{
 		let on_saved: Rc<dyn Fn()> = Rc::new(on_saved);
+		let window_title = match mode {
+			DialogMode::Create => crate::tr!("add-edit-window-title-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-window-title-edit"),
+		};
 		let window = gtk4::Window::builder()
 			.application(application)
 			.transient_for(parent)
-			.title(match mode {
-				DialogMode::Create => "Nouveau secret",
-				DialogMode::Edit(_) => "Modifier le secret",
-			})
+			.title(window_title.as_str())
 			.modal(true)
 			.default_width(660)
 			.default_height(760)
@@ -97,20 +98,20 @@ impl AddEditDialog {
 			.hexpand(true)
 			.build();
 
-		let title = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Ajouter un secret",
-			DialogMode::Edit(_) => "Modifier le secret",
-		}));
+		let header_title_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-header-title-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-header-title-edit"),
+		};
+		let title = gtk4::Label::new(Some(header_title_text.as_str()));
 		title.add_css_class("title-2");
 		title.add_css_class("login-hero-title");
 		title.set_halign(Align::Start);
 
-		let subtitle = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Sélectionnez un type puis renseignez les champs associés.",
-			DialogMode::Edit(_) => {
-				"Mettez a jour les champs souhaites. Laissez le secret vide pour le conserver."
-			}
-		}));
+		let subtitle_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-header-subtitle-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-header-subtitle-edit"),
+		};
+		let subtitle = gtk4::Label::new(Some(subtitle_text.as_str()));
 		subtitle.add_css_class("login-hero-copy");
 		subtitle.set_halign(Align::Start);
 		subtitle.set_wrap(true);
@@ -138,20 +139,23 @@ impl AddEditDialog {
 			.margin_end(18)
 			.build();
 
-		let (title_row, title_entry) =
-			Self::build_labeled_entry("Titre *", "Nom lisible du secret", "dialog-title-entry");
+		let (title_row, title_entry) = Self::build_labeled_entry(
+			crate::tr!("add-edit-field-title-label").as_str(),
+			crate::tr!("add-edit-field-title-placeholder").as_str(),
+			"dialog-title-entry",
+		);
 		let (category_row, category_entry) = Self::build_labeled_entry(
-			"Catégorie",
-			"Personnel, Travail, Infrastructure...",
+			crate::tr!("add-edit-field-category-label").as_str(),
+			crate::tr!("add-edit-field-category-placeholder").as_str(),
 			"dialog-category-entry",
 		);
 		let (tags_row, tags_entry) = Self::build_labeled_entry(
-			"Tags (séparés par des virgules)",
-			"prod, client-a, finance",
+			crate::tr!("add-edit-field-tags-label").as_str(),
+			crate::tr!("add-edit-field-tags-placeholder").as_str(),
 			"dialog-tags-entry",
 		);
 
-		let type_label = gtk4::Label::new(Some("Type de secret"));
+		let type_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-type-label").as_str()));
 		type_label.add_css_class("login-field-label");
 		type_label.set_halign(Align::Start);
 
@@ -204,14 +208,17 @@ impl AddEditDialog {
 		});
 
 		let (username_row, username_entry) = Self::build_labeled_entry(
-			"Nom d'utilisateur / Login",
-			"alice@example.com",
+			crate::tr!("add-edit-field-login-label").as_str(),
+			crate::tr!("add-edit-field-login-placeholder").as_str(),
 			"dialog-username-entry",
 		);
-		let (url_row, url_entry) =
-			Self::build_labeled_entry("URL", "https://example.com", "dialog-url-entry");
+		let (url_row, url_entry) = Self::build_labeled_entry(
+			crate::tr!("add-edit-field-url-label").as_str(),
+			crate::tr!("add-edit-field-url-placeholder").as_str(),
+			"dialog-url-entry",
+		);
 
-		let notes_label = gtk4::Label::new(Some("Notes"));
+		let notes_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-notes-label").as_str()));
 		notes_label.add_css_class("login-field-label");
 		notes_label.set_halign(Align::Start);
 
@@ -230,7 +237,7 @@ impl AddEditDialog {
 		notes_text.add_css_class("dialog-notes-text");
 		notes_scrolled.set_child(Some(&notes_text));
 
-		let validity_label = gtk4::Label::new(Some("Validité"));
+		let validity_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-validity-label").as_str()));
 		validity_label.add_css_class("login-field-label");
 		validity_label.set_halign(Align::Start);
 
@@ -239,7 +246,9 @@ impl AddEditDialog {
 			.spacing(8)
 			.build();
 
-		let validity_unlimited = gtk4::CheckButton::with_label("Validité illimitée");
+		let validity_unlimited = gtk4::CheckButton::with_label(
+			crate::tr!("add-edit-field-validity-unlimited").as_str(),
+		);
 		validity_unlimited.add_css_class("dialog-validity-check");
 
 		let validity_adjustment = gtk4::Adjustment::new(90.0, 1.0, 3650.0, 1.0, 30.0, 0.0);
@@ -269,7 +278,7 @@ impl AddEditDialog {
 			.halign(Align::End)
 			.build();
 
-		let cancel_button = gtk4::Button::with_label("Annuler");
+		let cancel_button = gtk4::Button::with_label(crate::tr!("add-edit-button-cancel").as_str());
 		cancel_button.add_css_class("secondary-pill");
 
 		let save_button = gtk4::Button::new();
@@ -281,10 +290,11 @@ impl AddEditDialog {
 			.build();
 		let save_spinner = gtk4::Spinner::new();
 		save_spinner.set_visible(false);
-		let save_label = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Enregistrer",
-			DialogMode::Edit(_) => "Mettre a jour",
-		}));
+		let save_label_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-button-save-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-button-save-edit"),
+		};
+		let save_label = gtk4::Label::new(Some(save_label_text.as_str()));
 		save_button_content.append(&save_spinner);
 		save_button_content.append(&save_label);
 		save_button.set_child(Some(&save_button_content));
@@ -346,7 +356,7 @@ impl AddEditDialog {
 
 			let title = title_for_save.text().trim().to_string();
 			if title.is_empty() {
-				error_for_save.set_text("Le titre est obligatoire.");
+				error_for_save.set_text(crate::tr!("add-edit-error-title-required").as_str());
 				error_for_save.set_visible(true);
 				return;
 			}
@@ -427,7 +437,7 @@ impl AddEditDialog {
 			};
 
 			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
-				error_for_save.set_text("Le secret est obligatoire pour ce type.");
+				error_for_save.set_text(crate::tr!("add-edit-error-secret-required").as_str());
 				error_for_save.set_visible(true);
 				return;
 			}
@@ -520,7 +530,7 @@ impl AddEditDialog {
 					}
 					Ok(Err(_)) | Err(_) => {
 						error_for_result.set_text(
-							"Impossible d'enregistrer le secret pour le moment. Réessayez.",
+							crate::tr!("add-edit-error-save-failed").as_str(),
 						);
 						error_for_result.set_visible(true);
 					}
@@ -596,13 +606,13 @@ impl AddEditDialog {
 		show_passwords_in_edit: bool,
 		mode: DialogMode,
 		on_cancel: impl Fn() + 'static,
-		on_saved: impl Fn() + 'static,
+		on_saved: impl Fn(String) + 'static,
 	) -> AddEditInlineView
 	where
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
 	{
-		let on_saved: Rc<dyn Fn()> = Rc::new(on_saved);
+		let on_saved: Rc<dyn Fn(String)> = Rc::new(on_saved);
 		let on_cancel: Rc<dyn Fn()> = Rc::new(on_cancel);
 
 		let container = gtk4::ScrolledWindow::builder()
@@ -633,7 +643,7 @@ impl AddEditDialog {
 			.margin_end(16)
 			.build();
 
-		let back_button = gtk4::Button::with_label("← Retour");
+		let back_button = gtk4::Button::with_label(crate::tr!("add-edit-button-back").as_str());
 		back_button.add_css_class("flat");
 		let on_cancel_for_back = Rc::clone(&on_cancel);
 		back_button.connect_clicked(move |_| {
@@ -651,20 +661,20 @@ impl AddEditDialog {
 			.hexpand(true)
 			.build();
 
-		let title = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Ajouter un secret",
-			DialogMode::Edit(_) => "Modifier le secret",
-		}));
+		let inline_header_title_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-header-title-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-header-title-edit"),
+		};
+		let title = gtk4::Label::new(Some(inline_header_title_text.as_str()));
 		title.add_css_class("title-2");
 		title.add_css_class("login-hero-title");
 		title.set_halign(Align::Start);
 
-		let subtitle = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Sélectionnez un type puis renseignez les champs associés.",
-			DialogMode::Edit(_) => {
-				"Mettez a jour les champs souhaites. Laissez le secret vide pour le conserver."
-			}
-		}));
+		let inline_subtitle_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-header-subtitle-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-header-subtitle-edit"),
+		};
+		let subtitle = gtk4::Label::new(Some(inline_subtitle_text.as_str()));
 		subtitle.add_css_class("login-hero-copy");
 		subtitle.set_halign(Align::Start);
 		subtitle.set_wrap(true);
@@ -688,20 +698,23 @@ impl AddEditDialog {
 			.margin_end(18)
 			.build();
 
-		let (title_row, title_entry) =
-			Self::build_labeled_entry("Titre *", "Nom lisible du secret", "dialog-title-entry");
+		let (title_row, title_entry) = Self::build_labeled_entry(
+			crate::tr!("add-edit-field-title-label").as_str(),
+			crate::tr!("add-edit-field-title-placeholder").as_str(),
+			"dialog-title-entry",
+		);
 		let (category_row, category_entry) = Self::build_labeled_entry(
-			"Catégorie",
-			"Personnel, Travail, Infrastructure...",
+			crate::tr!("add-edit-field-category-label").as_str(),
+			crate::tr!("add-edit-field-category-placeholder").as_str(),
 			"dialog-category-entry",
 		);
 		let (tags_row, tags_entry) = Self::build_labeled_entry(
-			"Tags (séparés par des virgules)",
-			"prod, client-a, finance",
+			crate::tr!("add-edit-field-tags-label").as_str(),
+			crate::tr!("add-edit-field-tags-placeholder").as_str(),
 			"dialog-tags-entry",
 		);
 
-		let type_label = gtk4::Label::new(Some("Type de secret"));
+		let type_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-type-label").as_str()));
 		type_label.add_css_class("login-field-label");
 		type_label.set_halign(Align::Start);
 
@@ -722,13 +735,11 @@ impl AddEditDialog {
 		dynamic_stack.add_css_class("dialog-dynamic-stack");
 
 		let password_hint = match mode {
-			DialogMode::Edit(_) => Some(
-				"Le champ mot de passe est vide par défaut pour sécurité. Laissez-le vide pour conserver la valeur actuelle. Pour afficher la valeur actuelle avec des étoiles et l'icône oeil, activez l'option dédiée dans Profil & Sécurité.",
-			),
+			DialogMode::Edit(_) => Some(crate::tr!("add-edit-password-edit-hint")),
 			DialogMode::Create => None,
 		};
 		let (password_panel, password_entry, password_strength_bar) =
-			Self::build_password_panel(password_hint);
+			Self::build_password_panel(password_hint.as_deref());
 		let initial_password_snapshot: Rc<std::cell::RefCell<Option<String>>> =
 			Rc::new(std::cell::RefCell::new(None));
 		dynamic_stack.add_titled(&password_panel, Some("password"), "password");
@@ -762,14 +773,17 @@ impl AddEditDialog {
 		});
 
 		let (username_row, username_entry) = Self::build_labeled_entry(
-			"Nom d'utilisateur / Login",
-			"alice@example.com",
+			crate::tr!("add-edit-field-login-label").as_str(),
+			crate::tr!("add-edit-field-login-placeholder").as_str(),
 			"dialog-username-entry",
 		);
-		let (url_row, url_entry) =
-			Self::build_labeled_entry("URL", "https://example.com", "dialog-url-entry");
+		let (url_row, url_entry) = Self::build_labeled_entry(
+			crate::tr!("add-edit-field-url-label").as_str(),
+			crate::tr!("add-edit-field-url-placeholder").as_str(),
+			"dialog-url-entry",
+		);
 
-		let notes_label = gtk4::Label::new(Some("Notes"));
+		let notes_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-notes-label").as_str()));
 		notes_label.add_css_class("login-field-label");
 		notes_label.set_halign(Align::Start);
 
@@ -788,7 +802,7 @@ impl AddEditDialog {
 		notes_text.add_css_class("dialog-notes-text");
 		notes_scrolled.set_child(Some(&notes_text));
 
-		let validity_label = gtk4::Label::new(Some("Validité"));
+		let validity_label = gtk4::Label::new(Some(crate::tr!("add-edit-field-validity-label").as_str()));
 		validity_label.add_css_class("login-field-label");
 		validity_label.set_halign(Align::Start);
 
@@ -797,7 +811,9 @@ impl AddEditDialog {
 			.spacing(8)
 			.build();
 
-		let validity_unlimited = gtk4::CheckButton::with_label("Validité illimitée");
+		let validity_unlimited = gtk4::CheckButton::with_label(
+			crate::tr!("add-edit-field-validity-unlimited").as_str(),
+		);
 		validity_unlimited.add_css_class("dialog-validity-check");
 
 		let validity_adjustment = gtk4::Adjustment::new(90.0, 1.0, 3650.0, 1.0, 30.0, 0.0);
@@ -827,7 +843,7 @@ impl AddEditDialog {
 			.halign(Align::End)
 			.build();
 
-		let cancel_button = gtk4::Button::with_label("Annuler");
+		let cancel_button = gtk4::Button::with_label(crate::tr!("add-edit-button-cancel").as_str());
 		cancel_button.add_css_class("secondary-pill");
 		let on_cancel_for_cancel = Rc::clone(&on_cancel);
 		cancel_button.connect_clicked(move |_| {
@@ -843,10 +859,11 @@ impl AddEditDialog {
 			.build();
 		let save_spinner = gtk4::Spinner::new();
 		save_spinner.set_visible(false);
-		let save_label = gtk4::Label::new(Some(match mode {
-			DialogMode::Create => "Enregistrer",
-			DialogMode::Edit(_) => "Mettre a jour",
-		}));
+		let inline_save_label_text = match mode {
+			DialogMode::Create => crate::tr!("add-edit-button-save-create"),
+			DialogMode::Edit(_) => crate::tr!("add-edit-button-save-edit"),
+		};
+		let save_label = gtk4::Label::new(Some(inline_save_label_text.as_str()));
 		save_button_content.append(&save_spinner);
 		save_button_content.append(&save_label);
 		save_button.set_child(Some(&save_button_content));
@@ -932,7 +949,7 @@ impl AddEditDialog {
 
 			let title = title_for_save.text().trim().to_string();
 			if title.is_empty() {
-				error_for_save.set_text("Le titre est obligatoire.");
+				error_for_save.set_text(crate::tr!("add-edit-error-title-required").as_str());
 				error_for_save.set_visible(true);
 				return;
 			}
@@ -1021,7 +1038,7 @@ impl AddEditDialog {
 			}
 
 			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
-				error_for_save.set_text("Le secret est obligatoire pour ce type.");
+				error_for_save.set_text(crate::tr!("add-edit-error-secret-required").as_str());
 				error_for_save.set_visible(true);
 				return;
 			}
@@ -1036,6 +1053,7 @@ impl AddEditDialog {
 			let runtime_for_task = runtime_for_save.clone();
 			let admin_master_for_task = admin_master_for_save_seed.clone();
 			let title_for_task = title.clone();
+			let title_for_result = title.clone();
 			let metadata_for_task = metadata_json.clone();
 			let tags_for_task = if tags_value.is_empty() {
 				None
@@ -1109,12 +1127,12 @@ impl AddEditDialog {
 
 				match receiver.await {
 					Ok(Ok(_)) => {
-						on_saved_for_result();
+						on_saved_for_result(title_for_result);
 						on_cancel_for_result();
 					}
 					Ok(Err(_)) | Err(_) => {
 						error_for_result.set_text(
-							"Impossible d'enregistrer le secret pour le moment. Réessayez.",
+							crate::tr!("add-edit-error-save-failed").as_str(),
 						);
 						error_for_result.set_visible(true);
 					}
@@ -1219,7 +1237,7 @@ impl AddEditDialog {
 			.margin_end(12)
 			.build();
 
-		let password_label = gtk4::Label::new(Some("Mot de passe *"));
+		let password_label = gtk4::Label::new(Some(crate::tr!("add-edit-password-label").as_str()));
 		password_label.add_css_class("login-field-label");
 		password_label.set_halign(Align::Start);
 
@@ -1229,13 +1247,13 @@ impl AddEditDialog {
 			.build();
 
 		let password_entry = gtk4::PasswordEntry::builder()
-			.placeholder_text("Saisissez un mot de passe")
+			.placeholder_text(crate::tr!("add-edit-password-placeholder").as_str())
 			.show_peek_icon(true)
 			.hexpand(true)
 			.build();
 		password_entry.add_css_class("login-entry");
 
-		let generate_button = gtk4::Button::with_label("Générer");
+		let generate_button = gtk4::Button::with_label(crate::tr!("add-edit-password-generate").as_str());
 		generate_button.add_css_class("secondary-pill");
 
 		let generated_password_entry = password_entry.clone();
@@ -1309,18 +1327,22 @@ impl AddEditDialog {
 			.margin_end(12)
 			.build();
 
-		let token_label = gtk4::Label::new(Some("Token API *"));
+		let token_label = gtk4::Label::new(Some(crate::tr!("add-edit-api-token-label").as_str()));
 		token_label.add_css_class("login-field-label");
 		token_label.set_halign(Align::Start);
 
 		let token_entry = gtk4::PasswordEntry::builder()
-			.placeholder_text("pk_live_... ou token equivalent")
+			.placeholder_text(crate::tr!("add-edit-api-token-placeholder").as_str())
 			.show_peek_icon(true)
 			.build();
 		token_entry.add_css_class("login-entry");
 
 		let (provider_row, provider_entry) =
-			Self::build_labeled_entry("Fournisseur", "GitHub, Stripe, OpenAI...", "dialog-api-provider-entry");
+			Self::build_labeled_entry(
+				crate::tr!("add-edit-api-provider-label").as_str(),
+				crate::tr!("add-edit-api-provider-placeholder").as_str(),
+				"dialog-api-provider-entry",
+			);
 
 		box_widget.append(&token_label);
 		box_widget.append(&token_entry);
@@ -1342,7 +1364,7 @@ impl AddEditDialog {
 			.margin_end(12)
 			.build();
 
-		let private_key_label = gtk4::Label::new(Some("Clé privée SSH *"));
+		let private_key_label = gtk4::Label::new(Some(crate::tr!("add-edit-ssh-private-label").as_str()));
 		private_key_label.add_css_class("login-field-label");
 		private_key_label.set_halign(Align::Start);
 
@@ -1357,10 +1379,14 @@ impl AddEditDialog {
 		private_key_scrolled.set_child(Some(&private_key_text));
 
 		let (public_row, public_entry) =
-			Self::build_labeled_entry("Clé publique", "ssh-ed25519 AAAA...", "dialog-ssh-public-entry");
+			Self::build_labeled_entry(
+				crate::tr!("add-edit-ssh-public-label").as_str(),
+				crate::tr!("add-edit-ssh-public-placeholder").as_str(),
+				"dialog-ssh-public-entry",
+			);
 		let (passphrase_row, passphrase_entry) = Self::build_labeled_entry(
-			"Passphrase (optionnel)",
-			"Passphrase de protection de clé",
+			crate::tr!("add-edit-ssh-passphrase-label").as_str(),
+			crate::tr!("add-edit-ssh-passphrase-placeholder").as_str(),
 			"dialog-ssh-passphrase-entry",
 		);
 
@@ -1386,15 +1412,19 @@ impl AddEditDialog {
 			.build();
 
 		let (path_row, path_entry) = Self::build_labeled_entry(
-			"Chemin du document *",
-			"/home/user/Documents/contrat.pdf",
+			crate::tr!("add-edit-document-path-label").as_str(),
+			crate::tr!("add-edit-document-path-placeholder").as_str(),
 			"dialog-document-path-entry",
 		);
 		let (mime_row, mime_entry) =
-			Self::build_labeled_entry("Type MIME", "application/pdf", "dialog-document-mime-entry");
+			Self::build_labeled_entry(
+				crate::tr!("add-edit-document-mime-label").as_str(),
+				crate::tr!("add-edit-document-mime-placeholder").as_str(),
+				"dialog-document-mime-entry",
+			);
 
 		let import_hint = gtk4::Label::new(Some(
-			"Import de fichier et chiffrement réel branchés dans une étape suivante.",
+			crate::tr!("add-edit-document-import-hint").as_str(),
 		));
 		import_hint.add_css_class("login-support-copy");
 		import_hint.set_wrap(true);
@@ -1574,7 +1604,7 @@ impl AddEditDialog {
 				}
 				Ok(Err(_)) | Err(_) => {
 					error_label.set_text(
-						"Impossible de charger le secret pour edition. Reessayez dans un instant.",
+						crate::tr!("add-edit-error-load-failed").as_str(),
 					);
 					error_label.set_visible(true);
 				}

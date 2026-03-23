@@ -1,9 +1,14 @@
 # Security Guide (Rust Runtime)
 
-Last update: 18 March 2026
-Scope: active runtime in rust/
+Last update: 23 March 2026
+Scope: active runtime in src/
 
 This document replaces legacy Python-era notes and reflects the current Rust codebase.
+
+Language note / Note de langue:
+
+- primary wording is English for technical consistency;
+- key disclosure and compliance terms are mirrored in French when useful.
 
 ## 1. Security Scope and Threat Model
 
@@ -24,7 +29,7 @@ Main assumptions:
 
 ## 2. Cryptography in Rust
 
-Current primitives used in rust/src/services/crypto_service.rs:
+Current primitives used in src/services/crypto_service.rs:
 
 - KDF: Argon2id (v=19)
 - default KDF params: memory 64 MiB, time cost 3, parallelism 1
@@ -43,7 +48,7 @@ Implementation notes:
 
 ## 3. Authentication and Password Material
 
-Current auth model in rust/src/services/auth_service.rs:
+Current auth model in src/services/auth_service.rs:
 
 - plaintext passwords are converted to secret strings in memory only;
 - password verification uses constant-time byte comparison;
@@ -75,7 +80,7 @@ Security behavior:
 
 ## 5. Brute-force and Session Controls
 
-Current lock controls in rust/src/services/auth_policy_service.rs:
+Current lock controls in src/services/auth_policy_service.rs:
 
 - threshold: 5 failed attempts
 - lock window: 5 minutes
@@ -88,6 +93,7 @@ Current session controls:
 - default auto-lock delay: 5 minutes
 - app returns to login screen on logout/auto-lock
 - close-window path triggers secure logout behavior
+- login flow enforces TOTP verification when 2FA is enabled for the resolved account
 
 ## 6. Password Policy and ANSSI Positioning
 
@@ -128,12 +134,19 @@ Operational recommendation:
 
 ## 8. 2FA Status
 
-2FA/TOTP capabilities exist in model and storage layers, but full end-to-end login enforcement in the Rust UI flow is not yet finalized.
+2FA/TOTP is active end-to-end in the current runtime flow.
 
-Practical interpretation:
+Current behavior:
 
-- 2FA is currently considered in-progress for the runtime login pipeline;
-- do not claim full MFA enforcement in audits until login flow migration is complete.
+- users can activate/deactivate TOTP in profile/security UI;
+- login requires password verification first, then TOTP code when enabled;
+- TOTP invalid/missing code returns explicit user feedback and blocks login;
+- TOTP secret is stored encrypted in database;
+- migration handling keeps backward compatibility for legacy encrypted payloads.
+
+Audit position:
+
+- MFA can now be claimed as enforced for accounts with TOTP enabled.
 
 ## 9. Logging and Security Events
 
@@ -155,8 +168,11 @@ Minimum test routine before release:
 1. cargo check
 2. cargo test
 3. targeted security suites:
-   - rust/tests/security_auth.rs
-   - rust/tests/security_crypto.rs
+
+    tests/security_auth.rs
+    tests/security_crypto.rs
+    tests/totp_activation_integration.rs
+    tests/twofa_messages_integration.rs
 
 Recommended manual checks:
 
@@ -169,11 +185,21 @@ Recommended manual checks:
 
 Do not open public issues for security vulnerabilities.
 
-Contact channel:
+Primary contact channel / Canal de contact principal:
 
   <security@heelonys.fr>
 
-Please include:
+Email subject format / Format d'objet:
+
+  SECURITY-HeelonVault : short title
+
+Confidentiality recommendation / Recommandation de confidentialite:
+
+- avoid sending plaintext secrets, full database files, or master passwords;
+- share minimal proof-of-concept and redacted logs;
+- if you need encrypted exchange, request secure keying instructions in your first message.
+
+Please include / Merci d'inclure:
 
 - impacted version
 - environment
@@ -182,18 +208,47 @@ Please include:
 - impact assessment
 - proof of concept if available
 
-Target response process:
+Target response process (SLA) / Delais cibles de reponse:
 
-1. acknowledgment within 48h
-2. initial triage within 7 days
-3. coordinated remediation and disclosure by severity
+1. acknowledgment within 24h
+2. initial triage and severity classification within 3 business days
+3. status update cadence at least every 7 days until closure
+
+### 11.1 Mini CVSS Prioritization Matrix
+
+Use this matrix for fast intake prioritization before full CVSS scoring.
+
+| Priority | Exploitability | Impact on CIA | Operational target |
+| -------- | -------------- | ------------- | ------------------ |
+| P1 (Critical) | trivial or low-complexity remote exploit, no strong preconditions | high impact on confidentiality **and/or** integrity, or major availability loss | immediate handling, mitigation/fix target <= 7 days |
+| P2 (High) | realistic exploit with limited prerequisites | moderate/high impact on one or more of confidentiality, integrity, availability | accelerated handling, mitigation/fix target <= 14 days |
+| P3 (Medium) | exploit requires specific conditions, chaining, or user interaction | limited-to-moderate impact on confidentiality, integrity, availability | planned handling, mitigation/fix target <= 30 days |
+| P4 (Low) | difficult exploit path or theoretical only | low impact on confidentiality, integrity, availability | best effort in regular release cycle |
+
+CIA interpretation:
+
+- confidentiality: unauthorized disclosure of secrets, metadata, keys, or sensitive logs;
+- integrity: unauthorized modification of credentials, vault entries, or policy controls;
+- availability: lockout, crash loop, data corruption, or sustained denial of service.
+
+Remediation targets by severity:
+
+- Critical: mitigation or fix target within 7 days
+- High: mitigation or fix target within 14 days
+- Medium: mitigation or fix target within 30 days
+- Low: best-effort in regular release cycle
+
+Coordinated disclosure policy:
+
+- public disclosure only after a fix or mitigation is available, unless required by law;
+- reporters are credited (optional) after coordinated disclosure.
 
 ## 12. Compliance and Hardening Roadmap
 
 Near-term priorities:
 
 - unify master password policy to >= 16 across all flows
-- finalize full MFA enforcement in login pipeline
+- harden MFA lifecycle (backup/recovery workflow and admin-sensitive controls)
 - add stronger audit trails for admin-sensitive operations
 - document hardening profiles (standard, admin, high assurance)
 

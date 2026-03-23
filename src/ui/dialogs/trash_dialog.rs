@@ -38,7 +38,7 @@ impl TrashDialog {
         let window = gtk4::Window::builder()
             .application(application)
             .transient_for(parent)
-            .title("Corbeille")
+            .title(crate::tr!("trash-window-title").as_str())
             .modal(true)
             .default_width(760)
             .default_height(560)
@@ -59,12 +59,12 @@ impl TrashDialog {
             .spacing(8)
             .build();
 
-        let title = gtk4::Label::new(Some("Corbeille"));
+        let title = gtk4::Label::new(Some(crate::tr!("trash-title").as_str()));
         title.add_css_class("title-3");
         title.set_halign(Align::Start);
         title.set_hexpand(true);
 
-        let empty_button = gtk4::Button::with_label("Vider la corbeille");
+        let empty_button = gtk4::Button::with_label(crate::tr!("trash-empty-button").as_str());
         empty_button.add_css_class("destructive-action");
 
         header.append(&title);
@@ -95,11 +95,9 @@ impl TrashDialog {
             .hexpand(true)
             .build();
 
-        let empty_title = gtk4::Label::new(Some("Corbeille vide"));
+        let empty_title = gtk4::Label::new(Some(crate::tr!("trash-empty-title").as_str()));
         empty_title.add_css_class("title-4");
-        let empty_copy = gtk4::Label::new(Some(
-            "Les secrets supprimes apparaitront ici jusqu'a suppression definitive.",
-        ));
+        let empty_copy = gtk4::Label::new(Some(crate::tr!("trash-empty-description").as_str()));
         empty_copy.set_wrap(true);
         empty_copy.set_justify(gtk4::Justification::Center);
         empty_copy.set_max_width_chars(56);
@@ -107,8 +105,8 @@ impl TrashDialog {
         empty_state.append(&empty_title);
         empty_state.append(&empty_copy);
 
-        stack.add_titled(&list_scroll, Some("list"), "Liste");
-        stack.add_titled(&empty_state, Some("empty"), "Vide");
+        stack.add_titled(&list_scroll, Some("list"), crate::tr!("trash-list-title").as_str());
+        stack.add_titled(&empty_state, Some("empty"), crate::tr!("trash-list-empty").as_str());
         stack.set_visible_child_name("empty");
 
         root.append(&header);
@@ -161,7 +159,7 @@ impl TrashDialog {
             let on_changed_for_confirm = Rc::clone(&on_changed_for_empty);
             Self::confirm_destructive(
                 &window_for_empty,
-                "Cette action supprimera definitivement tous les secrets de la corbeille.",
+                crate::tr!("trash-confirm-empty").as_str(),
                 move || {
                     let (sender, receiver) = tokio::sync::oneshot::channel();
                     let runtime_for_task = runtime_for_confirm.clone();
@@ -244,8 +242,8 @@ impl TrashDialog {
         TSecret: SecretService + Send + Sync + 'static,
         TVault: VaultService + Send + Sync + 'static,
     {
-        empty_title.set_text("Chargement de la corbeille...");
-        empty_copy.set_text("Veuillez patienter.");
+        empty_title.set_text(crate::tr!("trash-loading-title").as_str());
+        empty_copy.set_text(crate::tr!("trash-loading-copy").as_str());
         stack.set_visible_child_name("empty");
 
         let runtime_for_loader = runtime_handle.clone();
@@ -288,14 +286,14 @@ impl TrashDialog {
                         rows.push(TrashRowView {
                             secret_id: item.id,
                             vault_id: first_vault.id,
-                            title: item.title.unwrap_or_else(|| "Secret".to_string()),
+                            title: item
+                                .title
+                                .unwrap_or_else(|| crate::tr!("trash-secret-fallback-title")),
                             type_label: match item.secret_type {
-                                crate::models::SecretType::Password => "Mot de passe".to_string(),
-                                crate::models::SecretType::ApiToken => "Token API".to_string(),
-                                crate::models::SecretType::SshKey => "Cle SSH".to_string(),
-                                crate::models::SecretType::SecureDocument => {
-                                    "Document securise".to_string()
-                                }
+                                crate::models::SecretType::Password => crate::tr!("secret-type-password"),
+                                crate::models::SecretType::ApiToken => crate::tr!("secret-type-api-token"),
+                                crate::models::SecretType::SshKey => crate::tr!("secret-type-ssh-key"),
+                                crate::models::SecretType::SecureDocument => crate::tr!("secret-type-secure-document"),
                             },
                             login,
                             deleted_at: item.deleted_at.clone(),
@@ -314,10 +312,8 @@ impl TrashDialog {
                     }
 
                     if items.is_empty() {
-                        empty_title.set_text("Corbeille vide");
-                        empty_copy.set_text(
-                            "Les secrets supprimes apparaitront ici jusqu'a suppression definitive.",
-                        );
+                        empty_title.set_text(crate::tr!("trash-empty-title").as_str());
+                        empty_copy.set_text(crate::tr!("trash-empty-description").as_str());
                         stack.set_visible_child_name("empty");
                         return;
                     }
@@ -354,18 +350,21 @@ impl TrashDialog {
                         // Ligne de date de suppression
                         let deleted_text = item.deleted_at.as_deref()
                             .map(|raw| {
-                                // SQLite: "YYYY-MM-DD HH:MM:SS" => "jj/mm/YYYY à HH:MM"
                                 if raw.len() >= 16 {
                                     let date = &raw[..10];
                                     let time = &raw[11..16];
-                                    let parts: Vec<&str> = date.splitn(3, '-').collect();
-                                    if parts.len() == 3 {
-                                        format!("Supprimé le {}/{}/{} à {}", parts[2], parts[1], parts[0], time)
-                                    } else {
-                                        format!("Supprimé le {raw}")
-                                    }
+                                    crate::i18n::tr_args(
+                                        "trash-deleted-at",
+                                        &[
+                                            ("date", crate::i18n::I18nArg::Str(date)),
+                                            ("time", crate::i18n::I18nArg::Str(time)),
+                                        ],
+                                    )
                                 } else {
-                                    format!("Supprimé le {raw}")
+                                    crate::i18n::tr_args(
+                                        "trash-deleted-at-raw",
+                                        &[("raw", crate::i18n::I18nArg::Str(raw))],
+                                    )
                                 }
                             })
                             .unwrap_or_default();
@@ -380,7 +379,7 @@ impl TrashDialog {
                             .valign(Align::Center)
                             .build();
 
-                        let restore_btn = gtk4::Button::with_label("Restaurer");
+                        let restore_btn = gtk4::Button::with_label(crate::tr!("trash-restore-button").as_str());
                         restore_btn.add_css_class("suggested-action");
                         let app_for_restore = application.clone();
                         let parent_for_restore = parent_window.clone();
@@ -440,7 +439,7 @@ impl TrashDialog {
                             });
                         });
 
-                        let delete_btn = gtk4::Button::with_label("Supprimer definitivement");
+                        let delete_btn = gtk4::Button::with_label(crate::tr!("trash-delete-button").as_str());
                         delete_btn.add_css_class("destructive-action");
                         let app_for_delete = application.clone();
                         let parent_for_delete = parent_window.clone();
@@ -470,7 +469,7 @@ impl TrashDialog {
                             let on_changed_for_confirm = Rc::clone(&on_changed_for_delete);
                             Self::confirm_destructive(
                                 &window_for_delete,
-                                "Cette action est irreversible.",
+                                crate::tr!("trash-confirm-delete").as_str(),
                                 move || {
                                     let (sender, receiver) = tokio::sync::oneshot::channel();
                                     let runtime_for_task = runtime_for_confirm.clone();
@@ -535,10 +534,8 @@ impl TrashDialog {
                     stack.set_visible_child_name("list");
                 }
                 Ok(Err(_)) | Err(_) => {
-                    empty_title.set_text("Corbeille indisponible");
-                    empty_copy.set_text(
-                        "Impossible de charger la corbeille pour le moment. Reessayez dans un instant.",
-                    );
+                    empty_title.set_text(crate::tr!("trash-unavailable-title").as_str());
+                    empty_copy.set_text(crate::tr!("trash-unavailable-copy").as_str());
                     stack.set_visible_child_name("empty");
                 }
             }
@@ -553,11 +550,11 @@ impl TrashDialog {
         let dialog = gtk4::MessageDialog::builder()
             .transient_for(parent)
             .modal(true)
-            .text("Confirmation")
+            .text(crate::tr!("trash-dialog-title").as_str())
             .secondary_text(message)
             .build();
-        dialog.add_button("Annuler", gtk4::ResponseType::Cancel);
-        dialog.add_button("Confirmer", gtk4::ResponseType::Accept);
+        dialog.add_button(crate::tr!("trash-dialog-cancel").as_str(), gtk4::ResponseType::Cancel);
+        dialog.add_button(crate::tr!("trash-dialog-confirm").as_str(), gtk4::ResponseType::Accept);
         dialog.connect_response(move |d, response| {
             if response == gtk4::ResponseType::Accept {
                 on_confirm();

@@ -42,12 +42,14 @@ cargo test --test login_history_integration
 cargo build --release
 ```
 
-The production launcher expects:
+The packaged Linux installer deploys:
 
-- Binary path: `/opt/heelonvault/target/release/heelonvault`
+- Binary path: `/opt/heelonvault/heelonvault`
 - Launcher: `/opt/heelonvault/run.sh`
-- Production database path: `/var/lib/heelonvault-rust-shared/heelonvault.db`
+- Desktop entry: `/usr/share/applications/com.heelonvault.rust.desktop`
+- User database path: `~/.local/share/heelonvault/heelonvault-rust.db`
+- User logs path: `~/.local/state/heelonvault/logs`
 
-Legacy path protection:
+Legacy upgrade note:
 
-- Do not modify or delete `/var/lib/heelonvault-shared` (legacy Python data).
+- Older installers may have stored the database in `/opt/heelonvault/data/heelonvault-rust-dev.db`; the packaged launcher copies that file into the user data directory on first launch when needed.

@@ -18,6 +18,7 @@ pub trait UserRepository {
         user_id: Uuid,
         email: Option<&str>,
         display_name: Option<&str>,
+        preferred_language: Option<&str>,
         show_passwords_in_edit: Option<bool>,
     ) -> Result<(), AppError>;
     async fn update_password_envelope(
@@ -61,8 +62,9 @@ impl SqlxUserRepository {
 
 impl UserRepository for SqlxUserRepository {
     async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError> {
-        let row_opt =
-            sqlx::query("SELECT id, username, role, email, display_name, show_passwords_in_edit, updated_at FROM users WHERE id = ?1")
+        let row_opt = sqlx::query(
+            "SELECT id, username, role, email, display_name, COALESCE(NULLIF(preferred_language, ''), 'fr') AS preferred_language, show_passwords_in_edit, updated_at FROM users WHERE id = ?1",
+        )
             .bind(user_id.to_string())
             .fetch_optional(&self.pool)
             .await
@@ -85,6 +87,9 @@ impl UserRepository for SqlxUserRepository {
                 let display_name: Option<String> = row
                     .try_get("display_name")
                     .map_err(|err| Self::map_storage_err("read display_name", err))?;
+                let preferred_language: String = row
+                    .try_get("preferred_language")
+                    .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
                 let show_passwords_in_edit: i64 = row
                     .try_get("show_passwords_in_edit")
                     .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
@@ -102,6 +107,7 @@ impl UserRepository for SqlxUserRepository {
                     role,
                     email,
                     display_name,
+                    preferred_language,
                     show_passwords_in_edit: show_passwords_in_edit != 0,
                     updated_at,
                 }))
@@ -112,7 +118,7 @@ impl UserRepository for SqlxUserRepository {
 
     async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
         let row_opt = sqlx::query(
-            "SELECT id, username, role, email, display_name, show_passwords_in_edit, updated_at FROM users WHERE username = ?1",
+            "SELECT id, username, role, email, display_name, COALESCE(NULLIF(preferred_language, ''), 'fr') AS preferred_language, show_passwords_in_edit, updated_at FROM users WHERE username = ?1",
         )
         .bind(username)
         .fetch_optional(&self.pool)
@@ -136,6 +142,9 @@ impl UserRepository for SqlxUserRepository {
                 let display_name: Option<String> = row
                     .try_get("display_name")
                     .map_err(|err| Self::map_storage_err("read display_name", err))?;
+                let preferred_language: String = row
+                    .try_get("preferred_language")
+                    .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
                 let show_passwords_in_edit: i64 = row
                     .try_get("show_passwords_in_edit")
                     .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
@@ -153,6 +162,7 @@ impl UserRepository for SqlxUserRepository {
                     role,
                     email,
                     display_name,
+                    preferred_language,
                     show_passwords_in_edit: show_passwords_in_edit != 0,
                     updated_at,
                 }))
@@ -217,18 +227,21 @@ impl UserRepository for SqlxUserRepository {
         user_id: Uuid,
         email: Option<&str>,
         display_name: Option<&str>,
+        preferred_language: Option<&str>,
         show_passwords_in_edit: Option<bool>,
     ) -> Result<(), AppError> {
         let result = sqlx::query(
             "UPDATE users
              SET email = ?1,
                  display_name = ?2,
-                 show_passwords_in_edit = COALESCE(?3, show_passwords_in_edit),
+                 preferred_language = COALESCE(?3, preferred_language),
+                 show_passwords_in_edit = COALESCE(?4, show_passwords_in_edit),
                  updated_at = CURRENT_TIMESTAMP
-             WHERE id = ?4",
+             WHERE id = ?5",
         )
         .bind(email)
         .bind(display_name)
+        .bind(preferred_language)
         .bind(show_passwords_in_edit.map(|value| if value { 1_i64 } else { 0_i64 }))
         .bind(user_id.to_string())
         .execute(&self.pool)
@@ -331,6 +344,7 @@ mod tests {
                 role TEXT NOT NULL,
                 email TEXT,
                 display_name TEXT,
+                preferred_language TEXT NOT NULL DEFAULT 'fr',
                 show_passwords_in_edit INTEGER NOT NULL DEFAULT 0,
                 updated_at TEXT,
                 password_envelope BLOB,

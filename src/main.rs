@@ -39,7 +39,7 @@ use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
 use heelonvault_rust::services::totp_service::SqliteTotpService;
-use heelonvault_rust::services::user_service::UserServiceImpl;
+use heelonvault_rust::services::user_service::{UserService, UserServiceImpl};
 use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
 };
@@ -286,6 +286,18 @@ fn main() -> Result<()> {
 					app_for_restore_completed.quit();
 				},
 				move || {
+					let preferred_language = runtime_for_success.block_on(async {
+						context_for_success
+							.user_service
+							.get_user_profile(context_for_success.admin_user_id)
+							.await
+							.ok()
+							.map(|user| user.preferred_language)
+					});
+					if let Some(language) = preferred_language {
+						let _ = heelonvault_rust::i18n::set_language(language.as_str());
+					}
+
 					main_for_success
 						.set_session_master_key(context_for_success.admin_master_key.clone());
 					main_for_success.refresh_entries();
