@@ -1,5 +1,7 @@
 # Code de Conduite du Contributor Covenant
 
+Langue : FR | [EN](CODE_OF_CONDUCT.en.md)
+
 ## Notre engagement
 
 En tant que membres, contributeurs et responsables, nous nous engageons à faire de la participation à notre communauté une expérience exempte de harcèlement pour tous, indépendamment de l'âge, de la taille corporelle, du handicap visible ou invisible, de l'ethnicité, des caractéristiques sexuelles, de l'identité et de l'expression de genre, du niveau d'expérience, de l'éducation, du statut socio-économique, de la nationalité, de l'apparence personnelle, de la race, de la caste, de la couleur, de la religion ou de l'identité et de l'orientation sexuelles.

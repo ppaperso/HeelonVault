@@ -1,0 +1,119 @@
+# Project Architecture (Rust)
+
+Language: EN | [FR](ARCHITECTURE.md)
+
+Documented target version: `0.9.2-beta`
+
+## Overview
+
+HeelonVault now runs as a Rust-only desktop runtime.
+
+- Runtime: repository root
+- Desktop UI: GTK4 + libadwaita
+- Database: SQLite
+- SQL migrations: `sqlx::migrate!` at startup
+- Launchers: `run.sh` (prod), `run-dev.sh` (dev)
+
+## Logical Layers
+
+```text
+UI (gtk4/libadwaita)
+  -> Business services
+    -> Repositories (SQLx)
+      -> SQLite + migrations
+```
+
+## Active Structure
+
+```text
+HeelonVault/
+├── src/
+│   ├── main.rs
+│   ├── ui/
+│   ├── services/
+│   ├── repositories/
+│   ├── models/
+│   ├── config/
+│   └── errors.rs
+├── migrations/
+├── tests/
+├── Cargo.toml
+├── run.sh
+├── run-dev.sh
+├── install.sh
+└── docs/
+```
+
+## Startup Flow
+
+1. `main.rs` starts the tokio runtime.
+2. Open SQLite with `HEELONVAULT_DB_PATH`.
+3. Apply SQL migrations.
+4. Build repositories and services.
+5. Initialize UI and authentication.
+6. Load secrets and session policy.
+
+## Main UI View
+
+The main window uses a root `GtkStack` for frequent flows:
+
+- `entries_view`: main secrets list
+- `profile_view`: inline profile and security page
+- `secret_editor_view`: inline create/edit secret view
+
+Effects:
+
+- sidebar remains visible during profile operations;
+- secret creation/editing stays in the center pane;
+- profile badge opens a read-only popover with recent login history.
+
+## Runtime Session and Security
+
+- closing main window performs secure logout and returns to login;
+- auto-lock uses the same secure logout path;
+- login history is persisted in `login_history`;
+- `show_passwords_in_edit` preference is persisted per user.
+
+## Search
+
+Indexed fields include:
+
+- title, login, email, URL, notes, category, tags, secret type.
+
+Engine behavior:
+
+- case/accent normalization;
+- fielded syntax (`email:`, `tag:`, `type:`...);
+- light typo tolerance on long tokens.
+
+## Data Paths
+
+- Dev: `data/heelonvault-rust-dev.db`
+- Packaged user DB: `~/.local/share/heelonvault/heelonvault-rust.db`
+- Legacy Python path (do not modify): `/var/lib/heelonvault-shared`
+
+## Logs
+
+- daily rotation via `tracing-appender`;
+- log directory configurable with `HEELONVAULT_LOG_DIR`;
+- level configurable with `RUST_LOG`, then `HEELONVAULT_LOG_LEVEL`.
+
+Examples:
+
+```bash
+RUST_LOG=info,heelonvault_rust::ui=debug ./run-dev.sh
+HEELONVAULT_LOG_LEVEL=warn ./run.sh
+```
+
+## Validation
+
+```bash
+cargo check
+cargo test
+```
+
+## Migration Notes
+
+- active runtime and operational scripts are Rust-only;
+- legacy artifacts may remain without affecting current execution;
+- docs and scripts must stay aligned with Rust-only flows.

@@ -1635,6 +1635,26 @@ frame.login-cps-teaser {
     text-transform: uppercase;
 }
 
+button.login-lang-flag {
+    min-width: 34px;
+    min-height: 30px;
+    padding: 4px 8px;
+    border-radius: 999px;
+    border: 1px solid rgba(7, 57, 58, 0.24);
+    background: rgba(255, 255, 255, 0.78);
+    font-size: 1.0rem;
+}
+
+button.login-lang-flag:hover {
+    background: rgba(164, 223, 207, 0.22);
+}
+
+button.login-lang-flag:checked {
+    border-color: #13A1A1;
+    background: rgba(19, 161, 161, 0.18);
+    box-shadow: 0 0 0 1px rgba(19, 161, 161, 0.22);
+}
+
 .login-support-copy,
 .login-strength {
     color: #7F8C9A;

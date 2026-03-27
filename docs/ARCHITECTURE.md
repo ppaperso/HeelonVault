@@ -1,6 +1,8 @@
 # Architecture du projet (Rust)
 
-Version cible documentée: `0.9.0-beta`
+Langue : FR | [EN](ARCHITECTURE.en.md)
+
+Version cible documentée: `0.9.2-beta`
 
 ## Vue d'ensemble
 
@@ -97,7 +99,7 @@ Le moteur applique:
 ## Chemins de donnees
 
 - Dev: `data/heelonvault-rust-dev.db`
-- Prod: `/var/lib/heelonvault-rust-shared/heelonvault.db`
+- Base utilisateur packagee: `~/.local/share/heelonvault/heelonvault-rust.db`
 - Legacy Python a ne pas toucher: `/var/lib/heelonvault-shared` (hors runtime actif)
 
 ## Logs (runtime)
@@ -107,7 +109,7 @@ Le moteur applique:
 - Niveau global configurable via `RUST_LOG` (prioritaire) puis `HEELONVAULT_LOG_LEVEL`.
 - Defauts launchers:
   - Dev (`run-dev.sh`): `HEELONVAULT_LOG_LEVEL=debug`, `HEELONVAULT_LOG_DIR=./logs`
-  - Prod (`run.sh`): `HEELONVAULT_LOG_LEVEL=info`, `HEELONVAULT_LOG_DIR=/var/lib/heelonvault-rust-shared/logs`
+  - Prod (`run.sh`): `HEELONVAULT_LOG_LEVEL=info`, `HEELONVAULT_LOG_DIR=~/.local/state/heelonvault/logs`
 - Fichiers de rotation: `heelonvault_YYYYMMDD.log` dans le dossier configure.
 
 Exemples:

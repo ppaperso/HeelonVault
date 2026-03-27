@@ -1,6 +1,8 @@
 # Quickstart (Rust)
 
-Version rapide documentée: `0.9.0-beta`
+Language: EN | [FR](QUICKSTART.fr.md)
+
+Documented quickstart version: `0.9.2-beta`
 
 ## 1. Build Check
 
@@ -24,17 +26,16 @@ Development database path:
 
 ```bash
 cargo test secret_repository:: -- --nocapture
-cargo test secret_repository:: -- --nocapture
 cargo test secret_service:: -- --nocapture
 cargo test --test login_history_integration
 ```
 
-## 3bis. Vérifications UI recommandées
+## 3bis. Recommended UI checks
 
-1. Ouvrir `Profil & Sécurité` depuis la sidebar.
-2. Fermer la fenêtre principale avec la croix: le login doit réapparaître.
-3. Se reconnecter immédiatement: les cartes de secrets doivent être visibles.
-4. Activer l'affichage du mot de passe en édition, puis modifier un secret de type mot de passe.
+1. Open `Profile & Security` from the sidebar.
+2. Close the main window from the title bar close button: the login screen should reappear.
+3. Re-login immediately: secret cards should be visible.
+4. Enable password visibility in edit mode, then edit a password-type secret.
 
 ## 4. Production Build
 
@@ -47,8 +48,20 @@ The packaged Linux installer deploys:
 - Binary path: `/opt/heelonvault/heelonvault`
 - Launcher: `/opt/heelonvault/run.sh`
 - Desktop entry: `/usr/share/applications/com.heelonvault.rust.desktop`
+- Legacy desktop entry: `/usr/share/applications/heelonvault.desktop`
 - User database path: `~/.local/share/heelonvault/heelonvault-rust.db`
 - User logs path: `~/.local/state/heelonvault/logs`
+
+Post-install sanity checks (Ubuntu):
+
+```bash
+test -x /opt/heelonvault/heelonvault
+test -x /opt/heelonvault/run.sh
+test -f /usr/share/applications/com.heelonvault.rust.desktop
+test -f /usr/share/applications/heelonvault.desktop
+desktop-file-validate /usr/share/applications/com.heelonvault.rust.desktop
+gtk-launch com.heelonvault.rust
+```
 
 Legacy upgrade note:
 

@@ -1,0 +1,84 @@
+# Production Update Guide (Rust)
+
+Language: EN | [FR](UPDATE_GUIDE.md)
+
+Documented version: `0.9.2-beta`
+
+This guide explains how to update HeelonVault in its Rust-only architecture.
+
+## Scope
+
+- Application: `/opt/heelonvault`
+- Packaged user data root: `~/.local/share/heelonvault`
+- Backups: `/var/backups/heelonvault`
+- Legacy Python path (do not modify): `/var/lib/heelonvault-shared`
+
+## Prerequisites
+
+1. Application already installed with `install.sh`.
+2. `sudo` access.
+3. Rust toolchain available (`cargo`).
+4. You are in the source folder containing `update.sh`.
+
+## Update Procedure
+
+```bash
+cd /path/to/HeelonVault
+sudo bash update.sh
+```
+
+The script performs:
+
+1. precondition checks (`sudo`, `cargo`, install folder);
+2. backup of `/opt/heelonvault`;
+3. backup archive integrity checks;
+4. source sync to `/opt/heelonvault` using `rsync`;
+5. release build (`cargo build --release`).
+
+## Post-update checks
+
+```bash
+# binary present
+test -x /opt/heelonvault/heelonvault && echo OK
+
+# launcher and desktop entries
+test -x /opt/heelonvault/run.sh
+test -f /usr/share/applications/com.heelonvault.rust.desktop
+test -f /usr/share/applications/heelonvault.desktop
+
+# optional local sanity check
+cd /opt/heelonvault && cargo check
+```
+
+Recommended functional checks:
+
+1. Login, then close main window with title-bar close button: login screen should reappear.
+2. Re-login immediately: secret cards should reload.
+3. Open Profile and Security and change password-visibility preference.
+4. Edit a password secret and verify field behavior matches preference.
+
+## Rollback
+
+```bash
+# list backups
+ls -lth /var/backups/heelonvault/
+
+# restore install
+sudo tar -xzf /var/backups/heelonvault/heelonvault_YYYYMMDD_HHMMSS.tar.gz -C /
+
+# relaunch
+/opt/heelonvault/run.sh
+```
+
+## Best Practices
+
+- run `update.sh` from the target source version;
+- check free space before update (`df -h /var/backups`);
+- avoid modifying data during update;
+- keep multiple recent backups before cleanup.
+
+## Do Not
+
+- do not use legacy `venv`/`pip` procedures;
+- do not modify legacy Python paths;
+- do not bypass backup errors.

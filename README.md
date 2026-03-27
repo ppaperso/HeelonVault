@@ -1,4 +1,6 @@
-# HeelonVault 0.9.1-beta
+# HeelonVault 0.9.2-beta
+
+Langue: FR | [EN](README.en.md)
 
 HeelonVault est un gestionnaire de secrets desktop **local-first**, écrit en Rust et construit
 avec GTK4 / libadwaita et SQLite.
@@ -147,38 +149,42 @@ cargo test
 | Fichier | Contenu |
 | ------- | ------- |
 | [QUICKSTART.md](QUICKSTART.md) | Installation et premiers pas |
+| [QUICKSTART.fr.md](QUICKSTART.fr.md) | Guide de demarrage rapide (FR) |
+| [docs/README.md](docs/README.md) | Index central de la documentation bilingue |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique détaillée |
+| [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md) | Technical architecture (EN) |
 | [docs/UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md) | Procédure de mise à jour |
+| [docs/UPDATE_GUIDE.en.md](docs/UPDATE_GUIDE.en.md) | Production update guide (EN) |
 | [SECURITY.md](SECURITY.md) | Politique de sécurité et divulgation |
+| [SECURITY.fr.md](SECURITY.fr.md) | Politique de securite (FR) |
+| [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide (EN) |
+| [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) | Guide de contribution (FR) |
+| [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Code de conduite (FR) |
+| [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Code of Conduct (EN) |
 | [LICENSE](LICENSE) | Licence source-available HEELONYS |
 | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Inventaire complet des dépendances tierces |
+| [THIRD_PARTY_LICENSES.fr.md](THIRD_PARTY_LICENSES.fr.md) | Guide FR des licences tierces |
 
 ---
 
-## Notes de version 0.9.1-beta
+## Notes de version 0.9.2-beta
 
-### Authentification deux facteurs (TOTP)
+### Internationalisation et UX
 
-- activation/désactivation du TOTP par l'utilisateur depuis le profil;
-- génération et affichage du QR code de provisionnement;
-- validation du code à 6 chiffres à la connexion;
-- secret TOTP chiffré en base (migration `0009_user_totp_secret.sql`).
+- sélecteur de langue de login converti en drapeaux FR/EN;
+- correction d'un gel UI lors des changements de langue sur l'écran de login;
+- harmonisation du rafraîchissement i18n dans les zones globales de la fenêtre principale (sidebar, tooltips, placeholders, titres de vues);
+- persistance et application à chaud de la langue utilisateur dans `Profil & Securite`.
 
-### UI / UX (hérité 0.9.0)
+### Installation, CI/CD et fiabilité release
 
-- stack principal avec vues inline pour le profil et l'édition des secrets;
-- recherche multi-champs avec normalisation Unicode accents/casse;
-- badge profil transformé en popover avec historique des 5 dernières connexions;
-- préférence utilisateur `show_passwords_in_edit` persistée.
+- installateur renforcé avec vérification explicite des artefacts critiques (`run.sh`, entrées desktop);
+- installation de deux entrées desktop (`com.heelonvault.rust.desktop` et `heelonvault.desktop`) pour compatibilité environnementale;
+- ajout d'un smoke test installateur dans le workflow de release;
+- ajout d'un pipeline CI dédié (`.github/workflows/ci.yml`) avec format, lint, build, compilation des tests, validation desktop et smoke test installateur.
 
-### Sécurité / session (hérité 0.9.0)
+### Documentation bilingue
 
-- auto-verrouillage avec retour garanti à l'écran de login;
-- fermeture de fenêtre convertie en déconnexion propre;
-- journalisation des connexions réussies (`login_history`).
-
-### Données
-
-- migration `0009_user_totp_secret.sql`;
-- migration `0007_login_history.sql`;
-- migration `0008_user_show_passwords_in_edit.sql`.
+- couverture FR/EN sur l'ensemble des documents Markdown opérationnels;
+- index central de documentation bilingue dans `docs/README.md`;
+- synchronisation des versions documentées et des chemins runtime avec l'état actuel du projet.

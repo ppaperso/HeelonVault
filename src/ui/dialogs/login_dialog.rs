@@ -183,19 +183,28 @@ impl LoginDialog {
 		language_label.add_css_class("login-field-label");
 		language_label.set_halign(Align::Start);
 		language_label.set_hexpand(true);
-		let language_selector = gtk4::DropDown::from_strings(&[
-			crate::tr!("login-language-fr").as_str(),
-			crate::tr!("login-language-en").as_str(),
-		]);
-		language_selector.set_halign(Align::End);
+		let language_buttons = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(6)
+			.halign(Align::End)
+			.build();
+		let language_fr_button = gtk4::ToggleButton::with_label("🇫🇷");
+		language_fr_button.add_css_class("login-lang-flag");
+		language_fr_button.set_tooltip_text(Some(crate::tr!("login-language-fr").as_str()));
+		let language_en_button = gtk4::ToggleButton::with_label("🇬🇧");
+		language_en_button.add_css_class("login-lang-flag");
+		language_en_button.set_tooltip_text(Some(crate::tr!("login-language-en").as_str()));
+		language_en_button.set_group(Some(&language_fr_button));
+		language_buttons.append(&language_fr_button);
+		language_buttons.append(&language_en_button);
 		let current_lang = crate::i18n::current_language();
 		if current_lang.to_ascii_lowercase().starts_with("en") {
-			language_selector.set_selected(1);
+			language_en_button.set_active(true);
 		} else {
-			language_selector.set_selected(0);
+			language_fr_button.set_active(true);
 		}
 		language_row.append(&language_label);
-		language_row.append(&language_selector);
+		language_row.append(&language_buttons);
 
 		let cps_frame = gtk4::Frame::new(None);
 		cps_frame.add_css_class("login-cps-teaser");
@@ -488,9 +497,12 @@ impl LoginDialog {
 		let back_button_for_i18n = back_button.clone();
 		let sec_text_for_i18n = sec_text.clone();
 		let language_label_for_i18n = language_label.clone();
-		let language_selector_for_i18n = language_selector.clone();
+		let language_fr_button_for_i18n = language_fr_button.clone();
+		let language_en_button_for_i18n = language_en_button.clone();
 		let step_for_i18n = step_stack.clone();
 		let button_label_for_i18n = button_label.clone();
+		let language_toggle_guard = Rc::new(Cell::new(false));
+		let language_toggle_guard_for_i18n = Rc::clone(&language_toggle_guard);
 		let apply_login_i18n: Rc<dyn Fn()> = Rc::new(move || {
 			window_for_i18n.set_title(Some(crate::tr!("login-window-title").as_str()));
 			title_for_i18n.set_text(crate::tr!("login-hero-title").as_str());
@@ -513,13 +525,21 @@ impl LoginDialog {
 			back_button_for_i18n.set_label(crate::tr!("login-back-button").as_str());
 			sec_text_for_i18n.set_text(crate::tr!("login-security-note").as_str());
 			language_label_for_i18n.set_text(crate::tr!("login-language-label").as_str());
+			language_fr_button_for_i18n
+				.set_tooltip_text(Some(crate::tr!("login-language-fr").as_str()));
+			language_en_button_for_i18n
+				.set_tooltip_text(Some(crate::tr!("login-language-en").as_str()));
 
-			let selected = language_selector_for_i18n.selected();
-			language_selector_for_i18n.set_model(Some(&gtk4::StringList::new(&[
-				crate::tr!("login-language-fr").as_str(),
-				crate::tr!("login-language-en").as_str(),
-			])));
-			language_selector_for_i18n.set_selected(selected.min(1));
+			language_toggle_guard_for_i18n.set(true);
+			let active_is_en = crate::i18n::current_language()
+				.to_ascii_lowercase()
+				.starts_with("en");
+			if active_is_en {
+				language_en_button_for_i18n.set_active(true);
+			} else {
+				language_fr_button_for_i18n.set_active(true);
+			}
+			language_toggle_guard_for_i18n.set(false);
 
 			let is_totp_step = step_for_i18n
 				.visible_child_name()
@@ -533,11 +553,28 @@ impl LoginDialog {
 		});
 		apply_login_i18n();
 
-		let apply_login_i18n_for_selector = Rc::clone(&apply_login_i18n);
-		language_selector.connect_selected_notify(move |dropdown| {
-			let target_lang = if dropdown.selected() == 1 { "en" } else { "fr" };
-			let _ = crate::i18n::set_language(target_lang);
-			apply_login_i18n_for_selector();
+		let apply_login_i18n_for_fr = Rc::clone(&apply_login_i18n);
+		let language_toggle_guard_for_fr = Rc::clone(&language_toggle_guard);
+		language_fr_button.connect_toggled(move |button| {
+			if language_toggle_guard_for_fr.get() || !button.is_active() {
+				return;
+			}
+			if !crate::i18n::current_language().to_ascii_lowercase().starts_with("fr") {
+				let _ = crate::i18n::set_language("fr");
+				apply_login_i18n_for_fr();
+			}
+		});
+
+		let apply_login_i18n_for_en = Rc::clone(&apply_login_i18n);
+		let language_toggle_guard_for_en = Rc::clone(&language_toggle_guard);
+		language_en_button.connect_toggled(move |button| {
+			if language_toggle_guard_for_en.get() || !button.is_active() {
+				return;
+			}
+			if !crate::i18n::current_language().to_ascii_lowercase().starts_with("en") {
+				let _ = crate::i18n::set_language("en");
+				apply_login_i18n_for_en();
+			}
 		});
 
 		let dialog_for_submit = window.clone();

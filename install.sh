@@ -214,14 +214,48 @@ StartupWMClass=$APP_ID
 EOF
 
 chmod 644 "$DESKTOP_PATH"
-rm -f "$LEGACY_DESKTOP_PATH"
+
+# Compatibilite legacy: certains environnements recherchent encore heelonvault.desktop.
+cat > "$LEGACY_DESKTOP_PATH" <<EOF
+[Desktop Entry]
+Version=1.0
+Type=Application
+Name=$APP_NAME
+Comment=Gestionnaire de mots de passe
+Exec=/opt/heelonvault/run.sh
+TryExec=/opt/heelonvault/run.sh
+Icon=$LOCAL_ICON_PATH
+Terminal=false
+Categories=System;Security;
+Keywords=security;secret;encryption;vault;password;
+StartupNotify=true
+StartupWMClass=$APP_ID
+EOF
+chmod 644 "$LEGACY_DESKTOP_PATH"
 
 if command -v desktop-file-validate >/dev/null 2>&1; then
   desktop-file-validate "$DESKTOP_PATH"
+  desktop-file-validate "$LEGACY_DESKTOP_PATH"
 fi
 
 if command -v update-desktop-database >/dev/null 2>&1; then
   update-desktop-database "$SYSTEM_APPS_DIR" 2>/dev/null || true
+fi
+
+# Verification explicite de la pose des artefacts critiques.
+if [[ ! -x "$INSTALL_DIR/run.sh" ]]; then
+  echo "[ERROR] Lanceur terminal manquant ou non executable: $INSTALL_DIR/run.sh"
+  exit 1
+fi
+
+if [[ ! -f "$DESKTOP_PATH" ]]; then
+  echo "[ERROR] Lanceur desktop non installe: $DESKTOP_PATH"
+  exit 1
+fi
+
+if [[ ! -f "$LEGACY_DESKTOP_PATH" ]]; then
+  echo "[ERROR] Lanceur desktop legacy non installe: $LEGACY_DESKTOP_PATH"
+  exit 1
 fi
 
 # ─── Résumé ───────────────────────────────────────────────────────────────────
@@ -232,7 +266,9 @@ echo "║            Installation terminée                    ║"
 echo "╚══════════════════════════════════════════════════════╝"
 echo "[OK] Binaire installé : $INSTALL_DIR/heelonvault"
 echo "[OK] Lanceur installé : $DESKTOP_PATH"
+echo "[OK] Lanceur compat installé : $LEGACY_DESKTOP_PATH"
 echo "[OK] Lancement terminal : $INSTALL_DIR/run.sh"
 echo "[OK] Base utilisateur : ~/.local/share/heelonvault/heelonvault-rust.db"
 echo "[OK] Logs utilisateur : ~/.local/state/heelonvault/logs"
 echo "[OK] L'application est disponible dans le menu applicatif GNOME"
+echo "[OK] Test menu: gtk-launch $APP_ID"
