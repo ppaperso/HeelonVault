@@ -1,5 +1,7 @@
 # Charte Graphique HEELONYS
 
+Langue : FR | [EN](CHARTE_GRAPHIQUE.en.md)
+
 ## 🎨 Palette de Couleurs
 
 ### Couleurs Primaires

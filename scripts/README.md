@@ -1,12 +1,14 @@
 # Scripts
 
+Language: EN | [FR](README.fr.md)
+
 This folder contains operational shell scripts used by the Rust repository.
 Run scripts from the repository root.
 
 ## Available Scripts
 
 - `scripts/backup-prod-before-tests.sh`: creates a production backup archive before manual tests.
-- `scripts/fix-permissions.sh`: fixes permissions and ACL on `/var/lib/heelonvault-rust-shared`.
+- `scripts/fix-permissions.sh`: repairs permissions and ACL for legacy shared-data deployments.
 
 ## Rust Development
 
@@ -20,6 +22,6 @@ cargo test
 
 Data path notes:
 
-- Rust prod data: `/var/lib/heelonvault-rust-shared`
+- Packaged user data: `~/.local/share/heelonvault`
 - Rust dev data: `data/`
 - Legacy Python data: `/var/lib/heelonvault-shared` (do not modify)

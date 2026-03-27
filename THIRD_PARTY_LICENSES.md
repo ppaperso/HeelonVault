@@ -1,5 +1,7 @@
 # Third-Party Licenses
 
+Language: EN | [FR](THIRD_PARTY_LICENSES.fr.md)
+
 HeelonVault incorporates or links against third-party software. This document
 lists those components and their license terms.
 

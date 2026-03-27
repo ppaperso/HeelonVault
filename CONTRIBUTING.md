@@ -1,5 +1,7 @@
 # Contribution Guide (Rust)
 
+Language: EN | [FR](CONTRIBUTING.fr.md)
+
 Thanks for contributing to HeelonVault.
 
 ## Scope
@@ -33,7 +35,7 @@ Run application in development mode:
 Database paths:
 
 - Dev: `data/heelonvault-rust-dev.db`
-- Prod: `/var/lib/heelonvault-rust-shared/heelonvault.db`
+- Packaged user DB: `~/.local/share/heelonvault/heelonvault-rust.db`
 - Legacy path `/var/lib/heelonvault-shared` must remain untouched.
 
 ## Code Standards

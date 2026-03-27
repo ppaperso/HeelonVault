@@ -1,13 +1,15 @@
 # Guide de Mise a Jour en Production (Rust)
 
-Version documentée: `0.9.0-beta`
+Langue : FR | [EN](UPDATE_GUIDE.en.md)
+
+Version documentée: `0.9.2-beta`
 
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
 ## Portee
 
 - Application: `/opt/heelonvault`
-- Donnees Rust: `/var/lib/heelonvault-rust-shared`
+- Racine des donnees utilisateur packagees: `~/.local/share/heelonvault`
 - Backups: `/var/backups/heelonvault`
 - Legacy Python a ne jamais modifier: `/var/lib/heelonvault-shared`
 
@@ -28,19 +30,25 @@ sudo bash update.sh
 Le script effectue:
 
 1. Verification des preconditions (`sudo`, `cargo`, dossier d'installation).
-2. Backup complet de `/opt/heelonvault` et `/var/lib/heelonvault-rust-shared`.
+2. Backup de `/opt/heelonvault`.
 3. Verification d'integrite de l'archive backup.
 4. Synchronisation des fichiers source vers `/opt/heelonvault` via `rsync`.
 5. Build release Rust (`cargo build --release`).
-6. Ajustement des permissions du dossier de donnees Rust.
 
-## Changements applicatifs 0.9.0-beta a verifier apres update
+## Verifications post-update
 
-- migration `0007_login_history.sql` appliquee;
-- migration `0008_user_show_passwords_in_edit.sql` appliquee;
-- vue `Profil & Sécurité` accessible depuis la sidebar;
-- fermeture de la fenêtre principale ramenant au login au lieu de quitter;
-- édition de secret effectuée inline dans le panneau central.
+```bash
+# binaire present
+test -x /opt/heelonvault/heelonvault && echo OK
+
+# lanceur et entrees desktop
+test -x /opt/heelonvault/run.sh
+test -f /usr/share/applications/com.heelonvault.rust.desktop
+test -f /usr/share/applications/heelonvault.desktop
+
+# controle local optionnel
+cd /opt/heelonvault && cargo check
+```
 
 ## Restauration (rollback)
 
@@ -50,30 +58,14 @@ Si une mise a jour doit etre annulee:
 # 1. Identifier le backup cible
 ls -lth /var/backups/heelonvault/
 
-# 2. Restaurer installation + donnees Rust
+# 2. Restaurer installation
 sudo tar -xzf /var/backups/heelonvault/heelonvault_YYYYMMDD_HHMMSS.tar.gz -C /
 
 # 3. Relancer
 /opt/heelonvault/run.sh
 ```
 
-## Verification post-update
-
-```bash
-# binaire release present
-test -x /opt/heelonvault/target/release/heelonvault-rust && echo OK
-
-# variable de chemin DB attendue par le launcher
-sed -n '1,80p' /opt/heelonvault/run.sh
-
-# build local de controle (optionnel)
-cd /opt/heelonvault && cargo check
-
-# migrations presentes
-ls -1 /opt/heelonvault/migrations
-```
-
-Vérifications fonctionnelles recommandées:
+Verifications fonctionnelles recommandees:
 
 1. Se connecter puis cliquer sur la croix de la fenêtre: l'écran de login doit réapparaître.
 2. Se reconnecter immédiatement: la grille des cartes doit être rechargée.

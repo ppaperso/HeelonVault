@@ -1,11 +1,13 @@
 # Development Data Directory (Rust)
 
+Language: EN | [FR](README.fr.md)
+
 This folder is used only for local Rust development data.
 
 ## Paths
 
 - Dev database: `data/heelonvault-rust-dev.db`
-- Prod database: `/var/lib/heelonvault-rust-shared/heelonvault.db`
+- Packaged user database: `~/.local/share/heelonvault/heelonvault-rust.db`
 
 ## Legacy Data Protection
 

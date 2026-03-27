@@ -306,6 +306,74 @@ impl MainWindow {
 
 		let center_panel = Self::build_center_panel();
 		let sidebar_panel = Self::build_sidebar_panel();
+		let sidebar_i18n_refresh: Rc<dyn Fn()> = {
+			let sidebar = SidebarWidgets {
+				frame: sidebar_panel.frame.clone(),
+				category_list: sidebar_panel.category_list.clone(),
+				audit_list: sidebar_panel.audit_list.clone(),
+				audit_title: sidebar_panel.audit_title.clone(),
+				categories_title: sidebar_panel.categories_title.clone(),
+				account_title: sidebar_panel.account_title.clone(),
+				audit_all_label: sidebar_panel.audit_all_label.clone(),
+				audit_weak_label: sidebar_panel.audit_weak_label.clone(),
+				audit_duplicate_label: sidebar_panel.audit_duplicate_label.clone(),
+				category_all_label: sidebar_panel.category_all_label.clone(),
+				category_passwords_label: sidebar_panel.category_passwords_label.clone(),
+				category_api_tokens_label: sidebar_panel.category_api_tokens_label.clone(),
+				category_ssh_keys_label: sidebar_panel.category_ssh_keys_label.clone(),
+				category_documents_label: sidebar_panel.category_documents_label.clone(),
+				audit_all_badge: sidebar_panel.audit_all_badge.clone(),
+				audit_weak_badge: sidebar_panel.audit_weak_badge.clone(),
+				audit_duplicate_badge: sidebar_panel.audit_duplicate_badge.clone(),
+				profile_security_label: sidebar_panel.profile_security_label.clone(),
+				profile_security_button: sidebar_panel.profile_security_button.clone(),
+			};
+			Rc::new(move || {
+				sidebar.audit_title.set_text(crate::tr!("main-audit-title").as_str());
+				sidebar
+					.audit_all_label
+					.set_text(crate::tr!("main-audit-all").as_str());
+				sidebar
+					.audit_weak_label
+					.set_text(crate::tr!("main-audit-weak").as_str());
+				sidebar
+					.audit_duplicate_label
+					.set_text(crate::tr!("main-audit-duplicates").as_str());
+				sidebar
+					.categories_title
+					.set_text(crate::tr!("main-categories-title").as_str());
+				sidebar
+					.category_all_label
+					.set_text(crate::tr!("main-category-all").as_str());
+				sidebar
+					.category_passwords_label
+					.set_text(crate::tr!("main-category-passwords").as_str());
+				sidebar
+					.category_api_tokens_label
+					.set_text(crate::tr!("main-category-api-tokens").as_str());
+				sidebar
+					.category_ssh_keys_label
+					.set_text(crate::tr!("main-category-ssh-keys").as_str());
+				sidebar
+					.category_documents_label
+					.set_text(crate::tr!("main-category-documents").as_str());
+				sidebar
+					.account_title
+					.set_text(crate::tr!("main-account-title").as_str());
+				sidebar
+					.profile_security_label
+					.set_text(crate::tr!("main-profile-security").as_str());
+			})
+		};
+		let on_main_i18n_refresh: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+		let on_main_i18n_refresh_bridge: Rc<dyn Fn()> = {
+			let holder = Rc::clone(&on_main_i18n_refresh);
+			Rc::new(move || {
+				if let Some(refresh) = holder.borrow().as_ref() {
+					refresh();
+				}
+			})
+		};
 		let secret_flow_for_struct = center_panel.secret_flow.clone();
 		let show_passwords_in_edit_pref = Rc::new(Cell::new(false));
 
@@ -423,6 +491,7 @@ impl MainWindow {
 			Rc::clone(&session_master_key),
 			Rc::clone(&show_passwords_in_edit_pref),
 			Rc::clone(&refresh_list),
+			Rc::clone(&on_main_i18n_refresh_bridge),
 		);
 		center_panel
 			.main_stack
@@ -445,7 +514,11 @@ impl MainWindow {
 			.build();
 		center_panel
 			.main_stack
-			.add_titled(&secret_editor_host, Some("secret_editor_view"), "Créer/Modifier");
+			.add_titled(
+				&secret_editor_host,
+				Some("secret_editor_view"),
+				crate::tr!("main-stack-editor").as_str(),
+			);
 
 		let open_editor: Rc<dyn Fn(DialogMode)> = {
 			let runtime_for_editor = runtime_handle.clone();
@@ -593,7 +666,7 @@ impl MainWindow {
 			.build();
 
 		let search_entry = gtk4::SearchEntry::builder()
-			.placeholder_text("Rechercher un secret")
+			.placeholder_text(crate::tr!("main-search-placeholder").as_str())
 			.hexpand(true)
 			.build();
 		search_entry.add_css_class("main-search-entry");
@@ -615,6 +688,57 @@ impl MainWindow {
 		root.append(&content);
 		toast_overlay.set_child(Some(&root));
 		window.set_content(Some(&toast_overlay));
+
+		let main_i18n_refresh: Rc<dyn Fn()> = {
+			let sidebar_i18n_refresh = Rc::clone(&sidebar_i18n_refresh);
+			let profile_button = profile_button.clone();
+			let profile_title = profile_title.clone();
+			let add_button = add_button.clone();
+			let trash_button = trash_button.clone();
+			let panic_button = panic_button.clone();
+			let panic_lbl = panic_lbl.clone();
+			let search_entry = search_entry.clone();
+			let filtered_status_page = center_panel.filtered_status_page.clone();
+			let entries_stack = center_panel.stack.clone();
+			let list_overlay = center_panel.list_overlay.clone();
+			let empty_state = center_panel.empty_state.clone();
+			let main_stack = center_panel.main_stack.clone();
+			let profile_container = profile_view.container.clone();
+			let secret_editor_host = secret_editor_host.clone();
+			Rc::new(move || {
+				sidebar_i18n_refresh();
+				profile_button.set_tooltip_text(Some(crate::tr!("main-last-logins-tooltip").as_str()));
+				profile_title.set_text(crate::tr!("main-last-logins-title").as_str());
+				add_button.set_tooltip_text(Some(crate::tr!("main-add-tooltip").as_str()));
+				trash_button.set_tooltip_text(Some(crate::tr!("main-trash-tooltip").as_str()));
+				panic_button.set_tooltip_text(Some(crate::tr!("main-panic-tooltip").as_str()));
+				panic_lbl.set_text(crate::tr!("main-panic-label").as_str());
+				search_entry.set_placeholder_text(Some(crate::tr!("main-search-placeholder").as_str()));
+
+				filtered_status_page.set_title(crate::tr!("main-filtered-empty-title").as_str());
+				filtered_status_page
+					.set_description(Some(crate::tr!("main-filtered-empty-description").as_str()));
+
+				entries_stack
+					.page(&list_overlay)
+					.set_title(crate::tr!("main-stack-grid").as_str());
+				entries_stack
+					.page(&empty_state)
+					.set_title(crate::tr!("main-stack-empty").as_str());
+
+				main_stack
+					.page(&entries_stack)
+					.set_title(crate::tr!("main-stack-secrets").as_str());
+				main_stack
+					.page(&profile_container)
+					.set_title(crate::tr!("main-profile-security").as_str());
+				main_stack
+					.page(&secret_editor_host)
+					.set_title(crate::tr!("main-stack-editor").as_str());
+			})
+		};
+		*on_main_i18n_refresh.borrow_mut() = Some(Rc::clone(&main_i18n_refresh));
+		on_main_i18n_refresh_bridge();
 
 		let flow_for_search = center_panel.secret_flow.clone();
 		let filter_for_search = filter_runtime.clone();
@@ -1312,6 +1436,7 @@ impl MainWindow {
 		session_master_key: Rc<RefCell<Vec<u8>>>,
 		show_passwords_in_edit_pref: Rc<Cell<bool>>,
 		on_import_completed_refresh: Rc<dyn Fn()>,
+		on_language_changed: Rc<dyn Fn()>,
 	) -> ProfileViewWidgets
 	where
 		TUser: UserService + Send + Sync + 'static,
@@ -1422,6 +1547,21 @@ impl MainWindow {
 		let email_entry = gtk4::Entry::new();
 		email_entry.set_hexpand(true);
 		email_entry.add_css_class("profile-field-entry");
+		let language_label = gtk4::Label::new(Some(crate::tr!("profile-language-title").as_str()));
+		language_label.set_halign(Align::Start);
+		language_label.add_css_class("profile-field-label");
+		let language_hint = gtk4::Label::new(Some(crate::tr!("profile-language-subtitle").as_str()));
+		language_hint.set_halign(Align::Start);
+		language_hint.set_wrap(true);
+		language_hint.add_css_class("dim-label");
+		language_hint.add_css_class("profile-section-subtitle");
+		let language_items = gtk4::StringList::new(&[
+			crate::tr!("language-option-fr").as_str(),
+			crate::tr!("language-option-en").as_str(),
+		]);
+		let language_dropdown = gtk4::DropDown::new(Some(language_items.clone()), None::<gtk4::Expression>);
+		language_dropdown.add_css_class("profile-field-entry");
+		language_dropdown.set_selected(0);
 		let current_email_pw_label = gtk4::Label::new(Some(crate::tr!("profile-field-current-password-email-change").as_str()));
 		current_email_pw_label.set_halign(Align::Start);
 		current_email_pw_label.add_css_class("profile-field-label");
@@ -1452,6 +1592,9 @@ impl MainWindow {
 			display_entry.upcast_ref::<gtk4::Widget>(),
 			email_label.upcast_ref::<gtk4::Widget>(),
 			email_entry.upcast_ref::<gtk4::Widget>(),
+			language_label.upcast_ref::<gtk4::Widget>(),
+			language_dropdown.upcast_ref::<gtk4::Widget>(),
+			language_hint.upcast_ref::<gtk4::Widget>(),
 			current_email_pw_label.upcast_ref::<gtk4::Widget>(),
 			current_email_pw_entry.upcast_ref::<gtk4::Widget>(),
 			profile_status_label.upcast_ref::<gtk4::Widget>(),
@@ -1565,15 +1708,6 @@ impl MainWindow {
 		]);
 		let auto_lock_dropdown = gtk4::DropDown::new(Some(auto_lock_items.clone()), None::<gtk4::Expression>);
 		auto_lock_dropdown.add_css_class("profile-field-entry");
-		let language_row = adw::ComboRow::new();
-		language_row.set_title(crate::tr!("profile-language-title").as_str());
-		language_row.set_subtitle(crate::tr!("profile-language-subtitle").as_str());
-		let language_items = gtk4::StringList::new(&[
-			crate::tr!("language-option-fr").as_str(),
-			crate::tr!("language-option-en").as_str(),
-		]);
-		language_row.set_model(Some(&language_items));
-		language_row.set_selected(0);
 
 		let show_edit_passwords_label = gtk4::Label::new(Some(crate::tr!("profile-show-edit-passwords-title").as_str()));
 		show_edit_passwords_label.set_halign(Align::Start);
@@ -1596,7 +1730,6 @@ impl MainWindow {
 		for widget in [
 			auto_lock_label.upcast_ref::<gtk4::Widget>(),
 			auto_lock_dropdown.upcast_ref::<gtk4::Widget>(),
-			language_row.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_label.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_switch.upcast_ref::<gtk4::Widget>(),
 			show_edit_passwords_hint.upcast_ref::<gtk4::Widget>(),
@@ -1809,6 +1942,166 @@ impl MainWindow {
 
 		container.set_child(Some(&content));
 
+		let back_button_for_i18n = back_button.clone();
+		let title_for_i18n = title.clone();
+		let intro_for_i18n = profile_intro.clone();
+		let info_frame_for_i18n = info_frame.clone();
+		let info_subtitle_for_i18n = info_subtitle.clone();
+		let username_label_for_i18n = username_label.clone();
+		let display_label_for_i18n = display_label.clone();
+		let email_label_for_i18n = email_label.clone();
+		let language_label_for_i18n = language_label.clone();
+		let language_hint_for_i18n = language_hint.clone();
+		let language_dropdown_for_i18n = language_dropdown.clone();
+		let language_items_for_i18n = language_items.clone();
+		let current_email_pw_label_for_i18n = current_email_pw_label.clone();
+		let save_profile_button_for_i18n = save_profile_button.clone();
+
+		let password_change_frame_for_i18n = password_change_frame.clone();
+		let password_change_subtitle_for_i18n = password_change_subtitle.clone();
+		let current_pw_label_for_i18n = current_pw_label.clone();
+		let new_pw_label_for_i18n = new_pw_label.clone();
+		let confirm_pw_label_for_i18n = confirm_pw_label.clone();
+		let change_pw_button_for_i18n = change_pw_button.clone();
+		let rotate_master_key_button_for_i18n = rotate_master_key_button.clone();
+
+		let security_prefs_frame_for_i18n = security_prefs_frame.clone();
+		let auto_lock_label_for_i18n = auto_lock_label.clone();
+		let auto_lock_dropdown_for_i18n = auto_lock_dropdown.clone();
+		let auto_lock_items_for_i18n = auto_lock_items.clone();
+		let show_edit_passwords_label_for_i18n = show_edit_passwords_label.clone();
+		let show_edit_passwords_hint_for_i18n = show_edit_passwords_hint.clone();
+
+		let twofa_title_for_i18n = twofa_title.clone();
+		let twofa_disabled_copy_for_i18n = twofa_disabled_copy.clone();
+		let twofa_activate_button_for_i18n = twofa_activate_button.clone();
+		let twofa_setup_copy_for_i18n = twofa_setup_copy.clone();
+		let twofa_secret_label_for_i18n = twofa_secret_label.clone();
+		let twofa_code_label_for_i18n = twofa_code_label.clone();
+		let twofa_confirm_button_for_i18n = twofa_confirm_button.clone();
+		let twofa_cancel_setup_button_for_i18n = twofa_cancel_setup_button.clone();
+		let twofa_enabled_copy_for_i18n = twofa_enabled_copy.clone();
+		let twofa_disable_toggle_button_for_i18n = twofa_disable_toggle_button.clone();
+		let twofa_disable_confirm_button_for_i18n = twofa_disable_confirm_button.clone();
+		let twofa_disable_cancel_button_for_i18n = twofa_disable_cancel_button.clone();
+		let twofa_stack_for_i18n = twofa_stack.clone();
+		let twofa_disabled_box_for_i18n = twofa_disabled_box.clone();
+		let twofa_setup_box_for_i18n = twofa_setup_box.clone();
+		let twofa_enabled_box_for_i18n = twofa_enabled_box.clone();
+		let twofa_badge_for_i18n = twofa_state_badge.clone();
+
+		let data_frame_for_i18n = data_frame.clone();
+		let export_title_for_i18n = export_title.clone();
+		let export_subtitle_for_i18n = export_subtitle.clone();
+		let export_button_for_i18n = export_button.clone();
+		let import_title_for_i18n = import_title.clone();
+		let import_subtitle_for_i18n = import_subtitle.clone();
+		let import_button_for_i18n = import_button.clone();
+
+		let on_language_changed_for_i18n = Rc::clone(&on_language_changed);
+		let apply_profile_i18n: Rc<dyn Fn()> = Rc::new(move || {
+			back_button_for_i18n.set_label(crate::tr!("profile-view-back").as_str());
+			title_for_i18n.set_text(crate::tr!("profile-view-title").as_str());
+			intro_for_i18n.set_text(crate::tr!("profile-view-intro").as_str());
+
+			info_frame_for_i18n.set_label(Some(crate::tr!("profile-section-info").as_str()));
+			info_subtitle_for_i18n.set_text(crate::tr!("profile-section-info-subtitle").as_str());
+			username_label_for_i18n.set_text(crate::tr!("profile-field-username").as_str());
+			display_label_for_i18n.set_text(crate::tr!("profile-field-display-name").as_str());
+			email_label_for_i18n.set_text(crate::tr!("profile-field-email").as_str());
+			language_label_for_i18n.set_text(crate::tr!("profile-language-title").as_str());
+			language_hint_for_i18n.set_text(crate::tr!("profile-language-subtitle").as_str());
+			current_email_pw_label_for_i18n
+				.set_text(crate::tr!("profile-field-current-password-email-change").as_str());
+			save_profile_button_for_i18n.set_label(crate::tr!("profile-save").as_str());
+
+			let lang_selected = language_dropdown_for_i18n.selected();
+			language_items_for_i18n.splice(
+				0,
+				language_items_for_i18n.n_items(),
+				&[
+					crate::tr!("language-option-fr").as_str(),
+					crate::tr!("language-option-en").as_str(),
+				],
+			);
+			language_dropdown_for_i18n.set_selected(lang_selected.min(1));
+
+			password_change_frame_for_i18n
+				.set_label(Some(crate::tr!("profile-section-password-change").as_str()));
+			password_change_subtitle_for_i18n
+				.set_text(crate::tr!("profile-section-password-change-subtitle").as_str());
+			current_pw_label_for_i18n.set_text(crate::tr!("profile-field-current-password").as_str());
+			new_pw_label_for_i18n.set_text(crate::tr!("profile-field-new-password").as_str());
+			confirm_pw_label_for_i18n
+				.set_text(crate::tr!("profile-field-confirm-new-password").as_str());
+			change_pw_button_for_i18n.set_label(crate::tr!("profile-change-button").as_str());
+			change_pw_button_for_i18n
+				.set_tooltip_text(Some(crate::tr!("profile-change-button-tooltip").as_str()));
+			rotate_master_key_button_for_i18n.set_label(crate::tr!("profile-rotate-button").as_str());
+			rotate_master_key_button_for_i18n
+				.set_tooltip_text(Some(crate::tr!("profile-rotate-button-tooltip").as_str()));
+
+			security_prefs_frame_for_i18n
+				.set_label(Some(crate::tr!("profile-section-security-prefs").as_str()));
+			auto_lock_label_for_i18n.set_text(crate::tr!("profile-auto-lock-title").as_str());
+			let auto_lock_selected = auto_lock_dropdown_for_i18n.selected();
+			auto_lock_items_for_i18n.splice(
+				0,
+				auto_lock_items_for_i18n.n_items(),
+				&[
+					crate::tr!("profile-auto-lock-1").as_str(),
+					crate::tr!("profile-auto-lock-5").as_str(),
+					crate::tr!("profile-auto-lock-15").as_str(),
+					crate::tr!("profile-auto-lock-30").as_str(),
+					crate::tr!("profile-auto-lock-never").as_str(),
+				],
+			);
+			auto_lock_dropdown_for_i18n.set_selected(auto_lock_selected.min(4));
+			show_edit_passwords_label_for_i18n
+				.set_text(crate::tr!("profile-show-edit-passwords-title").as_str());
+			show_edit_passwords_hint_for_i18n
+				.set_text(crate::tr!("profile-show-edit-passwords-hint").as_str());
+
+			twofa_title_for_i18n.set_text(crate::tr!("profile-section-2fa-title").as_str());
+			twofa_disabled_copy_for_i18n.set_text(crate::tr!("profile-2fa-disabled-copy").as_str());
+			twofa_activate_button_for_i18n.set_label(crate::tr!("profile-2fa-activate").as_str());
+			twofa_setup_copy_for_i18n.set_text(crate::tr!("profile-2fa-setup-copy").as_str());
+			twofa_secret_label_for_i18n.set_text(crate::tr!("profile-2fa-secret-base32").as_str());
+			twofa_code_label_for_i18n.set_text(crate::tr!("profile-2fa-code").as_str());
+			twofa_confirm_button_for_i18n.set_label(crate::tr!("profile-2fa-confirm").as_str());
+			twofa_cancel_setup_button_for_i18n.set_label(crate::tr!("profile-2fa-cancel").as_str());
+			twofa_enabled_copy_for_i18n.set_text(crate::tr!("profile-2fa-enabled-copy").as_str());
+			twofa_disable_toggle_button_for_i18n.set_label(crate::tr!("profile-2fa-disable").as_str());
+			twofa_disable_confirm_button_for_i18n
+				.set_label(crate::tr!("profile-2fa-disable-confirm").as_str());
+			twofa_disable_cancel_button_for_i18n.set_label(crate::tr!("profile-2fa-cancel").as_str());
+			twofa_stack_for_i18n
+				.page(&twofa_disabled_box_for_i18n)
+				.set_title(crate::tr!("profile-2fa-stack-disabled").as_str());
+			twofa_stack_for_i18n
+				.page(&twofa_setup_box_for_i18n)
+				.set_title(crate::tr!("profile-2fa-stack-setup").as_str());
+			twofa_stack_for_i18n
+				.page(&twofa_enabled_box_for_i18n)
+				.set_title(crate::tr!("profile-2fa-stack-enabled").as_str());
+			let is_twofa_enabled = twofa_stack_for_i18n
+				.visible_child_name()
+				.as_ref()
+				.map_or(false, |name| name == "enabled");
+			Self::set_twofa_badge_state(&twofa_badge_for_i18n, is_twofa_enabled);
+
+			data_frame_for_i18n.set_label(Some(crate::tr!("profile-section-data").as_str()));
+			export_title_for_i18n.set_text(crate::tr!("profile-export-title").as_str());
+			export_subtitle_for_i18n.set_text(crate::tr!("profile-export-subtitle").as_str());
+			export_button_for_i18n.set_label(crate::tr!("profile-export-button").as_str());
+			import_title_for_i18n.set_text(crate::tr!("profile-import-title").as_str());
+			import_subtitle_for_i18n.set_text(crate::tr!("profile-import-subtitle").as_str());
+			import_button_for_i18n.set_label(crate::tr!("profile-import-button").as_str());
+
+			on_language_changed_for_i18n();
+		});
+		apply_profile_i18n();
+
 		let content_for_compact = content.clone();
 		let sections_columns_for_compact = sections_columns.clone();
 		let save_row_for_compact = save_profile_row.clone();
@@ -1907,7 +2200,7 @@ impl MainWindow {
 		let display_entry_for_load = display_entry.clone();
 		let email_entry_for_load = email_entry.clone();
 		let auto_lock_for_load = auto_lock_dropdown.clone();
-		let language_row_for_load = language_row.clone();
+		let language_dropdown_for_load = language_dropdown.clone();
 		let show_edit_passwords_for_load = show_edit_passwords_switch.clone();
 		let show_passwords_pref_for_load = Rc::clone(&show_passwords_in_edit_pref);
 		let twofa_stack_for_load = twofa_stack.clone();
@@ -1915,15 +2208,17 @@ impl MainWindow {
 		let twofa_badge_for_load = twofa_state_badge.clone();
 		let loading_lock_for_load = Rc::clone(&loading_lock);
 		let profile_status_for_load = profile_status_label.clone();
+		let apply_profile_i18n_for_load = Rc::clone(&apply_profile_i18n);
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
 				Ok(Ok((user, delay, totp_enabled))) => {
 					let language = user.preferred_language.trim().to_ascii_lowercase();
 					let _ = crate::i18n::set_language(language.as_str());
+					apply_profile_i18n_for_load();
 					username_entry_for_load.set_text(user.username.as_str());
 					display_entry_for_load.set_text(user.display_name.as_deref().unwrap_or_default());
 					email_entry_for_load.set_text(user.email.as_deref().unwrap_or_default());
-					language_row_for_load.set_selected(if language.starts_with("en") { 1 } else { 0 });
+					language_dropdown_for_load.set_selected(if language.starts_with("en") { 1 } else { 0 });
 					let selected = match delay {
 						1 => 0,
 						5 => 1,
@@ -2027,12 +2322,13 @@ impl MainWindow {
 		let runtime_for_profile_save = runtime_handle.clone();
 		let display_for_save = display_entry.clone();
 		let email_for_save = email_entry.clone();
-		let language_row_for_save = language_row.clone();
+		let language_dropdown_for_save = language_dropdown.clone();
 		let current_email_pw_for_save = current_email_pw_entry.clone();
 		let show_edit_passwords_for_save = show_edit_passwords_switch.clone();
 		let show_passwords_pref_for_save = Rc::clone(&show_passwords_in_edit_pref);
 		let profile_badge_for_save = profile_badge.clone();
 		let profile_status_for_save = profile_status_label.clone();
+		let apply_profile_i18n_for_save = Rc::clone(&apply_profile_i18n);
 		let service_for_toggle = Arc::clone(&user_service);
 		let runtime_for_toggle = runtime_handle.clone();
 		let profile_status_for_toggle = security_prefs_status_label.clone();
@@ -2078,7 +2374,7 @@ impl MainWindow {
 					let value = display_for_save.text().trim().to_string();
 					if value.is_empty() { None } else { Some(value) }
 				},
-				preferred_language: Some(if language_row_for_save.selected() == 1 {
+					preferred_language: Some(if language_dropdown_for_save.selected() == 1 {
 					"en".to_string()
 				} else {
 					"fr".to_string()
@@ -2107,10 +2403,12 @@ impl MainWindow {
 			let badge_for_result = profile_badge_for_save.clone();
 			let profile_status_for_result = profile_status_for_save.clone();
 			let show_passwords_pref_for_result = Rc::clone(&show_passwords_pref_for_save);
+			let apply_profile_i18n_for_result = Rc::clone(&apply_profile_i18n_for_save);
 			glib::MainContext::default().spawn_local(async move {
 				match receiver.await {
 					Ok(Ok(user)) => {
 						let _ = crate::i18n::set_language(user.preferred_language.as_str());
+						apply_profile_i18n_for_result();
 						let display = user
 							.display_name
 							.clone()
@@ -2633,12 +2931,13 @@ impl MainWindow {
 		audit_list.add_css_class("main-audit-list");
 		audit_list.set_selection_mode(gtk4::SelectionMode::Single);
 
-		let (audit_all_row, audit_all_badge) = Self::build_audit_sidebar_row(crate::tr!("main-audit-all").as_str(), "view-grid-symbolic");
-		let (audit_weak_row, audit_weak_badge) = Self::build_audit_sidebar_row(
+		let (audit_all_row, audit_all_label, audit_all_badge) =
+			Self::build_audit_sidebar_row(crate::tr!("main-audit-all").as_str(), "view-grid-symbolic");
+		let (audit_weak_row, audit_weak_label, audit_weak_badge) = Self::build_audit_sidebar_row(
 			crate::tr!("main-audit-weak").as_str(),
 			"dialog-warning-symbolic",
 		);
-		let (audit_duplicate_row, audit_duplicate_badge) =
+		let (audit_duplicate_row, audit_duplicate_label, audit_duplicate_badge) =
 			Self::build_audit_sidebar_row(crate::tr!("main-audit-duplicates").as_str(), "content-copy-symbolic");
 		audit_list.append(&audit_all_row);
 		audit_list.append(&audit_weak_row);
@@ -2664,8 +2963,10 @@ impl MainWindow {
 			(crate::tr!("main-category-documents"), "folder-documents-symbolic"),
 		];
 
+		let mut category_labels: Vec<gtk4::Label> = Vec::new();
 		for (index, (title, icon_name)) in rows.into_iter().enumerate() {
-			let row = Self::build_sidebar_row(title.as_str(), icon_name);
+			let (row, label) = Self::build_sidebar_row(title.as_str(), icon_name);
+			category_labels.push(label);
 			category_list.append(&row);
 			if index == 0 {
 				category_list.select_row(Some(&row));
@@ -2708,14 +3009,26 @@ impl MainWindow {
 			frame: sidebar_frame,
 			category_list,
 			audit_list,
+			audit_title,
+			categories_title: sidebar_title,
+			account_title,
+			audit_all_label,
+			audit_weak_label,
+			audit_duplicate_label,
+			category_all_label: category_labels[0].clone(),
+			category_passwords_label: category_labels[1].clone(),
+			category_api_tokens_label: category_labels[2].clone(),
+			category_ssh_keys_label: category_labels[3].clone(),
+			category_documents_label: category_labels[4].clone(),
 			audit_all_badge,
 			audit_weak_badge,
 			audit_duplicate_badge,
+			profile_security_label,
 			profile_security_button,
 		}
 	}
 
-	fn build_audit_sidebar_row(title: &str, icon_name: &str) -> (gtk4::ListBoxRow, gtk4::Label) {
+	fn build_audit_sidebar_row(title: &str, icon_name: &str) -> (gtk4::ListBoxRow, gtk4::Label, gtk4::Label) {
 		let row = gtk4::ListBoxRow::new();
 		let content = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
@@ -2742,10 +3055,10 @@ impl MainWindow {
 		content.append(&badge);
 
 		row.set_child(Some(&content));
-		(row, badge)
+		(row, label, badge)
 	}
 
-	fn build_sidebar_row(title: &str, icon_name: &str) -> gtk4::ListBoxRow {
+	fn build_sidebar_row(title: &str, icon_name: &str) -> (gtk4::ListBoxRow, gtk4::Label) {
 		let row = gtk4::ListBoxRow::new();
 		let content = gtk4::Box::builder()
 			.orientation(Orientation::Horizontal)
@@ -2768,7 +3081,7 @@ impl MainWindow {
 		content.append(&label);
 
 		row.set_child(Some(&content));
-		row
+		(row, label)
 	}
 
 	fn build_center_panel() -> CenterPanelWidgets {
@@ -2846,8 +3159,8 @@ impl MainWindow {
 		empty_state.append(&empty_title);
 		empty_state.append(&empty_description);
 
-		entries_stack.add_titled(&list_overlay, Some("list"), "Grille");
-		entries_stack.add_titled(&empty_state, Some("empty"), "Vide");
+		entries_stack.add_titled(&list_overlay, Some("list"), crate::tr!("main-stack-grid").as_str());
+		entries_stack.add_titled(&empty_state, Some("empty"), crate::tr!("main-stack-empty").as_str());
 		entries_stack.set_visible_child_name("empty");
 
 		let main_stack = gtk4::Stack::builder()
@@ -2856,7 +3169,7 @@ impl MainWindow {
 			.transition_type(gtk4::StackTransitionType::Crossfade)
 			.build();
 		main_stack.set_transition_duration(200);
-		main_stack.add_titled(&entries_stack, Some("entries_view"), "Secrets");
+		main_stack.add_titled(&entries_stack, Some("entries_view"), crate::tr!("main-stack-secrets").as_str());
 		main_stack.set_visible_child_name("entries_view");
 
 		center_frame.set_child(Some(&main_stack));
@@ -2864,6 +3177,8 @@ impl MainWindow {
 			frame: center_frame,
 			main_stack,
 			stack: entries_stack,
+			list_overlay,
+			empty_state,
 			secret_flow,
 			filtered_status_page,
 			empty_title,
@@ -3254,6 +3569,8 @@ struct CenterPanelWidgets {
 	frame: gtk4::Frame,
 	main_stack: gtk4::Stack,
 	stack: gtk4::Stack,
+	list_overlay: gtk4::Overlay,
+	empty_state: gtk4::Box,
 	secret_flow: gtk4::FlowBox,
 	filtered_status_page: adw::StatusPage,
 	empty_title: gtk4::Label,
@@ -3269,9 +3586,21 @@ struct SidebarWidgets {
 	frame: gtk4::Frame,
 	category_list: gtk4::ListBox,
 	audit_list: gtk4::ListBox,
+	audit_title: gtk4::Label,
+	categories_title: gtk4::Label,
+	account_title: gtk4::Label,
+	audit_all_label: gtk4::Label,
+	audit_weak_label: gtk4::Label,
+	audit_duplicate_label: gtk4::Label,
+	category_all_label: gtk4::Label,
+	category_passwords_label: gtk4::Label,
+	category_api_tokens_label: gtk4::Label,
+	category_ssh_keys_label: gtk4::Label,
+	category_documents_label: gtk4::Label,
 	audit_all_badge: gtk4::Label,
 	audit_weak_badge: gtk4::Label,
 	audit_duplicate_badge: gtk4::Label,
+	profile_security_label: gtk4::Label,
 	profile_security_button: gtk4::Button,
 }
 
