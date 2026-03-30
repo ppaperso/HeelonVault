@@ -1827,6 +1827,19 @@ button.sidebar-profile-entry:hover {
     border-color: rgba(19, 161, 161, 0.26);
 }
 
+button.main-inline-back-button {
+    border-radius: 10px;
+    border: 1px solid rgba(19, 161, 161, 0.28);
+    background: rgba(19, 161, 161, 0.08);
+    color: #0A5F5C;
+    padding: 5px 10px;
+}
+
+button.main-inline-back-button:hover {
+    background: rgba(19, 161, 161, 0.14);
+    border-color: rgba(19, 161, 161, 0.40);
+}
+
 label.inline-status {
     font-weight: 600;
     border-radius: 10px;

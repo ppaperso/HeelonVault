@@ -1,0 +1,260 @@
+use sqlx::{Row, SqlitePool};
+use uuid::Uuid;
+
+use crate::errors::AppError;
+use crate::models::{AuditAction, AuditLogEntry};
+
+#[allow(async_fn_in_trait)]
+pub trait AuditLogRepository {
+    /// Append a single audit record. Non-blocking for the caller: failures are
+    /// logged but must not abort the originating operation.
+    async fn append(
+        &self,
+        actor_user_id: Option<Uuid>,
+        action: &AuditAction,
+        target_type: Option<&str>,
+        target_id: Option<&str>,
+        detail: Option<&str>,
+    ) -> Result<(), AppError>;
+
+    async fn list_recent(&self, limit: u32) -> Result<Vec<AuditLogEntry>, AppError>;
+
+    async fn list_for_actor(
+        &self,
+        actor_user_id: Uuid,
+        limit: u32,
+    ) -> Result<Vec<AuditLogEntry>, AppError>;
+
+    async fn list_for_target(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        limit: u32,
+    ) -> Result<Vec<AuditLogEntry>, AppError>;
+}
+
+pub struct SqlxAuditLogRepository {
+    pool: SqlitePool,
+}
+
+impl SqlxAuditLogRepository {
+    pub fn new(pool: SqlitePool) -> Self {
+        Self { pool }
+    }
+
+    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
+        AppError::Storage(format!("{context}: {}", error.to_string()))
+    }
+
+    fn row_to_entry(row: &sqlx::sqlite::SqliteRow) -> Result<AuditLogEntry, AppError> {
+        let id: i64 = row
+            .try_get("id")
+            .map_err(|err| Self::map_storage_err("read audit id", err))?;
+        let actor_str: Option<String> = row
+            .try_get("actor_user_id")
+            .map_err(|err| Self::map_storage_err("read actor_user_id", err))?;
+        let action: String = row
+            .try_get("action")
+            .map_err(|err| Self::map_storage_err("read action", err))?;
+        let target_type: Option<String> = row
+            .try_get("target_type")
+            .map_err(|err| Self::map_storage_err("read target_type", err))?;
+        let target_id: Option<String> = row
+            .try_get("target_id")
+            .map_err(|err| Self::map_storage_err("read target_id", err))?;
+        let detail: Option<String> = row
+            .try_get("detail")
+            .map_err(|err| Self::map_storage_err("read detail", err))?;
+        let performed_at: String = row
+            .try_get("performed_at")
+            .map_err(|err| Self::map_storage_err("read performed_at", err))?;
+
+        let actor_user_id = actor_str
+            .as_deref()
+            .map(Uuid::parse_str)
+            .transpose()
+            .map_err(|err| Self::map_storage_err("parse actor_user_id", err))?;
+
+        Ok(AuditLogEntry {
+            id,
+            actor_user_id,
+            action,
+            target_type,
+            target_id,
+            detail,
+            performed_at,
+        })
+    }
+}
+
+impl AuditLogRepository for SqlxAuditLogRepository {
+    async fn append(
+        &self,
+        actor_user_id: Option<Uuid>,
+        action: &AuditAction,
+        target_type: Option<&str>,
+        target_id: Option<&str>,
+        detail: Option<&str>,
+    ) -> Result<(), AppError> {
+        sqlx::query(
+            "INSERT INTO audit_log (actor_user_id, action, target_type, target_id, detail)
+             VALUES (?1, ?2, ?3, ?4, ?5)",
+        )
+        .bind(actor_user_id.map(|u| u.to_string()))
+        .bind(action.to_db_str())
+        .bind(target_type)
+        .bind(target_id)
+        .bind(detail)
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("append audit log", err))?;
+        Ok(())
+    }
+
+    async fn list_recent(&self, limit: u32) -> Result<Vec<AuditLogEntry>, AppError> {
+        let rows = sqlx::query(
+            "SELECT id, actor_user_id, action, target_type, target_id, detail, performed_at
+             FROM audit_log ORDER BY performed_at DESC LIMIT ?1",
+        )
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list recent audit log", err))?;
+
+        rows.iter().map(Self::row_to_entry).collect()
+    }
+
+    async fn list_for_actor(
+        &self,
+        actor_user_id: Uuid,
+        limit: u32,
+    ) -> Result<Vec<AuditLogEntry>, AppError> {
+        let rows = sqlx::query(
+            "SELECT id, actor_user_id, action, target_type, target_id, detail, performed_at
+             FROM audit_log WHERE actor_user_id = ?1
+             ORDER BY performed_at DESC LIMIT ?2",
+        )
+        .bind(actor_user_id.to_string())
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list audit log for actor", err))?;
+
+        rows.iter().map(Self::row_to_entry).collect()
+    }
+
+    async fn list_for_target(
+        &self,
+        target_type: &str,
+        target_id: &str,
+        limit: u32,
+    ) -> Result<Vec<AuditLogEntry>, AppError> {
+        let rows = sqlx::query(
+            "SELECT id, actor_user_id, action, target_type, target_id, detail, performed_at
+             FROM audit_log WHERE target_type = ?1 AND target_id = ?2
+             ORDER BY performed_at DESC LIMIT ?3",
+        )
+        .bind(target_type)
+        .bind(target_id)
+        .bind(limit)
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list audit log for target", err))?;
+
+        rows.iter().map(Self::row_to_entry).collect()
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{AuditLogRepository, SqlxAuditLogRepository};
+    use crate::models::AuditAction;
+    use sqlx::sqlite::SqlitePoolOptions;
+    use uuid::Uuid;
+
+    async fn setup_repo() -> Result<SqlxAuditLogRepository, String> {
+        let pool = SqlitePoolOptions::new()
+            .max_connections(1)
+            .connect("sqlite::memory:")
+            .await
+            .map_err(|err| format!("connect in-memory sqlite: {err}"))?;
+
+        sqlx::query(
+            "CREATE TABLE audit_log (
+                id            INTEGER PRIMARY KEY AUTOINCREMENT,
+                actor_user_id TEXT,
+                action        TEXT NOT NULL,
+                target_type   TEXT,
+                target_id     TEXT,
+                detail        TEXT,
+                performed_at  TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP
+            )",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|err| format!("create audit_log table: {err}"))?;
+
+        Ok(SqlxAuditLogRepository::new(pool))
+    }
+
+    #[tokio::test]
+    async fn append_and_list_recent() {
+        let repo = setup_repo().await.expect("setup");
+        let actor = Uuid::new_v4();
+
+        repo.append(
+            Some(actor),
+            &AuditAction::UserCreated,
+            Some("user"),
+            Some(&actor.to_string()),
+            None,
+        )
+        .await
+        .expect("append");
+
+        let entries = repo.list_recent(10).await.expect("list_recent");
+        assert_eq!(entries.len(), 1);
+        assert_eq!(entries[0].action, "user.created");
+        assert_eq!(entries[0].actor_user_id, Some(actor));
+    }
+
+    #[tokio::test]
+    async fn list_for_actor_filters_correctly() {
+        let repo = setup_repo().await.expect("setup");
+        let actor_a = Uuid::new_v4();
+        let actor_b = Uuid::new_v4();
+
+        repo.append(Some(actor_a), &AuditAction::TeamCreated, Some("team"), Some("t1"), None)
+            .await
+            .expect("append a");
+        repo.append(Some(actor_b), &AuditAction::VaultKeyRotated, Some("vault"), Some("v1"), None)
+            .await
+            .expect("append b");
+
+        let for_a = repo.list_for_actor(actor_a, 10).await.expect("list_for_actor");
+        assert_eq!(for_a.len(), 1);
+        assert_eq!(for_a[0].action, "team.created");
+    }
+
+    #[tokio::test]
+    async fn list_for_target_filters_correctly() {
+        let repo = setup_repo().await.expect("setup");
+        let vault_id = Uuid::new_v4().to_string();
+
+        repo.append(None, &AuditAction::VaultSharedWithTeam, Some("vault"), Some(&vault_id), None)
+            .await
+            .expect("append");
+        repo.append(None, &AuditAction::VaultKeyRotated, Some("vault"), Some(&vault_id), None)
+            .await
+            .expect("append 2");
+        repo.append(None, &AuditAction::UserDeleted, Some("user"), Some("u1"), None)
+            .await
+            .expect("append 3");
+
+        let for_vault = repo
+            .list_for_target("vault", &vault_id, 10)
+            .await
+            .expect("list_for_target");
+        assert_eq!(for_vault.len(), 2);
+    }
+}

@@ -20,15 +20,19 @@ use uuid::Uuid;
 use zeroize::Zeroize;
 
 use crate::services::auth_policy_service::AuthPolicyService;
+use crate::services::admin_service::AdminService;
 use crate::services::backup_service::BackupService;
 use crate::services::import_service::ImportService;
 use crate::services::login_history_service::list_recent_logins;
 use crate::services::secret_service::SecretService;
+use crate::services::team_service::TeamService;
 use crate::services::totp_service::TotpService;
 use crate::services::user_service::UserService;
 use crate::ui::messages;
 use crate::services::vault_service::VaultService;
 use crate::ui::dialogs::add_edit_dialog::{AddEditDialog, DialogMode};
+use crate::ui::dialogs::manage_teams_dialog::ManageTeamsDialog;
+use crate::ui::dialogs::manage_users_dialog::ManageUsersDialog;
 use crate::ui::dialogs::trash_dialog::TrashDialog;
 use crate::ui::widgets::secret_card::{SecretCard, SecretRowData};
 
@@ -124,12 +128,14 @@ impl MainWindow {
 		(width, height)
 	}
 
-	pub fn new<TSecret, TVault, TUser, TTotp, TPolicy, TBackup, TImport>(
+	pub fn new<TSecret, TVault, TUser, TAdmin, TTeam, TTotp, TPolicy, TBackup, TImport>(
 		application: &adw::Application,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
 		user_service: Arc<TUser>,
+		admin_service: Arc<TAdmin>,
+		team_service: Arc<TTeam>,
 		totp_service: Arc<TTotp>,
 		auth_policy_service: Arc<TPolicy>,
 		backup_service: Arc<TBackup>,
@@ -144,6 +150,8 @@ impl MainWindow {
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
 		TUser: UserService + Send + Sync + 'static,
+		TAdmin: AdminService + Send + Sync + 'static,
+		TTeam: TeamService + Send + Sync + 'static,
 		TTotp: TotpService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
 		TBackup: BackupService + Send + Sync + 'static,
@@ -164,6 +172,7 @@ impl MainWindow {
 		let auto_lock_armed = Rc::new(Cell::new(false));
 		let auto_lock_timeout_secs = Rc::new(Cell::new(Self::DEFAULT_AUTO_LOCK_TIMEOUT_SECS));
 		let session_master_key = Rc::new(RefCell::new(admin_master_key));
+		let active_vault_id: Rc<RefCell<Option<Uuid>>> = Rc::new(RefCell::new(None));
 		let on_auto_lock: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
 		let on_logout: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
 		let critical_ops_in_flight = Rc::new(Cell::new(0_u32));
@@ -309,6 +318,11 @@ impl MainWindow {
 		let sidebar_i18n_refresh: Rc<dyn Fn()> = {
 			let sidebar = SidebarWidgets {
 				frame: sidebar_panel.frame.clone(),
+				my_vaults_title: sidebar_panel.my_vaults_title.clone(),
+				create_vault_button: sidebar_panel.create_vault_button.clone(),
+				my_vaults_list: sidebar_panel.my_vaults_list.clone(),
+				shared_vaults_title: sidebar_panel.shared_vaults_title.clone(),
+				shared_vaults_list: sidebar_panel.shared_vaults_list.clone(),
 				category_list: sidebar_panel.category_list.clone(),
 				audit_list: sidebar_panel.audit_list.clone(),
 				audit_title: sidebar_panel.audit_title.clone(),
@@ -327,6 +341,10 @@ impl MainWindow {
 				audit_duplicate_badge: sidebar_panel.audit_duplicate_badge.clone(),
 				profile_security_label: sidebar_panel.profile_security_label.clone(),
 				profile_security_button: sidebar_panel.profile_security_button.clone(),
+				teams_label: sidebar_panel.teams_label.clone(),
+				teams_button: sidebar_panel.teams_button.clone(),
+				administration_label: sidebar_panel.administration_label.clone(),
+				administration_button: sidebar_panel.administration_button.clone(),
 			};
 			Rc::new(move || {
 				sidebar.audit_title.set_text(crate::tr!("main-audit-title").as_str());
@@ -363,6 +381,19 @@ impl MainWindow {
 				sidebar
 					.profile_security_label
 					.set_text(crate::tr!("main-profile-security").as_str());
+				sidebar
+					.my_vaults_title
+					.set_text(crate::tr!("main-my-vaults-title").as_str());
+				sidebar
+					.create_vault_button
+					.set_tooltip_text(Some(crate::tr!("main-create-vault-button").as_str()));
+				sidebar
+					.shared_vaults_title
+					.set_text(crate::tr!("main-shared-with-me-title").as_str());
+				sidebar.teams_label.set_text(crate::tr!("main-teams-nav").as_str());
+				sidebar
+					.administration_label
+					.set_text(crate::tr!("main-user-nav").as_str());
 			})
 		};
 		let on_main_i18n_refresh: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
@@ -427,48 +458,404 @@ impl MainWindow {
 		let stack_for_refresh = center_panel.stack.clone();
 		let empty_title_for_refresh = center_panel.empty_title.clone();
 		let empty_copy_for_refresh = center_panel.empty_copy.clone();
+		let vault_selection_sync = Rc::new(Cell::new(false));
+		let default_vault_creation_in_progress = Rc::new(Cell::new(false));
+		let refresh_after_vault_mutation: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
 		let editor_launcher: Rc<RefCell<Option<Rc<dyn Fn(DialogMode)>>>> =
 			Rc::new(RefCell::new(None));
 
-		let refresh_list: Rc<dyn Fn()> = {
-			let app = application.clone();
-			let parent_window = window.clone();
-			let runtime = runtime_handle.clone();
-			let secret_service = Arc::clone(&secret_service);
-			let vault_service = Arc::clone(&vault_service);
-			let toast_overlay = toast_overlay.clone();
-			let session_master = Rc::clone(&session_master_key);
-			let secret_flow = secret_flow_for_refresh.clone();
-			let stack = stack_for_refresh.clone();
-			let empty_title = empty_title_for_refresh.clone();
-			let empty_copy = empty_copy_for_refresh.clone();
-			let filter_runtime = filter_runtime.clone();
-			let editor_launcher = Rc::clone(&editor_launcher);
-			Rc::new(move || {
-				let Some(master_key) = Self::snapshot_session_master_key(&session_master) else {
-					empty_title.set_text(crate::tr!("main-session-locked-title").as_str());
-					empty_copy.set_text(crate::tr!("main-session-locked-description").as_str());
-					stack.set_visible_child_name("empty");
+		let refresh_vault_sections: Rc<dyn Fn()> = {
+			let app_for_secret_refresh = application.clone();
+			let parent_for_secret_refresh = window.clone();
+			let runtime_for_secret_refresh = runtime_handle.clone();
+			let secret_service_for_secret_refresh = Arc::clone(&secret_service);
+			let vault_service_for_secret_refresh = Arc::clone(&vault_service);
+			let toast_for_secret_refresh = toast_overlay.clone();
+			let active_vault_for_secret_refresh = Rc::clone(&active_vault_id);
+			let secret_flow_for_secret_refresh = secret_flow_for_refresh.clone();
+			let stack_for_secret_refresh = stack_for_refresh.clone();
+			let empty_title_for_secret_refresh = empty_title_for_refresh.clone();
+			let empty_copy_for_secret_refresh = empty_copy_for_refresh.clone();
+			let filter_for_secret_refresh = filter_runtime.clone();
+			let editor_launcher_for_secret_refresh = Rc::clone(&editor_launcher);
+			let session_for_secret_refresh = Rc::clone(&session_master_key);
+			let refresh_secrets: Rc<dyn Fn()> = Rc::new(move || {
+				let Some(master_key) = Self::snapshot_session_master_key(&session_for_secret_refresh) else {
+					empty_title_for_secret_refresh.set_text(crate::tr!("main-session-locked-title").as_str());
+					empty_copy_for_secret_refresh.set_text(crate::tr!("main-session-locked-description").as_str());
+					stack_for_secret_refresh.set_visible_child_name("empty");
 					return;
 				};
+
 				Self::refresh_secret_flow(
-					app.clone(),
-					parent_window.clone(),
-					runtime.clone(),
-					Arc::clone(&secret_service),
-					Arc::clone(&vault_service),
+					app_for_secret_refresh.clone(),
+					parent_for_secret_refresh.clone(),
+					runtime_for_secret_refresh.clone(),
+					Arc::clone(&secret_service_for_secret_refresh),
+					Arc::clone(&vault_service_for_secret_refresh),
 					admin_user_id,
 					master_key,
-					secret_flow.clone(),
-					stack.clone(),
-					empty_title.clone(),
-					empty_copy.clone(),
-					toast_overlay.clone(),
-					filter_runtime.clone(),
-					editor_launcher.clone(),
+					secret_flow_for_secret_refresh.clone(),
+					stack_for_secret_refresh.clone(),
+					empty_title_for_secret_refresh.clone(),
+					empty_copy_for_secret_refresh.clone(),
+					active_vault_for_secret_refresh.clone(),
+					toast_for_secret_refresh.clone(),
+					filter_for_secret_refresh.clone(),
+					editor_launcher_for_secret_refresh.clone(),
 				);
+			});
+
+			let runtime_for_vaults = runtime_handle.clone();
+			let vault_service_for_vaults = Arc::clone(&vault_service);
+			let session_master_for_vaults = Rc::clone(&session_master_key);
+			let my_vaults_list = sidebar_panel.my_vaults_list.clone();
+			let shared_vaults_list = sidebar_panel.shared_vaults_list.clone();
+			let active_vault_id = Rc::clone(&active_vault_id);
+			let vault_selection_sync = Rc::clone(&vault_selection_sync);
+			let creating_default_vault = Rc::clone(&default_vault_creation_in_progress);
+			let refresh_secrets_for_vaults = Rc::clone(&refresh_secrets);
+			let window_for_delete_vault = window.clone();
+			let runtime_for_delete_vault = runtime_handle.clone();
+			let vault_service_for_delete_vault = Arc::clone(&vault_service);
+			let refresh_after_vault_mutation = Rc::clone(&refresh_after_vault_mutation);
+			Rc::new(move || {
+				let refresh_after_delete_holder = Rc::clone(&refresh_after_vault_mutation);
+				let active_vault_for_delete = Rc::clone(&active_vault_id);
+				let delete_vault_action: Rc<dyn Fn(Uuid, String)> = {
+					let parent_window = window_for_delete_vault.clone();
+					let runtime_for_action = runtime_for_delete_vault.clone();
+					let vault_service_for_action = Arc::clone(&vault_service_for_delete_vault);
+					Rc::new(move |vault_id: Uuid, vault_name: String| {
+						let body = crate::i18n::tr_args(
+							"main-delete-vault-confirm-body",
+							&[("name", crate::i18n::I18nArg::Str(vault_name.as_str()))],
+						);
+						let dialog = adw::MessageDialog::new(
+							Some(&parent_window),
+							Some(crate::tr!("main-delete-vault-confirm-title").as_str()),
+							Some(body.as_str()),
+						);
+						dialog.add_response("cancel", crate::tr!("common-cancel").as_str());
+						dialog.add_response("delete", crate::tr!("main-delete-vault-confirm-cta").as_str());
+						dialog.set_response_appearance("delete", adw::ResponseAppearance::Destructive);
+						dialog.set_default_response(Some("cancel"));
+						dialog.set_close_response("cancel");
+
+						let runtime_for_confirm = runtime_for_action.clone();
+						let vault_service_for_confirm = Arc::clone(&vault_service_for_action);
+						let parent_for_confirm = parent_window.clone();
+						let refresh_after_confirm_holder = Rc::clone(&refresh_after_delete_holder);
+						let active_for_confirm = Rc::clone(&active_vault_for_delete);
+						dialog.connect_response(None, move |_dlg, response| {
+							if response != "delete" {
+								return;
+							}
+
+							let (sender, receiver) = tokio::sync::oneshot::channel();
+							let runtime_for_task = runtime_for_confirm.clone();
+							let vault_service_for_task = Arc::clone(&vault_service_for_confirm);
+							std::thread::spawn(move || {
+								let result = runtime_for_task.block_on(async move {
+									vault_service_for_task.delete_vault(admin_user_id, vault_id).await
+								});
+								let _ = sender.send(result);
+							});
+
+							let parent_for_result = parent_for_confirm.clone();
+							let refresh_after_result_holder = Rc::clone(&refresh_after_confirm_holder);
+							let active_after_result = Rc::clone(&active_for_confirm);
+							glib::MainContext::default().spawn_local(async move {
+								match receiver.await {
+									Ok(Ok(())) => {
+										if *active_after_result.borrow() == Some(vault_id) {
+											*active_after_result.borrow_mut() = None;
+										}
+										if let Some(refresh) = refresh_after_result_holder.borrow().as_ref() {
+											refresh();
+										}
+									}
+									Ok(Err(error)) => {
+										let message = error.to_string();
+										Self::show_feedback_dialog(
+											&parent_for_result,
+											crate::tr!("main-delete-vault-error-title").as_str(),
+											message.as_str(),
+										);
+									}
+									Err(_) => {
+										Self::show_feedback_dialog(
+											&parent_for_result,
+											crate::tr!("main-delete-vault-error-title").as_str(),
+											crate::tr!("main-list-unavailable-description").as_str(),
+										);
+									}
+								}
+							});
+						});
+						dialog.present();
+					})
+				};
+
+				while let Some(child) = my_vaults_list.first_child() {
+					my_vaults_list.remove(&child);
+				}
+				while let Some(child) = shared_vaults_list.first_child() {
+					shared_vaults_list.remove(&child);
+				}
+
+				let (sender, receiver) = tokio::sync::oneshot::channel();
+				let runtime_for_task = runtime_for_vaults.clone();
+				let vault_service_for_task = Arc::clone(&vault_service_for_vaults);
+				let can_attempt_default_create = !creating_default_vault.get();
+				let master_for_default_create = if can_attempt_default_create {
+					Self::snapshot_session_master_key(&session_master_for_vaults)
+				} else {
+					None
+				};
+				if can_attempt_default_create && master_for_default_create.is_some() {
+					creating_default_vault.set(true);
+				}
+				std::thread::spawn(move || {
+					let result = runtime_for_task.block_on(async move {
+						let mut owned_vaults = vault_service_for_task.list_owned_vaults(admin_user_id).await?;
+						let mut shared_vaults = vault_service_for_task.list_shared_vault_access(admin_user_id).await?;
+						if owned_vaults.is_empty() && shared_vaults.is_empty() {
+							if let Some(master_key) = master_for_default_create {
+								let _ = vault_service_for_task
+									.create_vault(
+										admin_user_id,
+										"perso",
+										SecretBox::new(Box::new(master_key)),
+									)
+									.await;
+								owned_vaults = vault_service_for_task.list_owned_vaults(admin_user_id).await?;
+								shared_vaults = vault_service_for_task.list_shared_vault_access(admin_user_id).await?;
+							}
+						}
+						Ok::<_, crate::errors::AppError>((owned_vaults, shared_vaults))
+					});
+					let _ = sender.send((result, can_attempt_default_create));
+				});
+
+				let my_vaults_for_recv = my_vaults_list.clone();
+				let shared_vaults_for_recv = shared_vaults_list.clone();
+				let active_vault_for_recv = Rc::clone(&active_vault_id);
+				let sync_for_recv = Rc::clone(&vault_selection_sync);
+				let creating_default_vault_for_recv = Rc::clone(&creating_default_vault);
+				let delete_action_for_recv = Rc::clone(&delete_vault_action);
+				let refresh_secrets_for_recv = Rc::clone(&refresh_secrets_for_vaults);
+				glib::MainContext::default().spawn_local(async move {
+					match receiver.await {
+						Ok((Ok((owned_vaults, shared_vaults)), attempted_default_create)) => {
+							if attempted_default_create {
+								creating_default_vault_for_recv.set(false);
+							}
+							sync_for_recv.set(true);
+							let mut first_vault_id: Option<Uuid> = None;
+							for vault in owned_vaults {
+								if first_vault_id.is_none() {
+									first_vault_id = Some(vault.id);
+								}
+								let row = Self::build_vault_sidebar_row(
+									vault.name.as_str(),
+									vault.id,
+									true,
+									None,
+									Some(Rc::clone(&delete_action_for_recv)),
+								);
+								my_vaults_for_recv.append(&row);
+							}
+
+							for shared in shared_vaults {
+								let vault = shared.vault;
+								if first_vault_id.is_none() {
+									first_vault_id = Some(vault.id);
+								}
+								let row = Self::build_vault_sidebar_row(
+									vault.name.as_str(),
+									vault.id,
+									shared.role.can_admin(),
+									Some(shared.role),
+									Some(Rc::clone(&delete_action_for_recv)),
+								);
+								shared_vaults_for_recv.append(&row);
+							}
+
+							let active = *active_vault_for_recv.borrow();
+							if let Some(active_id) = active {
+								if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, active_id) {
+									my_vaults_for_recv.select_row(Some(&row));
+									shared_vaults_for_recv.unselect_all();
+								} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, active_id) {
+									shared_vaults_for_recv.select_row(Some(&row));
+									my_vaults_for_recv.unselect_all();
+								} else {
+									if let Some(fallback_id) = first_vault_id {
+										*active_vault_for_recv.borrow_mut() = Some(fallback_id);
+										if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, fallback_id) {
+											my_vaults_for_recv.select_row(Some(&row));
+											shared_vaults_for_recv.unselect_all();
+										} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, fallback_id) {
+											shared_vaults_for_recv.select_row(Some(&row));
+											my_vaults_for_recv.unselect_all();
+										}
+									} else {
+										*active_vault_for_recv.borrow_mut() = None;
+										my_vaults_for_recv.unselect_all();
+										shared_vaults_for_recv.unselect_all();
+									}
+								}
+							} else if let Some(fallback_id) = first_vault_id {
+								*active_vault_for_recv.borrow_mut() = Some(fallback_id);
+								if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, fallback_id) {
+									my_vaults_for_recv.select_row(Some(&row));
+									shared_vaults_for_recv.unselect_all();
+								} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, fallback_id) {
+									shared_vaults_for_recv.select_row(Some(&row));
+									my_vaults_for_recv.unselect_all();
+								}
+							}
+							sync_for_recv.set(false);
+							refresh_secrets_for_recv();
+						}
+						Ok((Err(_), attempted_default_create)) => {
+							if attempted_default_create {
+								creating_default_vault_for_recv.set(false);
+							}
+							sync_for_recv.set(false);
+						}
+						_ => {
+							sync_for_recv.set(false);
+						}
+					}
+				});
 			})
 		};
+
+		let refresh_list: Rc<dyn Fn()> = {
+			let refresh_vault_sections = Rc::clone(&refresh_vault_sections);
+			Rc::new(move || {
+				refresh_vault_sections();
+			})
+		};
+		*refresh_after_vault_mutation.borrow_mut() = Some(Rc::clone(&refresh_list));
+
+		let window_for_create_vault = window.clone();
+		let runtime_for_create_vault = runtime_handle.clone();
+		let vault_service_for_create_vault = Arc::clone(&vault_service);
+		let session_for_create_vault = Rc::clone(&session_master_key);
+		let refresh_for_create_vault = Rc::clone(&refresh_list);
+		sidebar_panel.create_vault_button.connect_clicked(move |_| {
+			let create_window = gtk4::Window::builder()
+				.title(crate::tr!("main-create-vault-window-title").as_str())
+				.modal(true)
+				.transient_for(&window_for_create_vault)
+				.default_width(440)
+				.default_height(140)
+				.build();
+
+			let root = gtk4::Box::builder()
+				.orientation(Orientation::Vertical)
+				.spacing(10)
+				.margin_top(12)
+				.margin_bottom(12)
+				.margin_start(12)
+				.margin_end(12)
+				.build();
+			let name_entry = gtk4::Entry::new();
+			name_entry.set_placeholder_text(Some(crate::tr!("main-create-vault-name-placeholder").as_str()));
+
+			let actions = gtk4::Box::builder()
+				.orientation(Orientation::Horizontal)
+				.spacing(8)
+				.halign(Align::End)
+				.build();
+			let cancel = gtk4::Button::with_label(crate::tr!("common-cancel").as_str());
+			let create = gtk4::Button::with_label(crate::tr!("main-create-vault-create").as_str());
+			create.add_css_class("suggested-action");
+			actions.append(&cancel);
+			actions.append(&create);
+
+			root.append(&name_entry);
+			root.append(&actions);
+			create_window.set_child(Some(&root));
+
+			let create_window_for_cancel = create_window.clone();
+			cancel.connect_clicked(move |_| create_window_for_cancel.close());
+
+			let runtime_for_apply = runtime_for_create_vault.clone();
+			let vault_for_apply = Arc::clone(&vault_service_for_create_vault);
+			let session_for_apply = Rc::clone(&session_for_create_vault);
+			let window_for_apply = window_for_create_vault.clone();
+			let refresh_after_apply = Rc::clone(&refresh_for_create_vault);
+			let create_window_for_apply = create_window.clone();
+			create.connect_clicked(move |_| {
+				let vault_name = name_entry.text().to_string();
+				if vault_name.trim().is_empty() {
+					Self::show_feedback_dialog(
+						&window_for_apply,
+						crate::tr!("main-create-vault-window-title").as_str(),
+						crate::tr!("main-create-vault-error-empty-name").as_str(),
+					);
+					return;
+				}
+
+				let Some(master_key) = Self::snapshot_session_master_key(&session_for_apply) else {
+					Self::show_feedback_dialog(
+						&window_for_apply,
+						crate::tr!("main-create-vault-window-title").as_str(),
+						crate::tr!("main-create-vault-error-session-locked").as_str(),
+					);
+					return;
+				};
+
+				let (sender, receiver) = tokio::sync::oneshot::channel();
+				let runtime_for_task = runtime_for_apply.clone();
+				let vault_for_task = Arc::clone(&vault_for_apply);
+				std::thread::spawn(move || {
+					let result = runtime_for_task.block_on(async move {
+						vault_for_task
+							.create_vault(
+								admin_user_id,
+								vault_name.trim(),
+								SecretBox::new(Box::new(master_key)),
+							)
+							.await
+					});
+					let _ = sender.send(result);
+				});
+
+				let window_for_result = window_for_apply.clone();
+				let refresh_after_result = Rc::clone(&refresh_after_apply);
+				let create_window_close = create_window_for_apply.clone();
+				glib::MainContext::default().spawn_local(async move {
+					match receiver.await {
+						Ok(Ok(_)) => {
+							create_window_close.close();
+							refresh_after_result();
+						}
+						Ok(Err(error)) => {
+							let message = error.to_string();
+							Self::show_feedback_dialog(
+								&window_for_result,
+								crate::tr!("main-create-vault-window-title").as_str(),
+								message.as_str(),
+							);
+						}
+						Err(_) => {
+							Self::show_feedback_dialog(
+								&window_for_result,
+								crate::tr!("main-create-vault-window-title").as_str(),
+								crate::tr!("main-list-unavailable-description").as_str(),
+							);
+						}
+					}
+				});
+			});
+
+			create_window.present();
+		});
 
 			let profile_view = Self::build_profile_view(
 			window.clone(),
@@ -505,6 +892,187 @@ impl MainWindow {
 		let main_stack_for_profile = center_panel.main_stack.clone();
 		sidebar_panel.profile_security_button.connect_clicked(move |_| {
 			main_stack_for_profile.set_visible_child_name("profile_view");
+		});
+
+		let app_for_admin = application.clone();
+		let window_for_admin = window.clone();
+		let runtime_for_admin = runtime_handle.clone();
+		let admin_for_admin = Arc::clone(&admin_service);
+		let users_dialog = ManageUsersDialog::new(
+			&app_for_admin,
+			&window_for_admin,
+			runtime_for_admin,
+			Arc::clone(&admin_for_admin),
+			Arc::clone(&vault_service),
+			admin_user_id,
+		);
+		let users_content = users_dialog
+			.take_content()
+			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
+		let users_view_container = gtk4::ScrolledWindow::builder()
+			.vexpand(true)
+			.hexpand(true)
+			.hscrollbar_policy(gtk4::PolicyType::Never)
+			.build();
+		let users_view_root = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(18)
+			.margin_top(16)
+			.margin_bottom(16)
+			.margin_start(16)
+			.margin_end(16)
+			.build();
+		users_view_root.add_css_class("profile-view-content");
+		let users_header = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.build();
+		users_header.add_css_class("profile-view-header");
+		let users_back_button = gtk4::Button::builder()
+			.label(crate::tr!("main-view-back").as_str())
+			.icon_name("go-previous-symbolic")
+			.build();
+		users_back_button.add_css_class("flat");
+		users_back_button.add_css_class("main-inline-back-button");
+		users_back_button.set_halign(Align::Start);
+		let users_title = gtk4::Label::new(Some(crate::tr!("main-users-view-title").as_str()));
+		users_title.add_css_class("title-3");
+		users_title.add_css_class("heading");
+		users_title.add_css_class("main-section-title");
+		users_title.set_hexpand(true);
+		users_title.set_halign(Align::Center);
+		users_header.append(&users_back_button);
+		users_header.append(&users_title);
+		users_view_root.append(&users_header);
+
+		let users_intro = gtk4::Label::new(Some(crate::tr!("main-users-view-intro").as_str()));
+		users_intro.set_halign(Align::Start);
+		users_intro.set_wrap(true);
+		users_intro.add_css_class("dim-label");
+		users_view_root.append(&users_intro);
+
+		let users_frame = gtk4::Frame::new(None);
+		users_frame.add_css_class("profile-section-frame");
+		users_frame.set_child(Some(&users_content));
+		users_view_root.append(&users_frame);
+		users_view_container.set_child(Some(&users_view_root));
+		center_panel
+			.main_stack
+			.add_titled(
+				&users_view_container,
+				Some("users_view"),
+				crate::tr!("main-user-nav").as_str(),
+			);
+		let main_stack_for_users_back = center_panel.main_stack.clone();
+		users_back_button.connect_clicked(move |_| {
+			main_stack_for_users_back.set_visible_child_name("entries_view");
+		});
+		let main_stack_for_users = center_panel.main_stack.clone();
+		sidebar_panel.administration_button.connect_clicked(move |_| {
+			main_stack_for_users.set_visible_child_name("users_view");
+		});
+
+		let app_for_teams = application.clone();
+		let window_for_teams = window.clone();
+		let runtime_for_teams = runtime_handle.clone();
+		let team_for_teams = Arc::clone(&team_service);
+		let vault_for_teams = Arc::clone(&vault_service);
+		let master_for_teams = Rc::clone(&session_master_key);
+		let active_vault_for_teams = Rc::clone(&active_vault_id);
+		let refresh_for_teams = Rc::clone(&refresh_list);
+		let teams_dialog = ManageTeamsDialog::new(
+			&app_for_teams,
+			&window_for_teams,
+			runtime_for_teams,
+			Arc::clone(&team_for_teams),
+			Arc::clone(&vault_for_teams),
+			admin_user_id,
+			Rc::clone(&master_for_teams),
+			Rc::clone(&active_vault_for_teams),
+			Rc::clone(&refresh_for_teams),
+		);
+		let teams_content = teams_dialog
+			.take_content()
+			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
+		let teams_view_container = gtk4::ScrolledWindow::builder()
+			.vexpand(true)
+			.hexpand(true)
+			.hscrollbar_policy(gtk4::PolicyType::Never)
+			.build();
+		let teams_view_root = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(18)
+			.margin_top(16)
+			.margin_bottom(16)
+			.margin_start(16)
+			.margin_end(16)
+			.build();
+		teams_view_root.add_css_class("profile-view-content");
+		let teams_header = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.build();
+		teams_header.add_css_class("profile-view-header");
+		let teams_back_button = gtk4::Button::builder()
+			.label(crate::tr!("main-view-back").as_str())
+			.icon_name("go-previous-symbolic")
+			.build();
+		teams_back_button.add_css_class("flat");
+		teams_back_button.add_css_class("main-inline-back-button");
+		teams_back_button.set_halign(Align::Start);
+		let teams_title = gtk4::Label::new(Some(crate::tr!("main-teams-view-title").as_str()));
+		teams_title.add_css_class("title-3");
+		teams_title.add_css_class("heading");
+		teams_title.add_css_class("main-section-title");
+		teams_title.set_hexpand(true);
+		teams_title.set_halign(Align::Center);
+		teams_header.append(&teams_back_button);
+		teams_header.append(&teams_title);
+		teams_view_root.append(&teams_header);
+
+		let teams_intro = gtk4::Label::new(Some(crate::tr!("main-teams-view-intro").as_str()));
+		teams_intro.set_halign(Align::Start);
+		teams_intro.set_wrap(true);
+		teams_intro.add_css_class("dim-label");
+		teams_view_root.append(&teams_intro);
+
+		let teams_frame = gtk4::Frame::new(None);
+		teams_frame.add_css_class("profile-section-frame");
+		teams_frame.set_child(Some(&teams_content));
+		teams_view_root.append(&teams_frame);
+		teams_view_container.set_child(Some(&teams_view_root));
+		center_panel
+			.main_stack
+			.add_titled(
+				&teams_view_container,
+				Some("teams_view"),
+				crate::tr!("main-teams-nav").as_str(),
+			);
+		let main_stack_for_teams_back = center_panel.main_stack.clone();
+		teams_back_button.connect_clicked(move |_| {
+			main_stack_for_teams_back.set_visible_child_name("entries_view");
+		});
+		let main_stack_for_teams = center_panel.main_stack.clone();
+		sidebar_panel.teams_button.connect_clicked(move |_| {
+			main_stack_for_teams.set_visible_child_name("teams_view");
+		});
+
+		let runtime_for_role = runtime_handle.clone();
+		let user_for_role = Arc::clone(&user_service);
+		let administration_button_for_role = sidebar_panel.administration_button.clone();
+		let (sender, receiver) = tokio::sync::oneshot::channel();
+		std::thread::spawn(move || {
+			let result = runtime_for_role.block_on(async move {
+				user_for_role.get_user_profile(admin_user_id).await
+			});
+			let _ = sender.send(result);
+		});
+		glib::MainContext::default().spawn_local(async move {
+			let is_admin = matches!(
+				receiver.await,
+				Ok(Ok(user)) if matches!(user.role, crate::models::UserRole::Admin)
+			);
+			administration_button_for_role.set_visible(is_admin);
 		});
 
 		let secret_editor_host = gtk4::Box::builder()
@@ -705,6 +1273,14 @@ impl MainWindow {
 			let main_stack = center_panel.main_stack.clone();
 			let profile_container = profile_view.container.clone();
 			let secret_editor_host = secret_editor_host.clone();
+			let users_view_container = users_view_container.clone();
+			let teams_view_container = teams_view_container.clone();
+			let users_back_button = users_back_button.clone();
+			let users_title = users_title.clone();
+			let users_intro = users_intro.clone();
+			let teams_back_button = teams_back_button.clone();
+			let teams_title = teams_title.clone();
+			let teams_intro = teams_intro.clone();
 			Rc::new(move || {
 				sidebar_i18n_refresh();
 				profile_button.set_tooltip_text(Some(crate::tr!("main-last-logins-tooltip").as_str()));
@@ -733,8 +1309,21 @@ impl MainWindow {
 					.page(&profile_container)
 					.set_title(crate::tr!("main-profile-security").as_str());
 				main_stack
+					.page(&users_view_container)
+					.set_title(crate::tr!("main-user-nav").as_str());
+				main_stack
+					.page(&teams_view_container)
+					.set_title(crate::tr!("main-teams-nav").as_str());
+				main_stack
 					.page(&secret_editor_host)
 					.set_title(crate::tr!("main-stack-editor").as_str());
+
+				users_back_button.set_label(crate::tr!("main-view-back").as_str());
+				users_title.set_text(crate::tr!("main-users-view-title").as_str());
+				users_intro.set_text(crate::tr!("main-users-view-intro").as_str());
+				teams_back_button.set_label(crate::tr!("main-view-back").as_str());
+				teams_title.set_text(crate::tr!("main-teams-view-title").as_str());
+				teams_intro.set_text(crate::tr!("main-teams-view-intro").as_str());
 			})
 		};
 		*on_main_i18n_refresh.borrow_mut() = Some(Rc::clone(&main_i18n_refresh));
@@ -745,6 +1334,89 @@ impl MainWindow {
 		search_entry.connect_search_changed(move |entry| {
 			*filter_for_search.search_text.borrow_mut() = entry.text().to_string();
 			Self::apply_filters(&flow_for_search, &filter_for_search);
+		});
+
+		let active_vault_for_my_list = Rc::clone(&active_vault_id);
+		let other_shared_list = sidebar_panel.shared_vaults_list.clone();
+		let refresh_for_my_list = {
+			let app = application.clone();
+			let parent_window = window.clone();
+			let runtime = runtime_handle.clone();
+			let secret_service = Arc::clone(&secret_service);
+			let vault_service = Arc::clone(&vault_service);
+			let toast_overlay = toast_overlay.clone();
+			let session_master = Rc::clone(&session_master_key);
+			let active_vault_id = Rc::clone(&active_vault_id);
+			let secret_flow = secret_flow_for_refresh.clone();
+			let stack = stack_for_refresh.clone();
+			let empty_title = empty_title_for_refresh.clone();
+			let empty_copy = empty_copy_for_refresh.clone();
+			let filter_runtime = filter_runtime.clone();
+			let editor_launcher = Rc::clone(&editor_launcher);
+			Rc::new(move || {
+				let Some(master_key) = Self::snapshot_session_master_key(&session_master) else {
+					empty_title.set_text(crate::tr!("main-session-locked-title").as_str());
+					empty_copy.set_text(crate::tr!("main-session-locked-description").as_str());
+					stack.set_visible_child_name("empty");
+					return;
+				};
+				Self::refresh_secret_flow(
+					app.clone(),
+					parent_window.clone(),
+					runtime.clone(),
+					Arc::clone(&secret_service),
+					Arc::clone(&vault_service),
+					admin_user_id,
+					master_key,
+					secret_flow.clone(),
+					stack.clone(),
+					empty_title.clone(),
+					empty_copy.clone(),
+					active_vault_id.clone(),
+					toast_overlay.clone(),
+					filter_runtime.clone(),
+					editor_launcher.clone(),
+				);
+			})
+		};
+		let main_stack_for_my_list = center_panel.main_stack.clone();
+		let sync_for_my_list = Rc::clone(&vault_selection_sync);
+		let refresh_for_my_list_handler = Rc::clone(&refresh_for_my_list);
+		sidebar_panel.my_vaults_list.connect_row_selected(move |_list, row_opt| {
+			if sync_for_my_list.get() {
+				return;
+			}
+			if let Some(row) = row_opt {
+				if let Some(vault_id) = Self::vault_id_from_row(&row) {
+					sync_for_my_list.set(true);
+					other_shared_list.unselect_all();
+					sync_for_my_list.set(false);
+					*active_vault_for_my_list.borrow_mut() = Some(vault_id);
+					main_stack_for_my_list.set_visible_child_name("entries_view");
+					refresh_for_my_list_handler();
+				}
+			}
+		});
+
+		let active_vault_for_shared_list = Rc::clone(&active_vault_id);
+		let other_my_list = sidebar_panel.my_vaults_list.clone();
+		let refresh_for_shared_list = Rc::clone(&refresh_for_my_list);
+		let main_stack_for_shared_list = center_panel.main_stack.clone();
+		let sync_for_shared_list = Rc::clone(&vault_selection_sync);
+		sidebar_panel.shared_vaults_list.connect_row_selected(move |_list, row_opt| {
+			if sync_for_shared_list.get() {
+				return;
+			}
+			if let Some(row) = row_opt {
+				if let Some(vault_id) = Self::vault_id_from_row(&row) {
+					sync_for_shared_list.set(true);
+					other_my_list.unselect_all();
+					sync_for_shared_list.set(false);
+					*active_vault_for_shared_list.borrow_mut() = Some(vault_id);
+					main_stack_for_shared_list.set_visible_child_name("entries_view");
+					refresh_for_shared_list();
+				}
+			}
 		});
 
 		let flow_for_category = center_panel.secret_flow.clone();
@@ -2921,6 +3593,45 @@ impl MainWindow {
 			.margin_end(14)
 			.build();
 
+		let my_vaults_title = gtk4::Label::new(Some(crate::tr!("main-my-vaults-title").as_str()));
+		my_vaults_title.add_css_class("main-section-title");
+		my_vaults_title.set_halign(Align::Start);
+
+		let create_vault_button = gtk4::Button::builder()
+			.icon_name("list-add-symbolic")
+			.build();
+		create_vault_button.add_css_class("flat");
+		create_vault_button.add_css_class("accent");
+		create_vault_button.set_tooltip_text(Some(crate::tr!("main-create-vault-button").as_str()));
+
+		let my_vaults_header = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(6)
+			.build();
+		my_vaults_header.append(&my_vaults_title);
+		my_vaults_header.append(&create_vault_button);
+		sidebar_box.append(&my_vaults_header);
+
+		let my_vaults_list = gtk4::ListBox::new();
+		my_vaults_list.add_css_class("boxed-list");
+		my_vaults_list.add_css_class("main-category-list");
+		my_vaults_list.set_selection_mode(gtk4::SelectionMode::Single);
+		sidebar_box.append(&my_vaults_list);
+
+		let shared_vaults_title = gtk4::Label::new(Some(crate::tr!("main-shared-with-me-title").as_str()));
+		shared_vaults_title.add_css_class("main-section-title");
+		shared_vaults_title.set_halign(Align::Start);
+		sidebar_box.append(&shared_vaults_title);
+
+		let shared_vaults_list = gtk4::ListBox::new();
+		shared_vaults_list.add_css_class("boxed-list");
+		shared_vaults_list.add_css_class("main-category-list");
+		shared_vaults_list.set_selection_mode(gtk4::SelectionMode::Single);
+		sidebar_box.append(&shared_vaults_list);
+
+		let vaults_separator = gtk4::Separator::new(Orientation::Horizontal);
+		sidebar_box.append(&vaults_separator);
+
 		let audit_title = gtk4::Label::new(Some(crate::tr!("main-audit-title").as_str()));
 		audit_title.add_css_class("main-section-title");
 		audit_title.set_halign(Align::Start);
@@ -3004,9 +3715,63 @@ impl MainWindow {
 		profile_security_button.set_child(Some(&profile_security_inner));
 		sidebar_box.append(&profile_security_button);
 
+		let teams_button = gtk4::Button::new();
+		teams_button.add_css_class("flat");
+		teams_button.add_css_class("sidebar-profile-entry");
+		teams_button.set_halign(Align::Fill);
+		let teams_inner = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.margin_top(8)
+			.margin_bottom(8)
+			.margin_start(10)
+			.margin_end(10)
+			.build();
+		let teams_icon = gtk4::Image::from_icon_name("system-users-symbolic");
+		teams_icon.set_pixel_size(18);
+		teams_icon.add_css_class("main-sidebar-icon");
+		let teams_label = gtk4::Label::new(Some(crate::tr!("main-teams-nav").as_str()));
+		teams_label.add_css_class("main-sidebar-label");
+		teams_label.set_halign(Align::Start);
+		teams_label.set_hexpand(true);
+		teams_inner.append(&teams_icon);
+		teams_inner.append(&teams_label);
+		teams_button.set_child(Some(&teams_inner));
+		sidebar_box.append(&teams_button);
+
+		let administration_button = gtk4::Button::new();
+		administration_button.add_css_class("flat");
+		administration_button.add_css_class("sidebar-profile-entry");
+		administration_button.set_halign(Align::Fill);
+		let administration_inner = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.margin_top(8)
+			.margin_bottom(8)
+			.margin_start(10)
+			.margin_end(10)
+			.build();
+		let administration_icon = gtk4::Image::from_icon_name("avatar-default-symbolic");
+		administration_icon.set_pixel_size(18);
+		administration_icon.add_css_class("main-sidebar-icon");
+		let administration_label = gtk4::Label::new(Some(crate::tr!("main-user-nav").as_str()));
+		administration_label.add_css_class("main-sidebar-label");
+		administration_label.set_halign(Align::Start);
+		administration_label.set_hexpand(true);
+		administration_inner.append(&administration_icon);
+		administration_inner.append(&administration_label);
+		administration_button.set_child(Some(&administration_inner));
+		sidebar_box.append(&administration_button);
+		administration_button.set_visible(false);
+
 		sidebar_frame.set_child(Some(&sidebar_box));
 		SidebarWidgets {
 			frame: sidebar_frame,
+			my_vaults_title,
+			create_vault_button,
+			my_vaults_list,
+			shared_vaults_title,
+			shared_vaults_list,
 			category_list,
 			audit_list,
 			audit_title,
@@ -3025,6 +3790,10 @@ impl MainWindow {
 			audit_duplicate_badge,
 			profile_security_label,
 			profile_security_button,
+			teams_label,
+			teams_button,
+			administration_label,
+			administration_button,
 		}
 	}
 
@@ -3082,6 +3851,109 @@ impl MainWindow {
 
 		row.set_child(Some(&content));
 		(row, label)
+	}
+
+	fn build_vault_sidebar_row(
+		title: &str,
+		vault_id: Uuid,
+		can_delete: bool,
+		shared_role: Option<crate::models::VaultShareRole>,
+		on_delete: Option<Rc<dyn Fn(Uuid, String)>>,
+	) -> gtk4::ListBoxRow {
+		let row = gtk4::ListBoxRow::new();
+		let content = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.margin_top(8)
+			.margin_bottom(8)
+			.margin_start(10)
+			.margin_end(10)
+			.build();
+
+		let icon = gtk4::Image::from_icon_name("folder-symbolic");
+		icon.set_pixel_size(18);
+		icon.add_css_class("main-sidebar-icon");
+		content.append(&icon);
+
+		let label = gtk4::Label::new(Some(title));
+		label.set_halign(Align::Start);
+		label.set_hexpand(true);
+		label.add_css_class("main-sidebar-label");
+		content.append(&label);
+
+		if let Some(role) = shared_role {
+			let role_badge = gtk4::Label::new(None);
+			let badge_text = match role {
+				crate::models::VaultShareRole::Read => "👁 read",
+				crate::models::VaultShareRole::Write => "✏️ write",
+				crate::models::VaultShareRole::Admin => "👑 admin",
+			};
+			role_badge.set_text(badge_text);
+			role_badge.add_css_class("caption");
+			role_badge.add_css_class("dim-label");
+			role_badge.set_margin_end(6);
+			content.append(&role_badge);
+		}
+
+		if can_delete {
+			let delete_button = gtk4::Button::builder()
+				.icon_name("user-trash-symbolic")
+				.build();
+			delete_button.add_css_class("flat");
+			delete_button.set_valign(Align::Center);
+			delete_button.set_tooltip_text(Some(crate::tr!("main-delete-vault-tooltip").as_str()));
+			delete_button.set_opacity(0.0);
+			delete_button.set_sensitive(false);
+			delete_button.set_can_target(false);
+			if let Some(delete_callback) = on_delete {
+				let vault_name = title.to_string();
+				delete_button.connect_clicked(move |_| {
+					delete_callback(vault_id, vault_name.clone());
+				});
+			}
+
+			let delete_button_enter = delete_button.clone();
+			let delete_button_leave = delete_button.clone();
+			let hover_controller = gtk4::EventControllerMotion::new();
+			hover_controller.connect_enter(move |_controller, _x, _y| {
+				delete_button_enter.set_opacity(1.0);
+				delete_button_enter.set_sensitive(true);
+				delete_button_enter.set_can_target(true);
+			});
+			hover_controller.connect_leave(move |_controller| {
+				delete_button_leave.set_opacity(0.0);
+				delete_button_leave.set_sensitive(false);
+				delete_button_leave.set_can_target(false);
+			});
+			row.add_controller(hover_controller);
+
+			content.append(&delete_button);
+		}
+
+		row.set_child(Some(&content));
+		row.set_widget_name(format!("vault-{}", vault_id).as_str());
+		row
+	}
+
+	fn vault_id_from_row(row: &gtk4::ListBoxRow) -> Option<Uuid> {
+		row
+			.widget_name()
+			.strip_prefix("vault-")
+			.and_then(|raw| Uuid::parse_str(raw).ok())
+	}
+
+	fn find_vault_row(list: &gtk4::ListBox, vault_id: Uuid) -> Option<gtk4::ListBoxRow> {
+		let mut child_opt = list.first_child();
+		while let Some(child) = child_opt {
+			let next = child.next_sibling();
+			if let Ok(row) = child.clone().downcast::<gtk4::ListBoxRow>() {
+				if Self::vault_id_from_row(&row) == Some(vault_id) {
+					return Some(row);
+				}
+			}
+			child_opt = next;
+		}
+		None
 	}
 
 	fn build_center_panel() -> CenterPanelWidgets {
@@ -3199,6 +4071,7 @@ impl MainWindow {
 		stack: gtk4::Stack,
 		empty_title: gtk4::Label,
 		empty_copy: gtk4::Label,
+		active_vault_id: Rc<RefCell<Option<Uuid>>>,
 		toast_overlay: adw::ToastOverlay,
 		filter_runtime: FilterRuntime,
 		editor_launcher: Rc<RefCell<Option<Rc<dyn Fn(DialogMode)>>>>,
@@ -3214,25 +4087,41 @@ impl MainWindow {
 		let secret_for_loader = Arc::clone(&secret_service);
 		let vault_for_loader = Arc::clone(&vault_service);
 		let admin_master_for_loader = admin_master_key.clone();
+		let selected_vault_id = *active_vault_id.borrow();
 
 		let (sender, receiver) = tokio::sync::oneshot::channel();
 		std::thread::spawn(move || {
-			let result: Result<Vec<SecretRowView>, crate::errors::AppError> =
+			let result: Result<(Option<(Uuid, bool, bool, bool)>, Vec<SecretRowView>, bool), crate::errors::AppError> =
 				runtime_for_loader.block_on(async move {
 				let vaults = vault_for_loader.list_user_vaults(admin_user_id).await?;
-				let first_vault = match vaults.into_iter().next() {
-					Some(value) => value,
-					None => return Ok(Vec::new()),
+				let resolved_selected_id = selected_vault_id
+					.or_else(|| vaults.first().map(|vault| vault.id));
+				let Some(selected_id) = resolved_selected_id else {
+					return Ok((None, Vec::new(), true));
 				};
 
+				let selected_vault = match vaults.into_iter().find(|vault| vault.id == selected_id) {
+					Some(value) => value,
+					None => return Ok((None, Vec::new(), false)),
+				};
+				let access = vault_for_loader
+					.get_vault_access_for_user(admin_user_id, selected_vault.id)
+					.await?
+					.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+				let is_shared = selected_vault.owner_user_id != admin_user_id;
+				let can_write = access.role.can_write();
+				let can_admin = access.role.can_admin();
+				let vault_state = Some((selected_vault.id, is_shared, can_write, can_admin));
+
 				let vault_key = vault_for_loader
-					.open_vault(
-						first_vault.id,
+					.open_vault_for_user(
+						admin_user_id,
+						selected_vault.id,
 						SecretBox::new(Box::new(admin_master_for_loader.clone())),
 					)
 					.await?;
 
-				let items = secret_for_loader.list_by_vault(first_vault.id).await?;
+				let items = secret_for_loader.list_by_vault(selected_vault.id).await?;
 				let mut rows = Vec::with_capacity(items.len());
 				for item in items {
 					let secret_result = secret_for_loader
@@ -3339,14 +4228,34 @@ impl MainWindow {
 					});
 				}
 
-				Ok(rows)
+				Ok((vault_state, rows, false))
 			});
 			let _ = sender.send(result);
 		});
 
+		let active_vault_for_receiver = Rc::clone(&active_vault_id);
 		glib::MainContext::default().spawn_local(async move {
 			match receiver.await {
-				Ok(Ok(items)) => {
+				Ok(Ok((vault_state, items, no_selection))) => {
+					if let Some((vault_id, _, _, _)) = vault_state {
+						*active_vault_for_receiver.borrow_mut() = Some(vault_id);
+					}
+
+					if no_selection {
+						empty_title.set_text("Aucun coffre sélectionné");
+						empty_copy.set_text("Sélectionnez un coffre dans la barre latérale pour afficher ses secrets.");
+						stack.set_visible_child_name("empty");
+						return;
+					}
+
+					if vault_state.is_none() {
+						*active_vault_for_receiver.borrow_mut() = None;
+						empty_title.set_text("Coffre non disponible");
+						empty_copy.set_text("Le coffre sélectionné n'est plus accessible. Sélectionnez-en un autre.");
+						stack.set_visible_child_name("empty");
+						return;
+					}
+
 					filter_runtime.meta_by_widget.borrow_mut().clear();
 					filter_runtime.audit_all_count_label.set_text("0");
 					filter_runtime.audit_weak_count_label.set_text("0");
@@ -3371,6 +4280,9 @@ impl MainWindow {
 						}
 					}
 
+								let shared_vault = vault_state.map(|(_, is_shared, _, _)| is_shared).unwrap_or(false);
+								let can_write = vault_state.map(|(_, _, can_write, _)| can_write).unwrap_or(false);
+								let can_admin = vault_state.map(|(_, _, _, can_admin)| can_admin).unwrap_or(false);
 					for item in items {
 						let is_duplicate = duplicate_counts
 							.get(&item.secret_value)
@@ -3391,6 +4303,9 @@ impl MainWindow {
 							health: item.health.clone(),
 							usage_count: item.usage_count,
 							is_duplicate,
+							is_shared_vault: shared_vault,
+									can_edit: !shared_vault || can_write,
+									can_delete: !shared_vault || can_admin,
 						};
 
 						let card = Rc::new(SecretCard::new(card_data));
@@ -3417,6 +4332,7 @@ impl MainWindow {
 						let master_for_delete = admin_master_key.clone();
 						let filter_for_delete = filter_runtime.clone();
 						let editor_launcher_for_delete = editor_launcher.clone();
+						let active_vault_for_delete = active_vault_id.clone();
 						let secret_id_for_delete = item.secret_id;
 						let secret_title_for_delete = item.title.clone();
 						let toast_overlay_for_delete = toast_overlay.clone();
@@ -3445,6 +4361,7 @@ impl MainWindow {
 							let editor_launcher_for_refresh = editor_launcher_for_delete.clone();
 							let secret_title_for_refresh = secret_title_for_delete.clone();
 							let toast_overlay_for_refresh = toast_overlay_for_delete.clone();
+							let active_vault_for_refresh = active_vault_for_delete.clone();
 							glib::MainContext::default().spawn_local(async move {
 								if matches!(receiver.await, Ok(Ok(()))) {
 									let toast_message = messages::toast_secret_deleted(secret_title_for_refresh.as_str());
@@ -3461,6 +4378,7 @@ impl MainWindow {
 										stack_for_refresh.clone(),
 										empty_title_refresh.clone(),
 										empty_copy_refresh.clone(),
+										active_vault_for_refresh.clone(),
 										toast_overlay_for_refresh.clone(),
 										filter_for_refresh.clone(),
 										editor_launcher_for_refresh.clone(),
@@ -3584,6 +4502,11 @@ struct ProfileViewWidgets {
 
 struct SidebarWidgets {
 	frame: gtk4::Frame,
+	my_vaults_title: gtk4::Label,
+	create_vault_button: gtk4::Button,
+	my_vaults_list: gtk4::ListBox,
+	shared_vaults_title: gtk4::Label,
+	shared_vaults_list: gtk4::ListBox,
 	category_list: gtk4::ListBox,
 	audit_list: gtk4::ListBox,
 	audit_title: gtk4::Label,
@@ -3602,6 +4525,10 @@ struct SidebarWidgets {
 	audit_duplicate_badge: gtk4::Label,
 	profile_security_label: gtk4::Label,
 	profile_security_button: gtk4::Button,
+	teams_label: gtk4::Label,
+	teams_button: gtk4::Button,
+	administration_label: gtk4::Label,
+	administration_button: gtk4::Button,
 }
 
 struct SecretRowView {

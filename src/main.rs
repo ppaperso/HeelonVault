@@ -4,6 +4,7 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
 
@@ -27,9 +28,13 @@ use tracing_subscriber::EnvFilter;
 
 use heelonvault_rust::config::constants::APP_ID;
 use heelonvault_rust::errors::AppError;
+use heelonvault_rust::repositories::audit_log_repository::SqlxAuditLogRepository;
 use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
-use heelonvault_rust::repositories::user_repository::SqlxUserRepository;
+use heelonvault_rust::repositories::team_repository::SqlxTeamRepository;
+use heelonvault_rust::repositories::user_repository::{SqlxUserRepository, UserRepository};
 use heelonvault_rust::repositories::vault_repository::SqlxVaultRepository;
+use heelonvault_rust::services::admin_service::AdminServiceImpl;
+use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
 use heelonvault_rust::services::auth_policy_service::{AuthPolicyService, SqlxAuthPolicyService};
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::{BackupService, BackupServiceImpl};
@@ -38,20 +43,38 @@ use heelonvault_rust::services::import_service::ImportServiceImpl;
 use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
+use heelonvault_rust::services::team_service::TeamServiceImpl;
 use heelonvault_rust::services::totp_service::SqliteTotpService;
 use heelonvault_rust::services::user_service::{UserService, UserServiceImpl};
 use heelonvault_rust::services::vault_service::{
 	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
 };
-use heelonvault_rust::ui::dialogs::login_dialog::LoginDialog;
+use heelonvault_rust::ui::dialogs::login_dialog::{AuthenticatedSession, LoginDialog};
 use heelonvault_rust::ui::windows::main_window::MainWindow;
 use uuid::Uuid;
 
 type VaultServiceHandle =
-	VaultServiceImpl<SqlxVaultRepository, SqlxVaultEnvelopeRepository, CryptoServiceImpl>;
-type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl>;
+	VaultServiceImpl<
+		SqlxVaultRepository,
+		SqlxVaultEnvelopeRepository,
+		SqlxUserRepository,
+		SqlxTeamRepository,
+		AuditLogServiceHandle,
+		CryptoServiceImpl,
+	>;
+type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl, AuditLogServiceHandle>;
 type UserServiceHandle = UserServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>>;
 type TotpServiceHandle = SqliteTotpService<AuthServiceImpl<CryptoServiceImpl>, CryptoServiceImpl>;
+type AuditLogServiceHandle = AuditLogServiceImpl<SqlxUserRepository, SqlxAuditLogRepository>;
+type AdminServiceHandle =
+	AdminServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>, AuditLogServiceHandle>;
+type TeamServiceHandle = TeamServiceImpl<
+	SqlxTeamRepository,
+	SqlxUserRepository,
+	SqlxVaultRepository,
+	CryptoServiceImpl,
+	AuditLogServiceHandle,
+>;
 
 struct SqlxVaultEnvelopeRepository {
 	pool: SqlitePool,
@@ -102,10 +125,9 @@ struct AppContext {
 	import_service: Arc<ImportServiceImpl>,
 	user_service: Arc<UserServiceHandle>,
 	totp_service: Arc<TotpServiceHandle>,
-	admin_user_id: Uuid,
-	admin_username: String,
-	admin_identity_label: String,
-	admin_master_key: Vec<u8>,
+	_audit_log_service: Arc<AuditLogServiceHandle>,
+	admin_service: Arc<AdminServiceHandle>,
+	team_service: Arc<TeamServiceHandle>,
 	_password_service: PasswordServiceImpl,
 }
 
@@ -200,45 +222,41 @@ fn main() -> Result<()> {
 	application.connect_activate(move |app| {
 		let context = Arc::clone(&app_context_for_activate);
 		let runtime_for_restore = Arc::clone(&runtime_for_activate);
-
-		let main_window = Rc::new(MainWindow::new(
-			app,
-			runtime_handle.clone(),
-			Arc::clone(&context.secret_service),
-			Arc::clone(&context.vault_service),
-			Arc::clone(&context.user_service),
-			Arc::clone(&context.totp_service),
-			Arc::clone(&context.auth_policy_service),
-			Arc::clone(&context.backup_service),
-			Arc::clone(&context.import_service),
-			context.pool.clone(),
-			context.database_path.clone(),
-			context.admin_user_id,
-			context.admin_master_key.clone(),
-			context.admin_identity_label.clone(),
-		));
-		main_window.window().set_icon_name(Some("heelonvault"));
-		main_window.window().set_visible(false);
-
 		let app_for_login = app.clone();
 		let app_for_restore = app.clone();
+		let login_parent = adw::ApplicationWindow::builder()
+			.application(app)
+			.title("HeelonVault")
+			.default_width(1)
+			.default_height(1)
+			.build();
+		login_parent.set_visible(false);
 		let runtime_for_login = runtime_handle.clone();
 		let context_for_login = Arc::clone(&context);
-		let main_for_login = Rc::clone(&main_window);
+		let active_main_window: Rc<RefCell<Option<Rc<MainWindow>>>> = Rc::new(RefCell::new(None));
+		let present_login_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
+		let active_main_for_login = Rc::clone(&active_main_window);
+		let present_holder_for_login = Rc::clone(&present_login_holder);
 		let present_login: Rc<dyn Fn()> = Rc::new(move || {
-			main_for_login.deactivate_auto_lock();
-			main_for_login.window().set_visible(false);
+			if let Some(main) = active_main_for_login.borrow().as_ref() {
+				main.deactivate_auto_lock();
+				main.window().set_visible(false);
+			}
 
 			let app_for_cancel = app_for_login.clone();
 			let app_for_restore_completed = app_for_restore.clone();
-			let main_for_success = Rc::clone(&main_for_login);
 			let context_for_success = Arc::clone(&context_for_login);
 			let context_for_restore = Arc::clone(&context_for_login);
 			let runtime_for_success = runtime_for_login.clone();
 			let runtime_for_restore_task = Arc::clone(&runtime_for_restore);
+			let active_main_for_success = Rc::clone(&active_main_for_login);
+			let present_holder_for_logout = Rc::clone(&present_holder_for_login);
+			let app_for_main_success = app_for_login.clone();
+			let login_parent_for_dialog = login_parent.clone();
 			let login_dialog = LoginDialog::new(
 				&app_for_login,
-				main_for_login.window(),
+				&login_parent_for_dialog,
 				runtime_for_login.clone(),
 				Arc::clone(&context_for_login.auth_service),
 				Arc::clone(&context_for_login.auth_policy_service),
@@ -285,11 +303,16 @@ fn main() -> Result<()> {
 					}
 					app_for_restore_completed.quit();
 				},
-				move || {
+				move |session: AuthenticatedSession| {
+					let session_user_id = session.user_id;
+					let session_username = session.username.clone();
+					let session_identity_label = session.identity_label.clone();
+					let session_master_key = session.master_key.expose_secret().clone();
+
 					let preferred_language = runtime_for_success.block_on(async {
 						context_for_success
 							.user_service
-							.get_user_profile(context_for_success.admin_user_id)
+							.get_user_profile(session_user_id)
 							.await
 							.ok()
 							.map(|user| user.preferred_language)
@@ -298,13 +321,31 @@ fn main() -> Result<()> {
 						let _ = heelonvault_rust::i18n::set_language(language.as_str());
 					}
 
-					main_for_success
-						.set_session_master_key(context_for_success.admin_master_key.clone());
+					let main_for_success = Rc::new(MainWindow::new(
+							&app_for_main_success,
+						runtime_for_success.clone(),
+						Arc::clone(&context_for_success.secret_service),
+						Arc::clone(&context_for_success.vault_service),
+						Arc::clone(&context_for_success.user_service),
+						Arc::clone(&context_for_success.admin_service),
+						Arc::clone(&context_for_success.team_service),
+						Arc::clone(&context_for_success.totp_service),
+						Arc::clone(&context_for_success.auth_policy_service),
+						Arc::clone(&context_for_success.backup_service),
+						Arc::clone(&context_for_success.import_service),
+						context_for_success.pool.clone(),
+						context_for_success.database_path.clone(),
+						session_user_id,
+						session_master_key,
+						session_identity_label,
+					));
+					main_for_success.window().set_icon_name(Some("heelonvault"));
+
 					main_for_success.refresh_entries();
 
 					let runtime_for_history = runtime_for_success.clone();
 					let pool_for_history = context_for_success.pool.clone();
-					let user_id_for_history = context_for_success.admin_user_id;
+					let user_id_for_history = session_user_id;
 					std::thread::spawn(move || {
 						let device_info = format!("{} / GTK4 Desktop", std::env::consts::OS);
 						let _ = runtime_for_history.block_on(async move {
@@ -321,7 +362,7 @@ fn main() -> Result<()> {
 					let (sender, receiver) = tokio::sync::oneshot::channel();
 					let runtime_for_task = runtime_for_success.clone();
 					let policy_for_task = Arc::clone(&context_for_success.auth_policy_service);
-					let username_for_task = context_for_success.admin_username.clone();
+					let username_for_task = session_username;
 					std::thread::spawn(move || {
 						let result = runtime_for_task.block_on(async move {
 							policy_for_task.get_auto_lock_delay(username_for_task.as_str()).await
@@ -336,6 +377,25 @@ fn main() -> Result<()> {
 						}
 					});
 
+					let main_for_logout = Rc::clone(&main_for_success);
+					let active_main_for_logout = Rc::clone(&active_main_for_success);
+					let present_for_logout = Rc::clone(&present_holder_for_logout);
+					main_for_success.set_on_logout(Rc::new(move || {
+						main_for_logout.clear_sensitive_session();
+						main_for_logout.window().set_visible(false);
+						*active_main_for_logout.borrow_mut() = None;
+						if let Some(present_login_cb) = present_for_logout.borrow().as_ref() {
+							present_login_cb.as_ref()();
+						}
+					}));
+
+					let main_for_auto_lock = Rc::clone(&main_for_success);
+					main_for_success.set_on_auto_lock(Rc::new(move || {
+						main_for_auto_lock.trigger_logout();
+					}));
+
+					*active_main_for_success.borrow_mut() = Some(Rc::clone(&main_for_success));
+
 					main_for_success.window().present();
 					main_for_success.activate_auto_lock();
 				},
@@ -346,17 +406,7 @@ fn main() -> Result<()> {
 			login_dialog.present();
 		});
 
-		let main_for_logout = Rc::clone(&main_window);
-		let present_for_logout = Rc::clone(&present_login);
-		main_window.set_on_logout(Rc::new(move || {
-			main_for_logout.clear_sensitive_session();
-			present_for_logout.as_ref()();
-		}));
-
-		let main_for_auto_lock = Rc::clone(&main_window);
-		main_window.set_on_auto_lock(Rc::new(move || {
-			main_for_auto_lock.trigger_logout();
-		}));
+		*present_login_holder.borrow_mut() = Some(Rc::clone(&present_login));
 
 		present_login.as_ref()();
 	});
@@ -533,42 +583,53 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	let crypto_service = CryptoServiceImpl::default();
 	let auth_service = Arc::new(AuthServiceImpl::new(CryptoServiceImpl::default()));
+	let audit_log_service = Arc::new(AuditLogServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		SqlxAuditLogRepository::new(pool.clone()),
+	));
 	let auth_policy_service = Arc::new(SqlxAuthPolicyService::new(pool.clone()));
 	let vault_service = Arc::new(VaultServiceImpl::new(
 		SqlxVaultRepository::new(pool.clone()),
 		SqlxVaultEnvelopeRepository::new(pool.clone()),
+		SqlxUserRepository::new(pool.clone()),
+		SqlxTeamRepository::new(pool.clone()),
+		Arc::clone(&audit_log_service),
 		CryptoServiceImpl::default(),
 	));
 	let secret_service = Arc::new(SecretServiceImpl::new(
 		SqlxSecretRepository::new(pool.clone()),
 		CryptoServiceImpl::default(),
+		Arc::clone(&audit_log_service),
 	));
     let user_service = Arc::new(UserServiceImpl::new(
         SqlxUserRepository::new(pool.clone()),
         Arc::clone(&auth_service),
     ));
+	let admin_service = Arc::new(AdminServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		Arc::clone(&auth_service),
+		Arc::clone(&audit_log_service),
+	));
+	let team_service = Arc::new(TeamServiceImpl::new(
+		SqlxTeamRepository::new(pool.clone()),
+		SqlxUserRepository::new(pool.clone()),
+		SqlxVaultRepository::new(pool.clone()),
+		CryptoServiceImpl::default(),
+		Arc::clone(&audit_log_service),
+	));
 
-	let (admin_user_id, admin_master_key) = ensure_dev_admin_context(
+	let (_admin_user_id, _admin_master_key) = ensure_dev_admin_context(
 		&pool,
 		&auth_service,
 		Arc::clone(&vault_service),
 	)
 	.await?;
 
-	let admin_row = sqlx::query(
-		"SELECT username, COALESCE(NULLIF(display_name, ''), username) AS identity_label FROM users WHERE id = ?1",
+	load_password_envelopes_from_db(
+		&SqlxUserRepository::new(pool.clone()),
+		&auth_service,
 	)
-	.bind(admin_user_id.to_string())
-	.fetch_one(&pool)
-	.await
-	.context("failed to resolve admin identity label")?;
-
-	let admin_username: String = admin_row
-		.try_get("username")
-		.context("failed to read admin username")?;
-	let admin_identity_label: String = admin_row
-		.try_get("identity_label")
-		.context("failed to read admin identity label")?;
+	.await?;
 
 	let password_service = PasswordServiceImpl::new();
 	let backup_service = Arc::new(BackupServiceImpl::new());
@@ -594,12 +655,31 @@ async fn initialize_app_context() -> Result<AppContext> {
 		import_service,
 		user_service,
 		totp_service,
-		admin_user_id,
-		admin_username,
-		admin_identity_label,
-		admin_master_key,
+		_audit_log_service: audit_log_service,
+		admin_service,
+		team_service,
 		_password_service: password_service,
 	})
+}
+
+async fn load_password_envelopes_from_db(
+	user_repo: &SqlxUserRepository,
+	auth_service: &Arc<AuthServiceImpl<CryptoServiceImpl>>,
+) -> Result<()> {
+	let envelopes = user_repo
+		.list_all_password_envelopes()
+		.await
+		.map_err(|error| anyhow!("failed to list password envelopes: {error}"))?;
+
+	for (username, envelope) in &envelopes {
+		auth_service
+			.upsert_password_envelope(username.as_str(), SecretBox::new(Box::new(envelope.clone())))
+			.await
+			.map_err(|error| anyhow!("failed to load credentials for user {username}: {error}"))?;
+	}
+
+	info!(count = envelopes.len(), "loaded password envelopes from database into auth service");
+	Ok(())
 }
 
 fn resolve_database_path() -> Result<PathBuf> {

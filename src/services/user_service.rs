@@ -20,6 +20,7 @@ pub struct UserProfileUpdate {
 #[allow(async_fn_in_trait)]
 pub trait UserService {
     async fn get_user_profile(&self, user_id: Uuid) -> Result<User, AppError>;
+    async fn get_user_profile_by_username(&self, username: &str) -> Result<User, AppError>;
     async fn resolve_username_for_login_identifier(
         &self,
         identifier: &str,
@@ -69,6 +70,15 @@ where
         let user = self
             .user_repo
             .get_by_id(user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+        Ok(user)
+    }
+
+    async fn get_user_profile_by_username(&self, username: &str) -> Result<User, AppError> {
+        let user = self
+            .user_repo
+            .get_by_username(username)
             .await?
             .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
         Ok(user)

@@ -11,6 +11,7 @@ use libadwaita as adw;
 use secrecy::SecretBox;
 use tokio::runtime::Handle;
 use tracing::warn;
+use uuid::Uuid;
 
 use crate::errors::AppError;
 use crate::i18n::I18nArg;
@@ -25,8 +26,15 @@ pub struct LoginDialog {
 	window: gtk4::Window,
 }
 
+pub struct AuthenticatedSession {
+	pub user_id: Uuid,
+	pub username: String,
+	pub identity_label: String,
+	pub master_key: SecretBox<Vec<u8>>,
+}
+
 enum LoginAttemptOutcome {
-	Success,
+	Success(AuthenticatedSession),
 	InvalidCredentials { remaining_lock_secs: i64 },
 	InvalidTotp { remaining_lock_secs: i64 },
 	Locked { remaining_lock_secs: i64 },
@@ -47,7 +55,7 @@ impl LoginDialog {
 			+ Sync
 			+ 'static,
 		on_restore_completed: impl Fn() + 'static,
-		on_authenticated: impl Fn() + 'static,
+		on_authenticated: impl Fn(AuthenticatedSession) + 'static,
 		on_cancelled: impl Fn() + 'static,
 	) -> Self
 	where
@@ -61,7 +69,7 @@ impl LoginDialog {
 		let on_restore_requested: Arc<dyn Fn(PathBuf, String, String) -> Result<(), AppError> + Send + Sync> =
 			Arc::new(on_restore_requested);
 		let on_restore_completed: Rc<dyn Fn()> = Rc::new(on_restore_completed);
-		let on_authenticated: Rc<dyn Fn()> = Rc::new(on_authenticated);
+		let on_authenticated: Rc<dyn Fn(AuthenticatedSession)> = Rc::new(on_authenticated);
 		let on_cancelled: Rc<dyn Fn()> = Rc::new(on_cancelled);
 		let authenticated = Rc::new(Cell::new(false));
 		let lock_active = Rc::new(Cell::new(false));
@@ -780,11 +788,35 @@ impl LoginDialog {
 								// Require TOTP entry
 								Ok(LoginAttemptOutcome::RequiresTotp)
 							} else {
-								// No TOTP required, proceed to success
+								// No TOTP required, derive session key and proceed to success.
+								let master_key = auth_for_task
+									.derive_key_if_valid(
+										canonical_username.as_str(),
+										SecretBox::new(Box::new(password_bytes.clone())),
+									)
+									.await?
+									.ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+
+								let user_profile = user_for_task
+									.get_user_profile_by_username(canonical_username.as_str())
+									.await?;
+
+								let identity_label = user_profile
+									.display_name
+									.as_deref()
+									.filter(|value| !value.trim().is_empty())
+									.map(|value| value.to_string())
+									.unwrap_or_else(|| user_profile.username.clone());
+
 								auth_policy_for_task
 									.reset_failed_attempts(canonical_username.as_str())
 									.await?;
-								Ok(LoginAttemptOutcome::Success)
+								Ok(LoginAttemptOutcome::Success(AuthenticatedSession {
+									user_id: user_profile.id,
+									username: canonical_username,
+									identity_label,
+									master_key,
+								}))
 							}
 						} else {
 							let state = auth_policy_for_task
@@ -815,10 +847,10 @@ impl LoginDialog {
 					let verification_result = result_receiver.await;
 
 					match verification_result {
-						Ok(Ok(LoginAttemptOutcome::Success)) => {
+						Ok(Ok(LoginAttemptOutcome::Success(session))) => {
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							authenticated_for_result.set(true);
-							on_authenticated_for_result();
+							on_authenticated_for_result(session);
 							dialog_for_result.close();
 						}
 						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {
@@ -927,6 +959,7 @@ impl LoginDialog {
 				Self::set_pending_state(&button_for_submit, &spinner_for_submit, true);
 
 				let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
+				let auth_for_task = Arc::clone(&auth_for_submit);
 				let auth_policy_for_task = Arc::clone(&auth_policy_for_submit);
 				let user_for_task = Arc::clone(&user_for_submit);
 				let totp_for_task = Arc::clone(&totp_service);
@@ -970,7 +1003,7 @@ impl LoginDialog {
 						let totp_ok = totp_for_task
 							.verify_login_totp(
 								canonical_username.as_str(),
-								SecretBox::new(Box::new(password_bytes)),
+								SecretBox::new(Box::new(password_bytes.clone())),
 								totp_for_task_value.as_str(),
 							)
 							.await?;
@@ -984,10 +1017,34 @@ impl LoginDialog {
 							});
 						}
 
+						let master_key = auth_for_task
+							.derive_key_if_valid(
+								canonical_username.as_str(),
+								SecretBox::new(Box::new(password_bytes.clone())),
+							)
+							.await?
+							.ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+
+						let user_profile = user_for_task
+							.get_user_profile_by_username(canonical_username.as_str())
+							.await?;
+
+						let identity_label = user_profile
+							.display_name
+							.as_deref()
+							.filter(|value| !value.trim().is_empty())
+							.map(|value| value.to_string())
+							.unwrap_or_else(|| user_profile.username.clone());
+
 						auth_policy_for_task
 							.reset_failed_attempts(canonical_username.as_str())
 							.await?;
-						Ok(LoginAttemptOutcome::Success)
+						Ok(LoginAttemptOutcome::Success(AuthenticatedSession {
+							user_id: user_profile.id,
+							username: canonical_username,
+							identity_label,
+							master_key,
+						}))
 					});
 					let _ = result_sender.send(result);
 				});
@@ -1006,10 +1063,10 @@ impl LoginDialog {
 					let verification_result = result_receiver.await;
 
 					match verification_result {
-						Ok(Ok(LoginAttemptOutcome::Success)) => {
+						Ok(Ok(LoginAttemptOutcome::Success(session))) => {
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							authenticated_for_result.set(true);
-							on_authenticated_for_result();
+							on_authenticated_for_result(session);
 							dialog_for_result.close();
 						}
 						Ok(Ok(LoginAttemptOutcome::InvalidTotp { remaining_lock_secs })) => {

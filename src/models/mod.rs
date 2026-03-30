@@ -1,7 +1,11 @@
+pub mod audit_log;
 pub mod secret_item;
+pub mod team;
 pub mod user;
 pub mod vault;
 
+pub use audit_log::{AuditAction, AuditLogEntry};
 pub use secret_item::{BlobStorage, SecretItem, SecretType};
+pub use team::{Team, TeamMember, TeamMemberRole};
 pub use user::{User, UserRole};
-pub use vault::Vault;
+pub use vault::{AccessibleVault, Vault, VaultAccessKind, VaultShareRole};
