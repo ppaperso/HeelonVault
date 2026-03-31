@@ -50,6 +50,7 @@ pub trait SecretService {
     ) -> Result<(), AppError>;
     async fn list_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn list_trash_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_all_trash_by_user(&self, user_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError>;
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
@@ -240,6 +241,10 @@ where
 
     async fn list_trash_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
         self.secret_repo.list_trash_by_vault_id(vault_id).await
+    }
+
+    async fn list_all_trash_by_user(&self, user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        self.secret_repo.list_all_trash_by_owner_id(user_id).await
     }
 
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError> {
@@ -563,6 +568,30 @@ mod tests {
             let before = items.len();
             items.retain(|_, item| !(item.vault_id == vault_id && item.deleted));
             Ok(before.saturating_sub(items.len()))
+        }
+
+        async fn list_all_trash_by_owner_id(&self, _owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+            let items = self.lock_items()?;
+            let listed = items
+                .values()
+                .filter(|item| item.deleted)
+                .map(|item| SecretItem {
+                    id: item.id,
+                    vault_id: item.vault_id,
+                    secret_type: item.secret_type,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
+                    created_at: None,
+                    modified_at: None,
+                    usage_count: 0,
+                    blob_storage: item.blob_storage,
+                    secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                    deleted_at: None,
+                })
+                .collect();
+            Ok(listed)
         }
 
         async fn increment_usage_count(&self, _secret_id: Uuid) -> Result<(), AppError> {

@@ -154,3 +154,13 @@ Central index: [docs/README.md](docs/README.md)
 - FR/EN coverage across operational Markdown documentation;
 - central bilingual documentation index in `docs/README.md`;
 - synchronized documented versions and runtime paths with the current project state.
+
+### Team sharing, RBAC, and admin UX (March 2026)
+
+- fixed team vault sharing flow by deriving member keys from `password_envelope` when explicit keys are not provided by the UI;
+- added fail-fast protection to prevent false success when no member receives a vault key (`granted = 0`);
+- added an explicit vault picker in the team sharing dialog to remove target-vault ambiguity;
+- added an ADMIN badge in the header next to the connected identity;
+- added owner-side shared-state visibility for owned vaults (shared icon kept, text badge removed to avoid duplicate signal);
+- normalized FR badge labels to uppercase for visual consistency (for example: ADMIN, DOUBLON, ACTIVEE);
+- i18n cleanup: removed obsolete `main-vault-shared-badge` key in FR/EN.

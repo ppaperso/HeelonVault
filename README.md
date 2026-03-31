@@ -188,3 +188,13 @@ cargo test
 - couverture FR/EN sur l'ensemble des documents Markdown opérationnels;
 - index central de documentation bilingue dans `docs/README.md`;
 - synchronisation des versions documentées et des chemins runtime avec l'état actuel du projet.
+
+### Partage equipe, RBAC et UX admin (mars 2026)
+
+- correction du partage de coffre vers une team: derive une cle membre depuis `password_envelope` quand la cle explicite n'est pas fournie par l'UI;
+- protection anti faux-positif: echec explicite si aucun membre n'a recu de cle de coffre (`granted = 0`);
+- ajout d'un selecteur explicite de coffre dans le dialogue de partage team (plus d'ambiguite sur le coffre cible);
+- ajout d'un badge ADMIN dans l'entete a cote de l'identite connectee;
+- affichage de l'etat "coffre partage" pour les coffres du proprietaire (icone de partage conservee, badge texte retire pour eviter le doublon visuel);
+- harmonisation des labels de badges FR en majuscules (ex: ADMIN, DOUBLON, ACTIVEE);
+- nettoyage i18n: suppression de la cle obsolet `main-vault-shared-badge` en FR/EN.

@@ -3,6 +3,7 @@ use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 use std::time::Duration;
+use std::time::Instant;
 
 use gtk4::glib;
 use gtk4::prelude::*;
@@ -10,6 +11,7 @@ use gtk4::{Align, InputPurpose, Justification, Orientation};
 use libadwaita as adw;
 use secrecy::SecretBox;
 use tokio::runtime::Handle;
+use tracing::info;
 use tracing::warn;
 use uuid::Uuid;
 
@@ -703,6 +705,7 @@ impl LoginDialog {
 			}
 
 			Self::clear_feedback(&error_for_submit);
+			let login_click_started = Instant::now();
 
 			let current_step = step_for_button
 				.visible_child_name()
@@ -714,6 +717,10 @@ impl LoginDialog {
 				// STEP 1: Validate credentials and check for TOTP requirement
 				let username = username_for_submit.text().trim().to_string();
 				let password = password_for_submit.text().to_string();
+				info!(
+					username = %username,
+					"login flow trace: credentials submit clicked"
+				);
 
 				if username.is_empty() {
 					Self::show_feedback(
@@ -741,13 +748,21 @@ impl LoginDialog {
 				let username_for_task = username.clone();
 				let password_for_task = password.into_bytes();
 				let runtime_for_task = runtime_for_submit.clone();
+				let login_click_started_for_task = login_click_started;
 
 				std::thread::spawn(move || {
+					let worker_started = Instant::now();
 					let password_bytes = password_for_task;
 					let result: Result<LoginAttemptOutcome, AppError> = runtime_for_task.block_on(async move {
+						let resolve_started = Instant::now();
 						let resolved_username = user_for_task
 							.resolve_username_for_login_identifier(&username_for_task)
 							.await?;
+						info!(
+							username = %username_for_task,
+							elapsed_ms = resolve_started.elapsed().as_millis() as u64,
+							"login flow trace: resolve username finished"
+						);
 
 						let canonical_username = match resolved_username {
 							Some(value) => value,
@@ -759,6 +774,10 @@ impl LoginDialog {
 						};
 
 						let lock_state = auth_policy_for_task.get_state(canonical_username.as_str()).await?;
+						info!(
+							username = %canonical_username,
+							"login flow trace: auth policy state loaded"
+						);
 						if lock_state.is_locked() {
 							warn!(
 								username = %canonical_username,
@@ -771,24 +790,37 @@ impl LoginDialog {
 							});
 						}
 
+						let verify_started = Instant::now();
 						let verified = auth_for_task
 							.verify_password(
 								canonical_username.as_str(),
 								SecretBox::new(Box::new(password_bytes.clone())),
 							)
 							.await?;
+						info!(
+							username = %canonical_username,
+							elapsed_ms = verify_started.elapsed().as_millis() as u64,
+							"login flow trace: verify_password finished"
+						);
 
 						if verified {
 							// Check if user has 2FA enabled
+							let totp_check_started = Instant::now();
 							let has_totp = totp_for_task
 								.is_totp_enabled_for_username(canonical_username.as_str())
 								.await?;
+							info!(
+								username = %canonical_username,
+								elapsed_ms = totp_check_started.elapsed().as_millis() as u64,
+								"login flow trace: TOTP enabled check finished"
+							);
 
 							if has_totp {
 								// Require TOTP entry
 								Ok(LoginAttemptOutcome::RequiresTotp)
 							} else {
 								// No TOTP required, derive session key and proceed to success.
+								let derive_started = Instant::now();
 								let master_key = auth_for_task
 									.derive_key_if_valid(
 										canonical_username.as_str(),
@@ -796,10 +828,21 @@ impl LoginDialog {
 									)
 									.await?
 									.ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+								info!(
+									username = %canonical_username,
+									elapsed_ms = derive_started.elapsed().as_millis() as u64,
+									"login flow trace: derive_key_if_valid finished"
+								);
 
+								let profile_started = Instant::now();
 								let user_profile = user_for_task
 									.get_user_profile_by_username(canonical_username.as_str())
 									.await?;
+								info!(
+									username = %canonical_username,
+									elapsed_ms = profile_started.elapsed().as_millis() as u64,
+									"login flow trace: user profile load finished"
+								);
 
 								let identity_label = user_profile
 									.display_name
@@ -811,6 +854,12 @@ impl LoginDialog {
 								auth_policy_for_task
 									.reset_failed_attempts(canonical_username.as_str())
 									.await?;
+								info!(
+									username = %canonical_username,
+									elapsed_ms = login_click_started_for_task.elapsed().as_millis() as u64,
+									worker_elapsed_ms = worker_started.elapsed().as_millis() as u64,
+									"login flow trace: auth worker finished with success (no TOTP)"
+								);
 								Ok(LoginAttemptOutcome::Success(AuthenticatedSession {
 									user_id: user_profile.id,
 									username: canonical_username,
@@ -842,15 +891,24 @@ impl LoginDialog {
 				let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
 				let lock_active_for_result = Rc::clone(&lock_active_for_submit);
 				let lock_timer_for_result = Rc::clone(&lock_timer_for_submit);
+				let login_click_started_for_result = login_click_started;
 
 				glib::MainContext::default().spawn_local(async move {
 					let verification_result = result_receiver.await;
 
 					match verification_result {
 						Ok(Ok(LoginAttemptOutcome::Success(session))) => {
+							info!(
+								elapsed_ms = login_click_started_for_result.elapsed().as_millis() as u64,
+								"login flow trace: credentials step completed, invoking authenticated callback"
+							);
 							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
 							authenticated_for_result.set(true);
 							on_authenticated_for_result(session);
+							info!(
+								elapsed_ms = login_click_started_for_result.elapsed().as_millis() as u64,
+								"login flow trace: authenticated callback returned, closing login dialog"
+							);
 							dialog_for_result.close();
 						}
 						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {

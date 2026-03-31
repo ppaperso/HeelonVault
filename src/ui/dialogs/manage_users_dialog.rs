@@ -196,7 +196,7 @@ impl ManageUsersDialog {
 										let window_for_err = window_for_refresh_again.clone();
 										glib::MainContext::default().spawn_local(async move {
 											if let Ok(Err(err)) | Err(err) = receiver.await.map_err(|_| AppError::Internal) {
-												Self::show_error(&window_for_err, err);
+												Self::show_error(Some(&window_for_err), err);
 											}
 											let _ = &list_for_recv2;
 										});
@@ -229,8 +229,8 @@ impl ManageUsersDialog {
 									glib::MainContext::default().spawn_local(async move {
 										match receiver.await {
 											Ok(Ok(())) => refresh_after(),
-											Ok(Err(err)) => Self::show_error(&window_for_result, err),
-											Err(_) => Self::show_error(&window_for_result, AppError::Internal),
+											Ok(Err(err)) => Self::show_error(Some(&window_for_result), err),
+											Err(_) => Self::show_error(Some(&window_for_result), AppError::Internal),
 										}
 									});
 								});
@@ -268,8 +268,8 @@ impl ManageUsersDialog {
 										glib::MainContext::default().spawn_local(async move {
 											match receiver.await {
 												Ok(Ok(())) => refresh_after_result(),
-												Ok(Err(err)) => Self::show_error(&window_for_result, err),
-												Err(_) => Self::show_error(&window_for_result, AppError::Internal),
+												Ok(Err(err)) => Self::show_error(Some(&window_for_result), err),
+												Err(_) => Self::show_error(Some(&window_for_result), AppError::Internal),
 											}
 										});
 									});
@@ -321,7 +321,7 @@ impl ManageUsersDialog {
 									apply.connect_clicked(move |_| {
 										let password = password_entry.text().to_string();
 										if password.trim().is_empty() {
-											Self::show_error(&window_for_apply, AppError::Validation(crate::tr!("manage-users-error-empty-password").to_string()));
+											Self::show_error(Some(&window_for_apply), AppError::Validation(crate::tr!("manage-users-error-empty-password").to_string()));
 											return;
 										}
 										let (sender, receiver) = tokio::sync::oneshot::channel();
@@ -344,8 +344,8 @@ impl ManageUsersDialog {
 										glib::MainContext::default().spawn_local(async move {
 											match receiver.await {
 												Ok(Ok(_)) => reset_window_close.close(),
-												Ok(Err(err)) => Self::show_error(&window_for_result, err),
-												Err(_) => Self::show_error(&window_for_result, AppError::Internal),
+												Ok(Err(err)) => Self::show_error(Some(&window_for_result), err),
+												Err(_) => Self::show_error(Some(&window_for_result), AppError::Internal),
 											}
 										});
 									});
@@ -354,8 +354,8 @@ impl ManageUsersDialog {
 								});
 							}
 						}
-						Ok(Err(err)) => Self::show_error(&window_for_recv, err),
-						Err(_) => Self::show_error(&window_for_recv, AppError::Internal),
+						Ok(Err(err)) => Self::show_error(Some(&window_for_recv), err),
+						Err(_) => Self::show_error(Some(&window_for_recv), AppError::Internal),
 					}
 				});
 			})
@@ -468,8 +468,8 @@ impl ManageUsersDialog {
 								create_window_close.close();
 								refresh_after_result();
 							}
-							Ok(Err(err)) => Self::show_error(&window_for_result, err),
-							Err(_) => Self::show_error(&window_for_result, AppError::Internal),
+								Ok(Err(err)) => Self::show_error(Some(&window_for_result), err),
+								Err(_) => Self::show_error(Some(&window_for_result), AppError::Internal),
 						}
 					});
 				});
@@ -483,13 +483,13 @@ impl ManageUsersDialog {
 		Self { window }
 	}
 
-	fn show_error(window: &gtk4::Window, err: AppError) {
+	fn show_error(window: Option<&gtk4::Window>, err: AppError) {
 		let title = match err {
 			AppError::Authorization(_) => crate::tr!("manage-users-error-authorization").to_string(),
 			_ => crate::tr!("manage-users-error-generic").to_string(),
 		};
 		let message = err.to_string();
-		let dialog = adw::MessageDialog::new(Some(window), Some(title.as_str()), Some(message.as_str()));
+		let dialog = adw::MessageDialog::new(window, Some(title.as_str()), Some(message.as_str()));
 		dialog.add_response("ok", crate::tr!("common-ok").as_str());
 		dialog.set_default_response(Some("ok"));
 		dialog.set_close_response("ok");

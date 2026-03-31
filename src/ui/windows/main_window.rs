@@ -53,6 +53,13 @@ enum AuditFilter {
 }
 
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
+enum SecretSortMode {
+	Recent,
+	Title,
+	Risk,
+}
+
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
 enum SecretKind {
 	Password,
 	ApiToken,
@@ -72,6 +79,7 @@ struct SecretFilterMeta {
 	tags_text: String,
 	type_text: String,
 	kind: SecretKind,
+	original_rank: usize,
 	is_weak: bool,
 	is_duplicate: bool,
 }
@@ -82,9 +90,12 @@ struct FilterRuntime {
 	search_text: Rc<RefCell<String>>,
 	selected_category: Rc<Cell<SecretCategoryFilter>>,
 	selected_audit: Rc<Cell<AuditFilter>>,
+	selected_sort: Rc<Cell<SecretSortMode>>,
 	audit_all_count_label: gtk4::Label,
 	audit_weak_count_label: gtk4::Label,
 	audit_duplicate_count_label: gtk4::Label,
+	total_count_label: gtk4::Label,
+	non_compliant_count_label: gtk4::Label,
 	filtered_status_page: adw::StatusPage,
 }
 
@@ -145,6 +156,7 @@ impl MainWindow {
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
 		connected_identity_label: String,
+		is_admin: bool,
 	) -> Self
 	where
 		TSecret: SecretService + Send + Sync + 'static,
@@ -227,7 +239,6 @@ impl MainWindow {
 
 		let profile_button = gtk4::MenuButton::new();
 		profile_button.add_css_class("header-badge");
-		profile_button.add_css_class("admin-badge");
 		profile_button.set_label(
 			crate::i18n::tr_args(
 				"main-connected-label",
@@ -289,6 +300,20 @@ impl MainWindow {
 
 		profile_popover.set_child(Some(&profile_box));
 		profile_button.set_popover(Some(&profile_popover));
+
+		let user_identity_box = gtk4::Box::builder()
+			.orientation(gtk4::Orientation::Horizontal)
+			.spacing(6)
+			.build();
+		user_identity_box.append(&profile_button);
+		if is_admin {
+			let admin_badge = gtk4::Label::new(Some(crate::tr!("main-admin-badge").as_str()));
+			admin_badge.add_css_class("header-badge");
+			admin_badge.add_css_class("admin-badge");
+			admin_badge.add_css_class("warning");
+			admin_badge.set_tooltip_text(Some(crate::tr!("main-admin-badge-tooltip").as_str()));
+			user_identity_box.append(&admin_badge);
+		}
 
 		let add_button = gtk4::Button::builder()
 			.icon_name("list-add-symbolic")
@@ -385,11 +410,11 @@ impl MainWindow {
 					.my_vaults_title
 					.set_text(crate::tr!("main-my-vaults-title").as_str());
 				sidebar
-					.create_vault_button
-					.set_tooltip_text(Some(crate::tr!("main-create-vault-button").as_str()));
-				sidebar
 					.shared_vaults_title
 					.set_text(crate::tr!("main-shared-with-me-title").as_str());
+				sidebar
+					.create_vault_button
+					.set_tooltip_text(Some(crate::tr!("main-create-vault-button").as_str()));
 				sidebar.teams_label.set_text(crate::tr!("main-teams-nav").as_str());
 				sidebar
 					.administration_label
@@ -413,9 +438,12 @@ impl MainWindow {
 			search_text: Rc::new(RefCell::new(String::new())),
 			selected_category: Rc::new(Cell::new(SecretCategoryFilter::All)),
 			selected_audit: Rc::new(Cell::new(AuditFilter::All)),
+			selected_sort: Rc::new(Cell::new(SecretSortMode::Recent)),
 			audit_all_count_label: sidebar_panel.audit_all_badge.clone(),
 			audit_weak_count_label: sidebar_panel.audit_weak_badge.clone(),
 			audit_duplicate_count_label: sidebar_panel.audit_duplicate_badge.clone(),
+			total_count_label: center_panel.status_total_badge.clone(),
+			non_compliant_count_label: center_panel.status_non_compliant_badge.clone(),
 			filtered_status_page: center_panel.filtered_status_page.clone(),
 		};
 
@@ -452,6 +480,44 @@ impl MainWindow {
 			};
 
 			matches_query && matches_category && matches_audit
+		});
+
+		let runtime_for_flow_sort = filter_runtime.clone();
+		center_panel.secret_flow.set_sort_func(move |left, right| {
+			let left_key = left
+				.child()
+				.map(|child| child.widget_name().to_string())
+				.unwrap_or_default();
+			let right_key = right
+				.child()
+				.map(|child| child.widget_name().to_string())
+				.unwrap_or_default();
+
+			let store = runtime_for_flow_sort.meta_by_widget.borrow();
+			let Some(left_meta) = store.get(&left_key) else {
+				return left_key.cmp(&right_key).into();
+			};
+			let Some(right_meta) = store.get(&right_key) else {
+				return left_key.cmp(&right_key).into();
+			};
+
+			match runtime_for_flow_sort.selected_sort.get() {
+				SecretSortMode::Recent => left_meta.original_rank.cmp(&right_meta.original_rank).into(),
+				SecretSortMode::Title => left_meta
+					.title_text
+					.cmp(&right_meta.title_text)
+					.then(left_meta.original_rank.cmp(&right_meta.original_rank))
+					.into(),
+				SecretSortMode::Risk => {
+					let left_score = usize::from(left_meta.is_weak) + usize::from(left_meta.is_duplicate);
+					let right_score = usize::from(right_meta.is_weak) + usize::from(right_meta.is_duplicate);
+					right_score
+						.cmp(&left_score)
+						.then(left_meta.title_text.cmp(&right_meta.title_text))
+						.then(left_meta.original_rank.cmp(&right_meta.original_rank))
+						.into()
+				}
+			}
 		});
 
 		let secret_flow_for_refresh = center_panel.secret_flow.clone();
@@ -508,8 +574,10 @@ impl MainWindow {
 
 			let runtime_for_vaults = runtime_handle.clone();
 			let vault_service_for_vaults = Arc::clone(&vault_service);
+			let secret_service_for_vaults = Arc::clone(&secret_service);
 			let session_master_for_vaults = Rc::clone(&session_master_key);
 			let my_vaults_list = sidebar_panel.my_vaults_list.clone();
+			let shared_vaults_title = sidebar_panel.shared_vaults_title.clone();
 			let shared_vaults_list = sidebar_panel.shared_vaults_list.clone();
 			let active_vault_id = Rc::clone(&active_vault_id);
 			let vault_selection_sync = Rc::clone(&vault_selection_sync);
@@ -607,6 +675,7 @@ impl MainWindow {
 				let (sender, receiver) = tokio::sync::oneshot::channel();
 				let runtime_for_task = runtime_for_vaults.clone();
 				let vault_service_for_task = Arc::clone(&vault_service_for_vaults);
+				let secret_service_for_task = Arc::clone(&secret_service_for_vaults);
 				let can_attempt_default_create = !creating_default_vault.get();
 				let master_for_default_create = if can_attempt_default_create {
 					Self::snapshot_session_master_key(&session_master_for_vaults)
@@ -619,119 +688,139 @@ impl MainWindow {
 				std::thread::spawn(move || {
 					let result = runtime_for_task.block_on(async move {
 						let mut owned_vaults = vault_service_for_task.list_owned_vaults(admin_user_id).await?;
-						let mut shared_vaults = vault_service_for_task.list_shared_vault_access(admin_user_id).await?;
-						if owned_vaults.is_empty() && shared_vaults.is_empty() {
-							if let Some(master_key) = master_for_default_create {
-								let _ = vault_service_for_task
-									.create_vault(
-										admin_user_id,
-										"perso",
-										SecretBox::new(Box::new(master_key)),
-									)
-									.await;
-								owned_vaults = vault_service_for_task.list_owned_vaults(admin_user_id).await?;
-								shared_vaults = vault_service_for_task.list_shared_vault_access(admin_user_id).await?;
-							}
+					if owned_vaults.is_empty() {
+						if let Some(master_key) = master_for_default_create {
+							let _ = vault_service_for_task
+								.create_vault(
+									admin_user_id,
+									"perso",
+									SecretBox::new(Box::new(master_key)),
+								)
+								.await;
+							owned_vaults = vault_service_for_task.list_owned_vaults(admin_user_id).await?;
 						}
-						Ok::<_, crate::errors::AppError>((owned_vaults, shared_vaults))
-					});
-					let _ = sender.send((result, can_attempt_default_create));
+					}
+					let mut owned_with_counts: Vec<(crate::models::Vault, usize, bool)> = Vec::with_capacity(owned_vaults.len());
+					for vault in owned_vaults {
+						let count = secret_service_for_task.list_by_vault(vault.id).await?.len();
+						let is_shared_with_others = vault_service_for_task
+							.is_vault_shared_with_others(admin_user_id, vault.id)
+							.await?;
+						owned_with_counts.push((vault, count, is_shared_with_others));
+					}
+
+					let shared_access = vault_service_for_task.list_shared_vault_access(admin_user_id).await?;
+					let mut shared_with_counts: Vec<(crate::models::AccessibleVault, usize)> =
+						Vec::with_capacity(shared_access.len());
+					for access in shared_access {
+						let count = secret_service_for_task.list_by_vault(access.vault.id).await?.len();
+						shared_with_counts.push((access, count));
+					}
+
+					Ok::<_, crate::errors::AppError>((owned_with_counts, shared_with_counts))
 				});
-
-				let my_vaults_for_recv = my_vaults_list.clone();
-				let shared_vaults_for_recv = shared_vaults_list.clone();
-				let active_vault_for_recv = Rc::clone(&active_vault_id);
-				let sync_for_recv = Rc::clone(&vault_selection_sync);
-				let creating_default_vault_for_recv = Rc::clone(&creating_default_vault);
-				let delete_action_for_recv = Rc::clone(&delete_vault_action);
-				let refresh_secrets_for_recv = Rc::clone(&refresh_secrets_for_vaults);
-				glib::MainContext::default().spawn_local(async move {
-					match receiver.await {
-						Ok((Ok((owned_vaults, shared_vaults)), attempted_default_create)) => {
-							if attempted_default_create {
-								creating_default_vault_for_recv.set(false);
+				let _ = sender.send((result, can_attempt_default_create));
+			});
+			let my_vaults_for_recv = my_vaults_list.clone();
+			let shared_title_for_recv = shared_vaults_title.clone();
+			let shared_list_for_recv = shared_vaults_list.clone();
+			let active_vault_for_recv = Rc::clone(&active_vault_id);
+			let sync_for_recv = Rc::clone(&vault_selection_sync);
+			let creating_default_vault_for_recv = Rc::clone(&creating_default_vault);
+			let delete_action_for_recv = Rc::clone(&delete_vault_action);
+			let refresh_secrets_for_recv = Rc::clone(&refresh_secrets_for_vaults);
+			glib::MainContext::default().spawn_local(async move {
+				match receiver.await {
+					Ok((Ok((owned_vaults, shared_vaults)), attempted_default_create)) => {
+						if attempted_default_create {
+							creating_default_vault_for_recv.set(false);
+						}
+						sync_for_recv.set(true);
+						let mut first_vault_id: Option<Uuid> = None;
+						for (vault, secret_count, is_shared_with_others) in owned_vaults {
+							if first_vault_id.is_none() {
+								first_vault_id = Some(vault.id);
 							}
-							sync_for_recv.set(true);
-							let mut first_vault_id: Option<Uuid> = None;
-							for vault in owned_vaults {
-								if first_vault_id.is_none() {
-									first_vault_id = Some(vault.id);
-								}
-								let row = Self::build_vault_sidebar_row(
-									vault.name.as_str(),
-									vault.id,
-									true,
-									None,
-									Some(Rc::clone(&delete_action_for_recv)),
-								);
-								my_vaults_for_recv.append(&row);
-							}
+							let row = Self::build_vault_sidebar_row(
+								vault.name.as_str(),
+								vault.id,
+								true,
+								is_shared_with_others,
+								None,
+								secret_count,
+								Some(Rc::clone(&delete_action_for_recv)),
+							);
+							my_vaults_for_recv.append(&row);
+						}
 
-							for shared in shared_vaults {
-								let vault = shared.vault;
-								if first_vault_id.is_none() {
-									first_vault_id = Some(vault.id);
-								}
-								let row = Self::build_vault_sidebar_row(
-									vault.name.as_str(),
-									vault.id,
-									shared.role.can_admin(),
-									Some(shared.role),
-									Some(Rc::clone(&delete_action_for_recv)),
-								);
-								shared_vaults_for_recv.append(&row);
+						let mut first_shared_vault_id: Option<Uuid> = None;
+						for (access, secret_count) in shared_vaults {
+							if first_shared_vault_id.is_none() {
+								first_shared_vault_id = Some(access.vault.id);
 							}
+							let row = Self::build_vault_sidebar_row(
+								access.vault.name.as_str(),
+								access.vault.id,
+								false,
+								false,
+								Some(access.role),
+								secret_count,
+								None,
+							);
+							shared_list_for_recv.append(&row);
+						}
+						let has_shared = shared_list_for_recv.first_child().is_some();
+						shared_title_for_recv.set_visible(has_shared);
+						shared_list_for_recv.set_visible(has_shared);
 
-							let active = *active_vault_for_recv.borrow();
-							if let Some(active_id) = active {
-								if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, active_id) {
-									my_vaults_for_recv.select_row(Some(&row));
-									shared_vaults_for_recv.unselect_all();
-								} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, active_id) {
-									shared_vaults_for_recv.select_row(Some(&row));
-									my_vaults_for_recv.unselect_all();
-								} else {
-									if let Some(fallback_id) = first_vault_id {
-										*active_vault_for_recv.borrow_mut() = Some(fallback_id);
-										if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, fallback_id) {
-											my_vaults_for_recv.select_row(Some(&row));
-											shared_vaults_for_recv.unselect_all();
-										} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, fallback_id) {
-											shared_vaults_for_recv.select_row(Some(&row));
-											my_vaults_for_recv.unselect_all();
-										}
-									} else {
-										*active_vault_for_recv.borrow_mut() = None;
-										my_vaults_for_recv.unselect_all();
-										shared_vaults_for_recv.unselect_all();
-									}
-								}
+						let active = *active_vault_for_recv.borrow();
+						if let Some(active_id) = active {
+							if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, active_id) {
+								my_vaults_for_recv.select_row(Some(&row));
+							} else if let Some(row) = Self::find_vault_row(&shared_list_for_recv, active_id) {
+								shared_list_for_recv.select_row(Some(&row));
 							} else if let Some(fallback_id) = first_vault_id {
 								*active_vault_for_recv.borrow_mut() = Some(fallback_id);
 								if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, fallback_id) {
 									my_vaults_for_recv.select_row(Some(&row));
-									shared_vaults_for_recv.unselect_all();
-								} else if let Some(row) = Self::find_vault_row(&shared_vaults_for_recv, fallback_id) {
-									shared_vaults_for_recv.select_row(Some(&row));
-									my_vaults_for_recv.unselect_all();
 								}
+							} else if let Some(fallback_id) = first_shared_vault_id {
+								*active_vault_for_recv.borrow_mut() = Some(fallback_id);
+								if let Some(row) = Self::find_vault_row(&shared_list_for_recv, fallback_id) {
+									shared_list_for_recv.select_row(Some(&row));
+								}
+							} else {
+								*active_vault_for_recv.borrow_mut() = None;
+								my_vaults_for_recv.unselect_all();
+								shared_list_for_recv.unselect_all();
 							}
-							sync_for_recv.set(false);
-							refresh_secrets_for_recv();
-						}
-						Ok((Err(_), attempted_default_create)) => {
-							if attempted_default_create {
-								creating_default_vault_for_recv.set(false);
+						} else if let Some(fallback_id) = first_vault_id {
+							*active_vault_for_recv.borrow_mut() = Some(fallback_id);
+							if let Some(row) = Self::find_vault_row(&my_vaults_for_recv, fallback_id) {
+								my_vaults_for_recv.select_row(Some(&row));
 							}
-							sync_for_recv.set(false);
+						} else if let Some(fallback_id) = first_shared_vault_id {
+							*active_vault_for_recv.borrow_mut() = Some(fallback_id);
+							if let Some(row) = Self::find_vault_row(&shared_list_for_recv, fallback_id) {
+								shared_list_for_recv.select_row(Some(&row));
+							}
 						}
-						_ => {
-							sync_for_recv.set(false);
-						}
+						sync_for_recv.set(false);
+						refresh_secrets_for_recv();
 					}
-				});
-			})
-		};
+					Ok((Err(_), attempted_default_create)) => {
+						if attempted_default_create {
+							creating_default_vault_for_recv.set(false);
+						}
+						sync_for_recv.set(false);
+					}
+					_ => {
+						sync_for_recv.set(false);
+					}
+				}
+			});
+		})
+	};
 
 		let refresh_list: Rc<dyn Fn()> = {
 			let refresh_vault_sections = Rc::clone(&refresh_vault_sections);
@@ -894,21 +983,6 @@ impl MainWindow {
 			main_stack_for_profile.set_visible_child_name("profile_view");
 		});
 
-		let app_for_admin = application.clone();
-		let window_for_admin = window.clone();
-		let runtime_for_admin = runtime_handle.clone();
-		let admin_for_admin = Arc::clone(&admin_service);
-		let users_dialog = ManageUsersDialog::new(
-			&app_for_admin,
-			&window_for_admin,
-			runtime_for_admin,
-			Arc::clone(&admin_for_admin),
-			Arc::clone(&vault_service),
-			admin_user_id,
-		);
-		let users_content = users_dialog
-			.take_content()
-			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
 		let users_view_container = gtk4::ScrolledWindow::builder()
 			.vexpand(true)
 			.hexpand(true)
@@ -944,13 +1018,27 @@ impl MainWindow {
 		users_header.append(&users_back_button);
 		users_header.append(&users_title);
 		users_view_root.append(&users_header);
-
 		let users_intro = gtk4::Label::new(Some(crate::tr!("main-users-view-intro").as_str()));
 		users_intro.set_halign(Align::Start);
 		users_intro.set_wrap(true);
 		users_intro.add_css_class("dim-label");
 		users_view_root.append(&users_intro);
-
+		if is_admin {
+		let app_for_admin = application.clone();
+		let window_for_admin = window.clone();
+		let runtime_for_admin = runtime_handle.clone();
+		let admin_for_admin = Arc::clone(&admin_service);
+		let users_dialog = ManageUsersDialog::new(
+			&app_for_admin,
+			&window_for_admin,
+			runtime_for_admin,
+			Arc::clone(&admin_for_admin),
+			Arc::clone(&vault_service),
+			admin_user_id,
+		);
+		let users_content = users_dialog
+			.take_content()
+			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
 		let users_frame = gtk4::Frame::new(None);
 		users_frame.add_css_class("profile-section-frame");
 		users_frame.set_child(Some(&users_content));
@@ -971,29 +1059,8 @@ impl MainWindow {
 		sidebar_panel.administration_button.connect_clicked(move |_| {
 			main_stack_for_users.set_visible_child_name("users_view");
 		});
+		}
 
-		let app_for_teams = application.clone();
-		let window_for_teams = window.clone();
-		let runtime_for_teams = runtime_handle.clone();
-		let team_for_teams = Arc::clone(&team_service);
-		let vault_for_teams = Arc::clone(&vault_service);
-		let master_for_teams = Rc::clone(&session_master_key);
-		let active_vault_for_teams = Rc::clone(&active_vault_id);
-		let refresh_for_teams = Rc::clone(&refresh_list);
-		let teams_dialog = ManageTeamsDialog::new(
-			&app_for_teams,
-			&window_for_teams,
-			runtime_for_teams,
-			Arc::clone(&team_for_teams),
-			Arc::clone(&vault_for_teams),
-			admin_user_id,
-			Rc::clone(&master_for_teams),
-			Rc::clone(&active_vault_for_teams),
-			Rc::clone(&refresh_for_teams),
-		);
-		let teams_content = teams_dialog
-			.take_content()
-			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
 		let teams_view_container = gtk4::ScrolledWindow::builder()
 			.vexpand(true)
 			.hexpand(true)
@@ -1029,13 +1096,34 @@ impl MainWindow {
 		teams_header.append(&teams_back_button);
 		teams_header.append(&teams_title);
 		teams_view_root.append(&teams_header);
-
 		let teams_intro = gtk4::Label::new(Some(crate::tr!("main-teams-view-intro").as_str()));
 		teams_intro.set_halign(Align::Start);
 		teams_intro.set_wrap(true);
 		teams_intro.add_css_class("dim-label");
 		teams_view_root.append(&teams_intro);
-
+		if is_admin {
+		let app_for_teams = application.clone();
+		let window_for_teams = window.clone();
+		let runtime_for_teams = runtime_handle.clone();
+		let team_for_teams = Arc::clone(&team_service);
+		let vault_for_teams = Arc::clone(&vault_service);
+		let master_for_teams = Rc::clone(&session_master_key);
+		let active_vault_for_teams = Rc::clone(&active_vault_id);
+		let refresh_for_teams = Rc::clone(&refresh_list);
+		let teams_dialog = ManageTeamsDialog::new(
+			&app_for_teams,
+			&window_for_teams,
+			runtime_for_teams,
+			Arc::clone(&team_for_teams),
+			Arc::clone(&vault_for_teams),
+			admin_user_id,
+			Rc::clone(&master_for_teams),
+			Rc::clone(&active_vault_for_teams),
+			Rc::clone(&refresh_for_teams),
+		);
+		let teams_content = teams_dialog
+			.take_content()
+			.unwrap_or_else(|| gtk4::Box::new(Orientation::Vertical, 0).upcast::<gtk4::Widget>());
 		let teams_frame = gtk4::Frame::new(None);
 		teams_frame.add_css_class("profile-section-frame");
 		teams_frame.set_child(Some(&teams_content));
@@ -1056,24 +1144,10 @@ impl MainWindow {
 		sidebar_panel.teams_button.connect_clicked(move |_| {
 			main_stack_for_teams.set_visible_child_name("teams_view");
 		});
+		}
 
-		let runtime_for_role = runtime_handle.clone();
-		let user_for_role = Arc::clone(&user_service);
-		let administration_button_for_role = sidebar_panel.administration_button.clone();
-		let (sender, receiver) = tokio::sync::oneshot::channel();
-		std::thread::spawn(move || {
-			let result = runtime_for_role.block_on(async move {
-				user_for_role.get_user_profile(admin_user_id).await
-			});
-			let _ = sender.send(result);
-		});
-		glib::MainContext::default().spawn_local(async move {
-			let is_admin = matches!(
-				receiver.await,
-				Ok(Ok(user)) if matches!(user.role, crate::models::UserRole::Admin)
-			);
-			administration_button_for_role.set_visible(is_admin);
-		});
+		sidebar_panel.administration_button.set_visible(is_admin);
+		sidebar_panel.teams_button.set_visible(is_admin);
 
 		let secret_editor_host = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
@@ -1189,8 +1263,55 @@ impl MainWindow {
 		});
 
 		let open_editor_for_add = open_editor.clone();
+		let active_vault_for_add = Rc::clone(&active_vault_id);
+		let runtime_for_add = runtime_handle.clone();
+		let vault_service_for_add = Arc::clone(&vault_service);
+		let window_for_add = window.clone();
 		add_button.connect_clicked(move |_| {
-			open_editor_for_add(DialogMode::Create);
+			let maybe_vault_id = *active_vault_for_add.borrow();
+			let Some(vault_id) = maybe_vault_id else {
+				open_editor_for_add(DialogMode::Create);
+				return;
+			};
+
+			let (sender, receiver) = tokio::sync::oneshot::channel();
+			let runtime_for_task = runtime_for_add.clone();
+			let vault_for_task = Arc::clone(&vault_service_for_add);
+			std::thread::spawn(move || {
+				let result = runtime_for_task.block_on(async move {
+					let access = vault_for_task
+						.get_vault_access_for_user(admin_user_id, vault_id)
+						.await?
+						.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+					let is_shared = access.vault.owner_user_id != admin_user_id;
+					Ok::<bool, crate::errors::AppError>(!is_shared || access.role.can_admin())
+				});
+				let _ = sender.send(result);
+			});
+
+			let open_editor_for_result = open_editor_for_add.clone();
+			let window_for_result = window_for_add.clone();
+			glib::MainContext::default().spawn_local(async move {
+				match receiver.await {
+					Ok(Ok(true)) => {
+						open_editor_for_result(DialogMode::CreateInVault(vault_id));
+					}
+					Ok(Ok(false)) => {
+						Self::show_feedback_dialog(
+							&window_for_result,
+							crate::tr!("main-add-shared-denied-title").as_str(),
+							crate::tr!("main-add-shared-denied-body").as_str(),
+						);
+					}
+					_ => {
+						Self::show_feedback_dialog(
+							&window_for_result,
+							crate::tr!("main-add-shared-denied-title").as_str(),
+							crate::tr!("main-list-unavailable-description").as_str(),
+						);
+					}
+				}
+			});
 		});
 		let refresh_for_trash = Rc::clone(&refresh_list);
 		header_bar.pack_start(&add_button);
@@ -1215,7 +1336,7 @@ impl MainWindow {
 			dialog.present();
 		});
 		header_bar.pack_start(&trash_button);
-		header_bar.pack_end(&profile_button);
+		header_bar.pack_end(&user_identity_box);
 		header_bar.pack_end(&panic_button);
 		root.append(&header_bar);
 
@@ -1266,9 +1387,14 @@ impl MainWindow {
 			let panic_button = panic_button.clone();
 			let panic_lbl = panic_lbl.clone();
 			let search_entry = search_entry.clone();
+			let status_total_chip = center_panel.status_total_chip.clone();
+			let status_non_compliant_chip = center_panel.status_non_compliant_chip.clone();
+			let sort_recent_button = center_panel.sort_recent_button.clone();
+			let sort_title_button = center_panel.sort_title_button.clone();
+			let sort_risk_button = center_panel.sort_risk_button.clone();
 			let filtered_status_page = center_panel.filtered_status_page.clone();
 			let entries_stack = center_panel.stack.clone();
-			let list_overlay = center_panel.list_overlay.clone();
+			let list_page = center_panel.list_page.clone();
 			let empty_state = center_panel.empty_state.clone();
 			let main_stack = center_panel.main_stack.clone();
 			let profile_container = profile_view.container.clone();
@@ -1290,13 +1416,19 @@ impl MainWindow {
 				panic_button.set_tooltip_text(Some(crate::tr!("main-panic-tooltip").as_str()));
 				panic_lbl.set_text(crate::tr!("main-panic-label").as_str());
 				search_entry.set_placeholder_text(Some(crate::tr!("main-search-placeholder").as_str()));
+				status_total_chip.set_tooltip_text(Some(crate::tr!("main-status-total-tooltip").as_str()));
+				status_non_compliant_chip
+					.set_tooltip_text(Some(crate::tr!("main-status-noncompliant-tooltip").as_str()));
+				sort_recent_button.set_tooltip_text(Some(crate::tr!("main-sort-recent-tooltip").as_str()));
+				sort_title_button.set_tooltip_text(Some(crate::tr!("main-sort-title-tooltip").as_str()));
+				sort_risk_button.set_tooltip_text(Some(crate::tr!("main-sort-risk-tooltip").as_str()));
 
 				filtered_status_page.set_title(crate::tr!("main-filtered-empty-title").as_str());
 				filtered_status_page
 					.set_description(Some(crate::tr!("main-filtered-empty-description").as_str()));
 
 				entries_stack
-					.page(&list_overlay)
+					.page(&list_page)
 					.set_title(crate::tr!("main-stack-grid").as_str());
 				entries_stack
 					.page(&empty_state)
@@ -1308,12 +1440,14 @@ impl MainWindow {
 				main_stack
 					.page(&profile_container)
 					.set_title(crate::tr!("main-profile-security").as_str());
-				main_stack
-					.page(&users_view_container)
-					.set_title(crate::tr!("main-user-nav").as_str());
-				main_stack
-					.page(&teams_view_container)
-					.set_title(crate::tr!("main-teams-nav").as_str());
+				if is_admin {
+					main_stack
+						.page(&users_view_container)
+						.set_title(crate::tr!("main-user-nav").as_str());
+					main_stack
+						.page(&teams_view_container)
+						.set_title(crate::tr!("main-teams-nav").as_str());
+				}
 				main_stack
 					.page(&secret_editor_host)
 					.set_title(crate::tr!("main-stack-editor").as_str());
@@ -1328,6 +1462,61 @@ impl MainWindow {
 		};
 		*on_main_i18n_refresh.borrow_mut() = Some(Rc::clone(&main_i18n_refresh));
 		on_main_i18n_refresh_bridge();
+
+		Self::update_sort_button_states(
+			&center_panel.sort_recent_button,
+			&center_panel.sort_title_button,
+			&center_panel.sort_risk_button,
+			filter_runtime.selected_sort.get(),
+		);
+
+		let flow_for_recent_sort = center_panel.secret_flow.clone();
+		let filter_for_recent_sort = filter_runtime.clone();
+		let recent_button = center_panel.sort_recent_button.clone();
+		let title_button = center_panel.sort_title_button.clone();
+		let risk_button = center_panel.sort_risk_button.clone();
+		center_panel.sort_recent_button.connect_clicked(move |_| {
+			filter_for_recent_sort.selected_sort.set(SecretSortMode::Recent);
+			Self::update_sort_button_states(
+				&recent_button,
+				&title_button,
+				&risk_button,
+				SecretSortMode::Recent,
+			);
+			Self::apply_filters(&flow_for_recent_sort, &filter_for_recent_sort);
+		});
+
+		let flow_for_title_sort = center_panel.secret_flow.clone();
+		let filter_for_title_sort = filter_runtime.clone();
+		let recent_button = center_panel.sort_recent_button.clone();
+		let title_button = center_panel.sort_title_button.clone();
+		let risk_button = center_panel.sort_risk_button.clone();
+		center_panel.sort_title_button.connect_clicked(move |_| {
+			filter_for_title_sort.selected_sort.set(SecretSortMode::Title);
+			Self::update_sort_button_states(
+				&recent_button,
+				&title_button,
+				&risk_button,
+				SecretSortMode::Title,
+			);
+			Self::apply_filters(&flow_for_title_sort, &filter_for_title_sort);
+		});
+
+		let flow_for_risk_sort = center_panel.secret_flow.clone();
+		let filter_for_risk_sort = filter_runtime.clone();
+		let recent_button = center_panel.sort_recent_button.clone();
+		let title_button = center_panel.sort_title_button.clone();
+		let risk_button = center_panel.sort_risk_button.clone();
+		center_panel.sort_risk_button.connect_clicked(move |_| {
+			filter_for_risk_sort.selected_sort.set(SecretSortMode::Risk);
+			Self::update_sort_button_states(
+				&recent_button,
+				&title_button,
+				&risk_button,
+				SecretSortMode::Risk,
+			);
+			Self::apply_filters(&flow_for_risk_sort, &filter_for_risk_sort);
+		});
 
 		let flow_for_search = center_panel.secret_flow.clone();
 		let filter_for_search = filter_runtime.clone();
@@ -1382,6 +1571,11 @@ impl MainWindow {
 		let main_stack_for_my_list = center_panel.main_stack.clone();
 		let sync_for_my_list = Rc::clone(&vault_selection_sync);
 		let refresh_for_my_list_handler = Rc::clone(&refresh_for_my_list);
+		let my_list_for_shared = sidebar_panel.my_vaults_list.clone();
+		let active_vault_for_shared_list = Rc::clone(&active_vault_id);
+		let sync_for_shared_list = Rc::clone(&vault_selection_sync);
+		let refresh_for_shared_list_handler = Rc::clone(&refresh_for_my_list);
+		let main_stack_for_shared_list = center_panel.main_stack.clone();
 		sidebar_panel.my_vaults_list.connect_row_selected(move |_list, row_opt| {
 			if sync_for_my_list.get() {
 				return;
@@ -1398,11 +1592,6 @@ impl MainWindow {
 			}
 		});
 
-		let active_vault_for_shared_list = Rc::clone(&active_vault_id);
-		let other_my_list = sidebar_panel.my_vaults_list.clone();
-		let refresh_for_shared_list = Rc::clone(&refresh_for_my_list);
-		let main_stack_for_shared_list = center_panel.main_stack.clone();
-		let sync_for_shared_list = Rc::clone(&vault_selection_sync);
 		sidebar_panel.shared_vaults_list.connect_row_selected(move |_list, row_opt| {
 			if sync_for_shared_list.get() {
 				return;
@@ -1410,11 +1599,11 @@ impl MainWindow {
 			if let Some(row) = row_opt {
 				if let Some(vault_id) = Self::vault_id_from_row(&row) {
 					sync_for_shared_list.set(true);
-					other_my_list.unselect_all();
+					my_list_for_shared.unselect_all();
 					sync_for_shared_list.set(false);
 					*active_vault_for_shared_list.borrow_mut() = Some(vault_id);
 					main_stack_for_shared_list.set_visible_child_name("entries_view");
-					refresh_for_shared_list();
+					refresh_for_shared_list_handler();
 				}
 			}
 		});
@@ -1452,8 +1641,6 @@ impl MainWindow {
 			}
 			Self::apply_filters(&flow_for_audit, &filter_for_audit);
 		});
-
-		refresh_list();
 
 		let key_controller = gtk4::EventControllerKey::new();
 		let window_for_key = window.clone();
@@ -1661,18 +1848,25 @@ impl MainWindow {
 	}
 
 	fn apply_filters(secret_flow: &gtk4::FlowBox, filter_runtime: &FilterRuntime) {
-		let (all_count, weak_count, duplicate_count) = {
+		let (all_count, weak_count, duplicate_count, non_compliant_count) = {
 			let store = filter_runtime.meta_by_widget.borrow();
 			let all_count = store.len();
 			let weak_count = store.values().filter(|meta| meta.is_weak).count();
 			let duplicate_count = store.values().filter(|meta| meta.is_duplicate).count();
-			(all_count, weak_count, duplicate_count)
+			let non_compliant_count = store
+				.values()
+				.filter(|meta| meta.is_weak || meta.is_duplicate)
+				.count();
+			(all_count, weak_count, duplicate_count, non_compliant_count)
 		};
 
 		Self::update_audit_badge(&filter_runtime.audit_all_count_label, all_count);
 		Self::update_audit_badge(&filter_runtime.audit_weak_count_label, weak_count);
 		Self::update_audit_badge(&filter_runtime.audit_duplicate_count_label, duplicate_count);
+		Self::update_audit_badge(&filter_runtime.total_count_label, all_count);
+		Self::update_audit_badge(&filter_runtime.non_compliant_count_label, non_compliant_count);
 
+		secret_flow.invalidate_sort();
 		secret_flow.invalidate_filter();
 
 		let mut visible_count = 0;
@@ -1706,6 +1900,23 @@ impl MainWindow {
 		glib::timeout_add_local_once(Duration::from_millis(240), move || {
 			label_clone.remove_css_class("audit-count-badge-pulse");
 		});
+	}
+
+	fn update_sort_button_states(
+		recent_button: &gtk4::Button,
+		title_button: &gtk4::Button,
+		risk_button: &gtk4::Button,
+		selected_sort: SecretSortMode,
+	) {
+		for button in [recent_button, title_button, risk_button] {
+			button.remove_css_class("vault-secret-sort-button-active");
+		}
+
+		match selected_sort {
+			SecretSortMode::Recent => recent_button.add_css_class("vault-secret-sort-button-active"),
+			SecretSortMode::Title => title_button.add_css_class("vault-secret-sort-button-active"),
+			SecretSortMode::Risk => risk_button.add_css_class("vault-secret-sort-button-active"),
+		}
 	}
 
 	fn normalize_search_text(raw: &str) -> String {
@@ -3621,12 +3832,14 @@ impl MainWindow {
 		let shared_vaults_title = gtk4::Label::new(Some(crate::tr!("main-shared-with-me-title").as_str()));
 		shared_vaults_title.add_css_class("main-section-title");
 		shared_vaults_title.set_halign(Align::Start);
-		sidebar_box.append(&shared_vaults_title);
+		shared_vaults_title.set_visible(false);
 
 		let shared_vaults_list = gtk4::ListBox::new();
 		shared_vaults_list.add_css_class("boxed-list");
 		shared_vaults_list.add_css_class("main-category-list");
 		shared_vaults_list.set_selection_mode(gtk4::SelectionMode::Single);
+		shared_vaults_list.set_visible(false);
+		sidebar_box.append(&shared_vaults_title);
 		sidebar_box.append(&shared_vaults_list);
 
 		let vaults_separator = gtk4::Separator::new(Orientation::Horizontal);
@@ -3857,7 +4070,9 @@ impl MainWindow {
 		title: &str,
 		vault_id: Uuid,
 		can_delete: bool,
+		is_shared_with_others: bool,
 		shared_role: Option<crate::models::VaultShareRole>,
+		secret_count: usize,
 		on_delete: Option<Rc<dyn Fn(Uuid, String)>>,
 	) -> gtk4::ListBoxRow {
 		let row = gtk4::ListBoxRow::new();
@@ -3881,19 +4096,33 @@ impl MainWindow {
 		label.add_css_class("main-sidebar-label");
 		content.append(&label);
 
+		if shared_role.is_some() || is_shared_with_others {
+			let shared_icon = gtk4::Image::from_icon_name("emblem-shared-symbolic");
+			shared_icon.set_pixel_size(14);
+			shared_icon.add_css_class("main-sidebar-icon");
+			shared_icon.add_css_class("vault-shared-indicator");
+			shared_icon.set_tooltip_text(Some(crate::tr!("main-vault-shared-tooltip").as_str()));
+			content.append(&shared_icon);
+		}
+
 		if let Some(role) = shared_role {
 			let role_badge = gtk4::Label::new(None);
 			let badge_text = match role {
-				crate::models::VaultShareRole::Read => "👁 read",
-				crate::models::VaultShareRole::Write => "✏️ write",
-				crate::models::VaultShareRole::Admin => "👑 admin",
+				crate::models::VaultShareRole::Read => "READ",
+				crate::models::VaultShareRole::Write => "WRITE",
+				crate::models::VaultShareRole::Admin => "ADMIN",
 			};
 			role_badge.set_text(badge_text);
-			role_badge.add_css_class("caption");
-			role_badge.add_css_class("dim-label");
+			role_badge.add_css_class("vault-share-role-badge");
 			role_badge.set_margin_end(6);
 			content.append(&role_badge);
 		}
+
+		let count_text = secret_count.to_string();
+		let count_badge = gtk4::Label::new(Some(count_text.as_str()));
+		count_badge.add_css_class("audit-count-badge");
+		count_badge.set_margin_end(6);
+		content.append(&count_badge);
 
 		if can_delete {
 			let delete_button = gtk4::Button::builder()
@@ -4002,6 +4231,55 @@ impl MainWindow {
 		list_overlay.set_child(Some(&list_scroll));
 		list_overlay.add_overlay(&filtered_status_page);
 
+		let status_row = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(10)
+			.margin_top(12)
+			.margin_bottom(0)
+			.margin_start(12)
+			.margin_end(12)
+			.build();
+		status_row.add_css_class("vault-secret-status-row");
+
+		let metrics_box = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.hexpand(true)
+			.build();
+
+		let (status_total_chip, status_total_badge) =
+			Self::build_status_metric_chip("view-grid-symbolic", "0", false);
+		let (status_non_compliant_chip, status_non_compliant_badge) =
+			Self::build_status_metric_chip("dialog-warning-symbolic", "0", true);
+		metrics_box.append(&status_total_chip);
+		metrics_box.append(&status_non_compliant_chip);
+
+		let sort_switch = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(4)
+			.halign(Align::End)
+			.build();
+		sort_switch.add_css_class("vault-secret-sort-switch");
+
+		let sort_recent_button = Self::build_status_sort_button("view-sort-descending-symbolic");
+		let sort_title_button = Self::build_status_sort_button("insert-text-symbolic");
+		let sort_risk_button = Self::build_status_sort_button("dialog-warning-symbolic");
+		sort_switch.append(&sort_recent_button);
+		sort_switch.append(&sort_title_button);
+		sort_switch.append(&sort_risk_button);
+
+		status_row.append(&metrics_box);
+		status_row.append(&sort_switch);
+
+		let list_page = gtk4::Box::builder()
+			.orientation(Orientation::Vertical)
+			.spacing(10)
+			.vexpand(true)
+			.hexpand(true)
+			.build();
+		list_page.append(&status_row);
+		list_page.append(&list_overlay);
+
 		let empty_state = gtk4::Box::builder()
 			.orientation(Orientation::Vertical)
 			.spacing(10)
@@ -4031,7 +4309,7 @@ impl MainWindow {
 		empty_state.append(&empty_title);
 		empty_state.append(&empty_description);
 
-		entries_stack.add_titled(&list_overlay, Some("list"), crate::tr!("main-stack-grid").as_str());
+		entries_stack.add_titled(&list_page, Some("list"), crate::tr!("main-stack-grid").as_str());
 		entries_stack.add_titled(&empty_state, Some("empty"), crate::tr!("main-stack-empty").as_str());
 		entries_stack.set_visible_child_name("empty");
 
@@ -4049,13 +4327,53 @@ impl MainWindow {
 			frame: center_frame,
 			main_stack,
 			stack: entries_stack,
-			list_overlay,
+			list_page,
 			empty_state,
 			secret_flow,
 			filtered_status_page,
+			status_total_chip,
+			status_total_badge,
+			status_non_compliant_chip,
+			status_non_compliant_badge,
+			sort_recent_button,
+			sort_title_button,
+			sort_risk_button,
 			empty_title,
 			empty_copy: empty_description,
 		}
+	}
+
+	fn build_status_metric_chip(icon_name: &str, count: &str, warning: bool) -> (gtk4::Box, gtk4::Label) {
+		let chip = gtk4::Box::builder()
+			.orientation(Orientation::Horizontal)
+			.spacing(8)
+			.build();
+		chip.add_css_class("vault-secret-status-chip");
+		if warning {
+			chip.add_css_class("vault-secret-status-chip-warning");
+		}
+
+		let icon = gtk4::Image::from_icon_name(icon_name);
+		icon.set_pixel_size(16);
+		icon.add_css_class("vault-secret-status-icon");
+		chip.append(&icon);
+
+		let badge = gtk4::Label::new(Some(count));
+		badge.add_css_class("audit-count-badge");
+		badge.add_css_class("vault-secret-status-badge");
+		if warning {
+			badge.add_css_class("vault-secret-status-badge-warning");
+		}
+		chip.append(&badge);
+
+		(chip, badge)
+	}
+
+	fn build_status_sort_button(icon_name: &str) -> gtk4::Button {
+		let button = gtk4::Button::builder().icon_name(icon_name).build();
+		button.add_css_class("flat");
+		button.add_css_class("vault-secret-sort-button");
+		button
 	}
 
 	#[allow(clippy::too_many_arguments)]
@@ -4260,6 +4578,8 @@ impl MainWindow {
 					filter_runtime.audit_all_count_label.set_text("0");
 					filter_runtime.audit_weak_count_label.set_text("0");
 					filter_runtime.audit_duplicate_count_label.set_text("0");
+					filter_runtime.total_count_label.set_text("0");
+					filter_runtime.non_compliant_count_label.set_text("0");
 					filter_runtime.filtered_status_page.set_visible(false);
 
 					while let Some(child) = secret_flow.first_child() {
@@ -4283,7 +4603,7 @@ impl MainWindow {
 								let shared_vault = vault_state.map(|(_, is_shared, _, _)| is_shared).unwrap_or(false);
 								let can_write = vault_state.map(|(_, _, can_write, _)| can_write).unwrap_or(false);
 								let can_admin = vault_state.map(|(_, _, _, can_admin)| can_admin).unwrap_or(false);
-					for item in items {
+					for (original_rank, item) in items.into_iter().enumerate() {
 						let is_duplicate = duplicate_counts
 							.get(&item.secret_value)
 							.copied()
@@ -4463,6 +4783,7 @@ impl MainWindow {
 									.as_str(),
 								),
 								kind,
+								original_rank,
 								is_weak: item.health == crate::tr!("main-strength-weak"),
 								is_duplicate,
 							},
@@ -4487,10 +4808,17 @@ struct CenterPanelWidgets {
 	frame: gtk4::Frame,
 	main_stack: gtk4::Stack,
 	stack: gtk4::Stack,
-	list_overlay: gtk4::Overlay,
+	list_page: gtk4::Box,
 	empty_state: gtk4::Box,
 	secret_flow: gtk4::FlowBox,
 	filtered_status_page: adw::StatusPage,
+	status_total_chip: gtk4::Box,
+	status_total_badge: gtk4::Label,
+	status_non_compliant_chip: gtk4::Box,
+	status_non_compliant_badge: gtk4::Label,
+	sort_recent_button: gtk4::Button,
+	sort_title_button: gtk4::Button,
+	sort_risk_button: gtk4::Button,
 	empty_title: gtk4::Label,
 	empty_copy: gtk4::Label,
 }

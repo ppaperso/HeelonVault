@@ -170,7 +170,7 @@ impl VaultRepository for SqlxVaultRepository {
 
     async fn list_by_user_id(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError> {
         let rows = sqlx::query(
-            "SELECT id, owner_user_id, name FROM vaults WHERE owner_user_id = ?1 AND deleted_at IS NULL ORDER BY name",
+            "SELECT id, owner_user_id, name FROM vaults WHERE owner_user_id = ?1 AND deleted_at IS NULL ORDER BY LOWER(name)",
         )
         .bind(user_id.to_string())
         .fetch_all(&self.pool)
@@ -240,19 +240,31 @@ impl VaultRepository for SqlxVaultRepository {
     }
 
     async fn delete_vault(&self, vault_id: Uuid) -> Result<(), AppError> {
+        let mut tx = self.pool.begin().await
+            .map_err(|e| Self::map_storage_err("begin transaction", e))?;
+
         let result = sqlx::query(
-            "UPDATE vaults
-             SET deleted_at = CURRENT_TIMESTAMP
-             WHERE id = ?1 AND deleted_at IS NULL",
+            "UPDATE vaults SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"
         )
-            .bind(vault_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("soft delete vault", err))?;
+        .bind(vault_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Self::map_storage_err("soft delete vault", e))?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound("vault not found".to_string()));
         }
+
+        sqlx::query(
+            "UPDATE secret_items SET deleted_at = CURRENT_TIMESTAMP WHERE vault_id = ?1 AND deleted_at IS NULL"
+        )
+        .bind(vault_id.to_string())
+        .execute(&mut *tx)
+        .await
+        .map_err(|e| Self::map_storage_err("cascade soft delete vault secrets", e))?;
+
+        tx.commit().await
+            .map_err(|e| Self::map_storage_err("commit transaction", e))?;
 
         Ok(())
     }

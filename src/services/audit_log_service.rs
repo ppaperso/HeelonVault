@@ -212,6 +212,7 @@ mod tests {
         async fn delete_user(&self, _: Uuid) -> Result<(), AppError> { Ok(()) }
         async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> { Ok(()) }
         async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> { Ok(vec![]) }
+        async fn get_password_envelope_by_user_id(&self, _: Uuid) -> Result<Option<secrecy::SecretBox<Vec<u8>>>, AppError> { Ok(None) }
         async fn update_user_profile(&self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>) -> Result<(), AppError> { Ok(()) }
         async fn update_password_envelope(&self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
         async fn update_totp_secret_envelope(&self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }

@@ -1,8 +1,9 @@
 use std::sync::Arc;
 
 use heelonvault_rust::errors::AppError;
-use heelonvault_rust::models::{UserRole, VaultShareRole};
+use heelonvault_rust::models::{SecretType, UserRole, VaultShareRole};
 use heelonvault_rust::repositories::audit_log_repository::SqlxAuditLogRepository;
+use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
 use heelonvault_rust::repositories::team_repository::SqlxTeamRepository;
 use heelonvault_rust::repositories::user_repository::{SqlxUserRepository, UserRepository};
 use heelonvault_rust::repositories::vault_repository::{SqlxVaultRepository, VaultRepository};
@@ -10,6 +11,7 @@ use heelonvault_rust::services::admin_service::{AdminService, AdminServiceImpl};
 use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::crypto_service::{CryptoService, CryptoServiceImpl, EncryptedPayload, NONCE_LEN};
+use heelonvault_rust::services::secret_service::{SecretService, SecretServiceImpl};
 use heelonvault_rust::services::team_service::{KeyShare, TeamService, TeamServiceImpl};
 use heelonvault_rust::services::vault_service::{VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl};
 use secrecy::{ExposeSecret, SecretBox};
@@ -49,6 +51,7 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
 type AuditSvc = AuditLogServiceImpl<SqlxUserRepository, SqlxAuditLogRepository>;
 type AdminSvc = AdminServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>, AuditSvc>;
 type TeamSvc = TeamServiceImpl<SqlxTeamRepository, SqlxUserRepository, SqlxVaultRepository, CryptoServiceImpl, AuditSvc>;
+type SecretSvc = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl, AuditSvc>;
 type VaultSvc = VaultServiceImpl<
     SqlxVaultRepository,
     SqlxVaultEnvelopeRepository,
@@ -69,6 +72,7 @@ struct TestCtx {
     admin: UserSeed,
     admin_service: Arc<AdminSvc>,
     team_service: Arc<TeamSvc>,
+    secret_service: Arc<SecretSvc>,
     vault_service: Arc<VaultSvc>,
     crypto: CryptoServiceImpl,
 }
@@ -115,6 +119,12 @@ async fn setup_ctx() -> Result<TestCtx, String> {
         Arc::clone(&audit_service),
     ));
 
+    let secret_service = Arc::new(SecretServiceImpl::new(
+        SqlxSecretRepository::new(pool.clone()),
+        CryptoServiceImpl::with_defaults(),
+        Arc::clone(&audit_service),
+    ));
+
     let vault_service = Arc::new(VaultServiceImpl::new(
         SqlxVaultRepository::new(pool.clone()),
         SqlxVaultEnvelopeRepository::new(pool.clone()),
@@ -130,6 +140,7 @@ async fn setup_ctx() -> Result<TestCtx, String> {
         admin,
         admin_service,
         team_service,
+        secret_service,
         vault_service,
         crypto: CryptoServiceImpl::with_defaults(),
     })
@@ -182,6 +193,46 @@ fn serialize_payload(payload: &EncryptedPayload) -> SecretBox<Vec<u8>> {
     bytes.extend_from_slice(&payload.nonce);
     bytes.extend_from_slice(payload.ciphertext.expose_secret());
     SecretBox::new(Box::new(bytes))
+}
+
+async fn create_secret_via_ui_service_flow(
+    secret_service: &SecretSvc,
+    vault_service: &VaultSvc,
+    requester_id: Uuid,
+    target_vault_id: Uuid,
+    requester_master_key: SecretBox<Vec<u8>>,
+    title: &str,
+    secret_value: &[u8],
+) -> Result<(), AppError> {
+    let access = vault_service
+        .get_vault_access_for_user(requester_id, target_vault_id)
+        .await?
+        .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+
+    let is_shared = access.vault.owner_user_id != requester_id;
+    if is_shared && !access.role.can_admin() {
+        return Err(AppError::Authorization(
+            "creating secrets in shared vault requires admin role".to_string(),
+        ));
+    }
+
+    let vault_key = vault_service
+        .open_vault_for_user(requester_id, target_vault_id, requester_master_key)
+        .await?;
+
+    secret_service
+        .create_secret(
+            target_vault_id,
+            SecretType::Password,
+            Some(title.to_string()),
+            Some("{\"login\":\"shared-user\"}".to_string()),
+            None,
+            None,
+            SecretBox::new(Box::new(secret_value.to_vec())),
+            SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+        )
+        .await
+        .map(|_| ())
 }
 
 #[tokio::test]
@@ -784,5 +835,162 @@ async fn scenario_admin_role_shared_user_can_delete_vault() {
     assert!(
         matches!(owner_open, Err(AppError::Authorization(_))),
         "soft-deleted vault must not be openable"
+    );
+}
+
+#[tokio::test]
+async fn scenario_shared_write_user_cannot_add_secret_via_ui_service_flow() {
+    let ctx = setup_ctx().await.expect("setup");
+
+    let writer = create_account(
+        &SqlxUserRepository::new(ctx.pool.clone()),
+        Arc::clone(&ctx.auth),
+        "writer_add_guard",
+        "Write1234!",
+        UserRole::User,
+    )
+    .await
+    .expect("create writer");
+
+    let vault = ctx
+        .vault_service
+        .create_vault(
+            ctx.admin.id,
+            "Guarded Shared Vault",
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("create vault");
+
+    let owner_vault_key = ctx
+        .vault_service
+        .open_vault_for_user(
+            ctx.admin.id,
+            vault.id,
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("open owner vault");
+
+    // grant_vault_access gives WRITE role to the user.
+    ctx.team_service
+        .grant_vault_access(
+            ctx.admin.id,
+            vault.id,
+            writer.id,
+            SecretBox::new(Box::new(owner_vault_key.expose_secret().clone())),
+            SecretBox::new(Box::new(writer.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("grant write access");
+
+    let create_result = create_secret_via_ui_service_flow(
+        ctx.secret_service.as_ref(),
+        ctx.vault_service.as_ref(),
+        writer.id,
+        vault.id,
+        SecretBox::new(Box::new(writer.master_key.expose_secret().clone())),
+        "must-be-denied",
+        b"denied-secret",
+    )
+    .await;
+
+    assert!(
+        matches!(create_result, Err(AppError::Authorization(_))),
+        "shared user with WRITE role must be denied secret creation"
+    );
+
+    let items = ctx
+        .secret_service
+        .list_by_vault(vault.id)
+        .await
+        .expect("list vault secrets");
+    assert!(
+        items.is_empty(),
+        "no secret must be persisted when creation is denied"
+    );
+}
+
+#[tokio::test]
+async fn scenario_shared_admin_user_can_add_secret_via_ui_service_flow() {
+    let ctx = setup_ctx().await.expect("setup");
+
+    let shared_admin = create_account(
+        &SqlxUserRepository::new(ctx.pool.clone()),
+        Arc::clone(&ctx.auth),
+        "shared_admin_add",
+        "Admin1234!",
+        UserRole::User,
+    )
+    .await
+    .expect("create shared admin");
+
+    let vault = ctx
+        .vault_service
+        .create_vault(
+            ctx.admin.id,
+            "Admin Shared Vault",
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("create vault");
+
+    let vault_key = ctx
+        .vault_service
+        .open_vault_for_user(
+            ctx.admin.id,
+            vault.id,
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("open owner vault");
+
+    let payload = ctx
+        .crypto
+        .encrypt(
+            &vault_key,
+            &SecretBox::new(Box::new(shared_admin.master_key.expose_secret().clone())),
+        )
+        .await
+        .expect("encrypt admin share envelope");
+    let envelope = serialize_payload(&payload);
+
+    SqlxVaultRepository::new(ctx.pool.clone())
+        .insert_key_share(
+            vault.id,
+            shared_admin.id,
+            envelope,
+            Some(ctx.admin.id),
+            None,
+            VaultShareRole::Admin,
+        )
+        .await
+        .expect("insert admin share");
+
+    let create_result = create_secret_via_ui_service_flow(
+        ctx.secret_service.as_ref(),
+        ctx.vault_service.as_ref(),
+        shared_admin.id,
+        vault.id,
+        SecretBox::new(Box::new(shared_admin.master_key.expose_secret().clone())),
+        "allowed-for-admin",
+        b"created-secret",
+    )
+    .await;
+    assert!(
+        create_result.is_ok(),
+        "shared user with ADMIN role must be allowed to create secret"
+    );
+
+    let items = ctx
+        .secret_service
+        .list_by_vault(vault.id)
+        .await
+        .expect("list vault secrets");
+    assert_eq!(items.len(), 1, "one secret must be created");
+    assert_eq!(
+        items[0].title.as_deref(),
+        Some("allowed-for-admin"),
+        "created secret title must match"
     );
 }

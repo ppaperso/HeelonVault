@@ -194,6 +194,40 @@ where
         bytes.extend_from_slice(payload.ciphertext.expose_secret().as_slice());
         SecretBox::new(Box::new(bytes))
     }
+
+    fn derive_master_key_from_password_envelope(
+        password_envelope: &SecretBox<Vec<u8>>,
+    ) -> Result<SecretBox<Vec<u8>>, AppError> {
+        use secrecy::ExposeSecret;
+
+        const PASSWORD_ENVELOPE_VERSION: u8 = 1;
+        let bytes = password_envelope.expose_secret();
+
+        if bytes.len() < 5 {
+            return Err(AppError::Validation(
+                "invalid password envelope: too short".to_string(),
+            ));
+        }
+
+        if bytes[0] != PASSWORD_ENVELOPE_VERSION {
+            return Err(AppError::Validation(
+                "invalid password envelope: unsupported version".to_string(),
+            ));
+        }
+
+        let salt_len = u16::from_be_bytes([bytes[1], bytes[2]]) as usize;
+        let hash_len = u16::from_be_bytes([bytes[3], bytes[4]]) as usize;
+        let hash_start = 5 + salt_len;
+        let expected_len = hash_start + hash_len;
+
+        if hash_len == 0 || bytes.len() != expected_len {
+            return Err(AppError::Validation(
+                "invalid password envelope: malformed payload".to_string(),
+            ));
+        }
+
+        Ok(SecretBox::new(Box::new(bytes[hash_start..expected_len].to_vec())))
+    }
 }
 
 impl<TTeamRepo, TUserRepo, TVaultRepo, TCrypto, TAuditSvc> TeamService
@@ -452,34 +486,68 @@ where
         let mut skipped = 0_usize;
 
         for member_id in &member_ids {
-            let key_opt = member_master_keys.iter().find(|(uid, _)| uid == member_id);
-            match key_opt {
+            let explicit_key = member_master_keys
+                .iter()
+                .find(|(uid, _)| uid == member_id)
+                .map(|(_, key)| SecretBox::new(Box::new(key.expose_secret().clone())));
+
+            let effective_key = match explicit_key {
+                Some(key) => Some(key),
                 None => {
-                    warn!(
-                        team = %team_id,
-                        user = %member_id,
-                        "master key not provided for member — skipping vault share"
-                    );
-                    skipped += 1;
-                }
-                Some((_, master_key)) => {
-                    let vk_clone =
-                        SecretBox::new(Box::new(vault_key.expose_secret().clone()));
-                    let payload =
-                        self.crypto_service.encrypt(&vk_clone, master_key).await?;
-                    let envelope = Self::serialize_vault_key_envelope(&payload);
-                    self.vault_repo
-                        .insert_key_share(
-                            vault_id,
-                            *member_id,
-                            envelope,
-                            Some(granter_id),
-                            Some(team_id),
-                            VaultShareRole::Read,
-                        )
+                    let envelope_opt = self
+                        .user_repo
+                        .get_password_envelope_by_user_id(*member_id)
                         .await?;
+
+                    match envelope_opt {
+                        Some(envelope) => {
+                            match Self::derive_master_key_from_password_envelope(&envelope) {
+                                Ok(derived_key) => Some(derived_key),
+                                Err(err) => {
+                                    warn!(
+                                        team = %team_id,
+                                        user = %member_id,
+                                        error = %err,
+                                        "cannot derive master key from password envelope — skipping vault share"
+                                    );
+                                    None
+                                }
+                            }
+                        }
+                        None => None,
+                    }
                 }
+            };
+
+            if let Some(master_key) = effective_key {
+                let vk_clone = SecretBox::new(Box::new(vault_key.expose_secret().clone()));
+                let payload = self.crypto_service.encrypt(&vk_clone, &master_key).await?;
+                let envelope = Self::serialize_vault_key_envelope(&payload);
+                self.vault_repo
+                    .insert_key_share(
+                        vault_id,
+                        *member_id,
+                        envelope,
+                        Some(granter_id),
+                        Some(team_id),
+                        VaultShareRole::Read,
+                    )
+                    .await?;
+            } else {
+                warn!(
+                    team = %team_id,
+                    user = %member_id,
+                    "master key not available for member — skipping vault share"
+                );
+                skipped += 1;
             }
+        }
+
+        let granted = member_ids.len().saturating_sub(skipped);
+        if granted == 0 {
+            return Err(AppError::Validation(
+                "team share failed: no member received a vault key".to_string(),
+            ));
         }
 
         self
@@ -492,7 +560,7 @@ where
                 Some(&format!(
                     r#"{{"team_id":"{}","members_granted":{},"members_skipped":{}}}"#,
                     team_id,
-                    member_ids.len() - skipped,
+                    granted,
                     skipped
                 )),
             )
@@ -502,7 +570,7 @@ where
             actor = %granter_id,
             vault = %vault_id,
             team = %team_id,
-            granted = member_ids.len() - skipped,
+            granted = granted,
             skipped = skipped,
             "vault shared with team"
         );
@@ -817,6 +885,12 @@ mod tests {
             &self,
         ) -> Result<Vec<(String, Vec<u8>)>, AppError> {
             Ok(vec![])
+        }
+        async fn get_password_envelope_by_user_id(
+            &self,
+            _: Uuid,
+        ) -> Result<Option<secrecy::SecretBox<Vec<u8>>>, AppError> {
+            Ok(None)
         }
         async fn update_user_profile(
             &self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>,

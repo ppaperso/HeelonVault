@@ -248,27 +248,12 @@ impl TrashDialog {
 
         let runtime_for_loader = runtime_handle.clone();
         let secret_for_loader = Arc::clone(&secret_service);
-        let vault_for_loader = Arc::clone(&vault_service);
-        let admin_master_for_loader = admin_master_key.clone();
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         std::thread::spawn(move || {
             let result: Result<Vec<TrashRowView>, crate::errors::AppError> =
                 runtime_for_loader.block_on(async move {
-                    let vaults = vault_for_loader.list_user_vaults(admin_user_id).await?;
-                    let first_vault = match vaults.into_iter().next() {
-                        Some(value) => value,
-                        None => return Ok(Vec::new()),
-                    };
-
-                    let _vault_key = vault_for_loader
-                        .open_vault(
-                            first_vault.id,
-                            SecretBox::new(Box::new(admin_master_for_loader.clone())),
-                        )
-                        .await?;
-
-                    let items = secret_for_loader.list_trash_by_vault(first_vault.id).await?;
+                    let items = secret_for_loader.list_all_trash_by_user(admin_user_id).await?;
                     let mut rows = Vec::with_capacity(items.len());
                     for item in items {
                         let login = item
@@ -285,7 +270,7 @@ impl TrashDialog {
 
                         rows.push(TrashRowView {
                             secret_id: item.id,
-                            vault_id: first_vault.id,
+                            vault_id: item.vault_id,
                             title: item
                                 .title
                                 .unwrap_or_else(|| crate::tr!("trash-secret-fallback-title")),

@@ -29,7 +29,7 @@ impl ManageTeamsDialog {
         vault_service: Arc<TVault>,
         actor_user_id: Uuid,
         session_master_key: Rc<RefCell<Vec<u8>>>,
-        active_vault_id: Rc<RefCell<Option<Uuid>>>,
+        _active_vault_id: Rc<RefCell<Option<Uuid>>>,
         on_state_changed: Rc<dyn Fn()>,
     ) -> Self
     where
@@ -97,7 +97,6 @@ impl ManageTeamsDialog {
             let vault_for_refresh = Arc::clone(&vault_service);
             let window_for_refresh = window.clone();
             let master_for_refresh = Rc::clone(&session_master_key);
-            let active_vault_for_refresh = Rc::clone(&active_vault_id);
             let refresh_holder_for_rows = Rc::clone(&refresh_holder);
             Rc::new(move || {
                 while let Some(child) = team_list_for_refresh.first_child() {
@@ -120,7 +119,6 @@ impl ManageTeamsDialog {
                 let vault_for_recv = Arc::clone(&vault_for_refresh);
                 let window_for_recv = window_for_refresh.clone();
                 let master_for_recv = Rc::clone(&master_for_refresh);
-                let active_vault_for_recv = Rc::clone(&active_vault_for_refresh);
                 let refresh_holder_for_rows_async = Rc::clone(&refresh_holder_for_rows);
                 let on_state_changed_for_rows = Rc::clone(&on_state_changed);
                 glib::MainContext::default().spawn_local(async move {
@@ -162,6 +160,7 @@ impl ManageTeamsDialog {
                                 team_list_for_recv.append(&row);
 
                                 let team_id = team.id;
+                                let team_name = team.name.clone();
                                 let runtime_for_members = runtime_for_recv.clone();
                                 let team_for_members = Arc::clone(&team_for_recv);
                                 let window_for_members = window_for_recv.clone();
@@ -386,12 +385,10 @@ impl ManageTeamsDialog {
                                 let vault_for_share = Arc::clone(&vault_for_recv);
                                 let window_for_share = window_for_recv.clone();
                                 let master_for_share = Rc::clone(&master_for_recv);
-                                let active_vault_for_share = Rc::clone(&active_vault_for_recv);
                                 let on_state_changed_for_share = Rc::clone(&on_state_changed_for_rows);
                                 share_btn.connect_clicked(move |_| {
                                     let current_master = master_for_share.borrow().clone();
-                                    let vault_id_opt = *active_vault_for_share.borrow();
-                                    if current_master.is_empty() || vault_id_opt.is_none() {
+                                    if current_master.is_empty() {
                                         Self::show_warning(
                                             &window_for_share,
                                             crate::tr!("manage-teams-warning-vault-locked-title").as_str(),
@@ -400,54 +397,196 @@ impl ManageTeamsDialog {
                                         return;
                                     }
 
-                                    let vault_id = match vault_id_opt {
-                                        Some(value) => value,
-                                        None => return,
-                                    };
+                                    let share_window = gtk4::Window::builder()
+                                        .title(crate::tr!("manage-teams-share-select-window-title").as_str())
+                                        .modal(true)
+                                        .transient_for(&window_for_share)
+                                        .default_width(520)
+                                        .default_height(140)
+                                        .build();
 
-                                    let (sender, receiver) = tokio::sync::oneshot::channel();
-                                    let runtime_for_task = runtime_for_share.clone();
-                                    let team_for_task = Arc::clone(&team_for_share);
-                                    let vault_for_task = Arc::clone(&vault_for_share);
-                                    std::thread::spawn(move || {
-                                        let result = runtime_for_task.block_on(async move {
-                                            let vault_key = vault_for_task
-                                                .open_vault_for_user(
-                                                    actor_user_id,
-                                                    vault_id,
-                                                    SecretBox::new(Box::new(current_master)),
-                                                )
-                                                .await?;
+                                    let share_root = gtk4::Box::builder()
+                                        .orientation(gtk4::Orientation::Vertical)
+                                        .spacing(8)
+                                        .margin_top(12)
+                                        .margin_bottom(12)
+                                        .margin_start(12)
+                                        .margin_end(12)
+                                        .build();
 
-                                            team_for_task
-                                                .share_vault_with_team(
-                                                    actor_user_id,
-                                                    vault_id,
-                                                    team_id,
-                                                    vault_key,
-                                                    &[],
-                                                )
-                                                .await
+                                    let vault_picker = gtk4::DropDown::from_strings(&[
+                                        crate::tr!("manage-teams-share-select-placeholder").as_str(),
+                                    ]);
+                                    vault_picker.set_hexpand(true);
+
+                                    let status_label = gtk4::Label::new(None);
+                                    status_label.set_halign(gtk4::Align::Start);
+                                    status_label.add_css_class("dim-label");
+
+                                    let actions = gtk4::Box::builder()
+                                        .orientation(gtk4::Orientation::Horizontal)
+                                        .spacing(8)
+                                        .halign(gtk4::Align::End)
+                                        .build();
+                                    let cancel_btn = gtk4::Button::with_label(crate::tr!("common-cancel").as_str());
+                                    let share_apply_btn = gtk4::Button::with_label(crate::tr!("manage-teams-share-select-apply").as_str());
+                                    share_apply_btn.add_css_class("suggested-action");
+                                    actions.append(&cancel_btn);
+                                    actions.append(&share_apply_btn);
+
+                                    share_root.append(&vault_picker);
+                                    share_root.append(&status_label);
+                                    share_root.append(&actions);
+                                    share_window.set_child(Some(&share_root));
+
+                                    let vault_picker_ids: Rc<RefCell<Vec<Uuid>>> = Rc::new(RefCell::new(Vec::new()));
+
+                                    {
+                                        let runtime_for_list = runtime_for_share.clone();
+                                        let vault_for_list = Arc::clone(&vault_for_share);
+                                        let picker_for_list = vault_picker.clone();
+                                        let picker_ids_for_list = Rc::clone(&vault_picker_ids);
+                                        let status_for_list = status_label.clone();
+                                        let apply_for_list = share_apply_btn.clone();
+                                        let team_name_for_list = team_name.clone();
+
+                                        let (sender, receiver) = tokio::sync::oneshot::channel();
+                                        std::thread::spawn(move || {
+                                            let result = runtime_for_list.block_on(async move {
+                                                vault_for_list.list_owned_vaults(actor_user_id).await
+                                            });
+                                            let _ = sender.send(result);
                                         });
-                                        let _ = sender.send(result);
+
+                                        glib::MainContext::default().spawn_local(async move {
+                                            match receiver.await {
+                                                Ok(Ok(vaults)) => {
+                                                    if vaults.is_empty() {
+                                                        apply_for_list.set_sensitive(false);
+                                                        status_for_list.set_text(
+                                                            crate::tr!("manage-teams-share-select-empty").as_str(),
+                                                        );
+                                                        return;
+                                                    }
+
+                                                    let mut ids = Vec::with_capacity(vaults.len());
+                                                    let labels: Vec<String> = std::iter::once(
+                                                        crate::tr!("manage-teams-share-select-placeholder").to_string(),
+                                                    )
+                                                    .chain(vaults.iter().map(|vault| {
+                                                        ids.push(vault.id);
+                                                        vault.name.clone()
+                                                    }))
+                                                    .collect();
+
+                                                    *picker_ids_for_list.borrow_mut() = ids;
+                                                    let refs: Vec<&str> = labels.iter().map(|s| s.as_str()).collect();
+                                                    picker_for_list.set_model(Some(&gtk4::StringList::new(&refs)));
+                                                    picker_for_list.set_selected(0);
+                                                    status_for_list.set_text(
+                                                        crate::i18n::tr_args(
+                                                            "manage-teams-share-select-status",
+                                                            &[("team", crate::i18n::I18nArg::Str(team_name_for_list.as_str()))],
+                                                        )
+                                                        .as_str(),
+                                                    );
+                                                }
+                                                _ => {
+                                                    apply_for_list.set_sensitive(false);
+                                                    status_for_list.set_text(
+                                                        crate::tr!("main-list-unavailable-description").as_str(),
+                                                    );
+                                                }
+                                            }
+                                        });
+                                    }
+
+                                    let share_window_for_cancel = share_window.clone();
+                                    cancel_btn.connect_clicked(move |_| share_window_for_cancel.close());
+
+                                    let runtime_for_apply = runtime_for_share.clone();
+                                    let team_for_apply = Arc::clone(&team_for_share);
+                                    let vault_for_apply = Arc::clone(&vault_for_share);
+                                    let picker_ids_for_apply = Rc::clone(&vault_picker_ids);
+                                    let picker_for_apply = vault_picker.clone();
+                                    let window_for_result = window_for_share.clone();
+                                    let share_window_for_apply = share_window.clone();
+                                    let on_state_changed_for_result = Rc::clone(&on_state_changed_for_share);
+                                    share_apply_btn.connect_clicked(move |_| {
+                                        let selected = picker_for_apply.selected();
+                                        if selected == 0 {
+                                            Self::show_error(
+                                                &window_for_result,
+                                                AppError::Validation(
+                                                    crate::tr!("manage-teams-error-select-vault").to_string(),
+                                                ),
+                                            );
+                                            return;
+                                        }
+
+                                        let index = (selected - 1) as usize;
+                                        let ids = picker_ids_for_apply.borrow();
+                                        if index >= ids.len() {
+                                            Self::show_error(
+                                                &window_for_result,
+                                                AppError::Validation(
+                                                    crate::tr!("manage-teams-error-select-vault").to_string(),
+                                                ),
+                                            );
+                                            return;
+                                        }
+
+                                        let vault_id = ids[index];
+                                        let master_for_task = current_master.clone();
+
+                                        let (sender, receiver) = tokio::sync::oneshot::channel();
+                                        let runtime_for_task = runtime_for_apply.clone();
+                                        let team_for_task = Arc::clone(&team_for_apply);
+                                        let vault_for_task = Arc::clone(&vault_for_apply);
+                                        std::thread::spawn(move || {
+                                            let result = runtime_for_task.block_on(async move {
+                                                let vault_key = vault_for_task
+                                                    .open_vault_for_user(
+                                                        actor_user_id,
+                                                        vault_id,
+                                                        SecretBox::new(Box::new(master_for_task)),
+                                                    )
+                                                    .await?;
+
+                                                team_for_task
+                                                    .share_vault_with_team(
+                                                        actor_user_id,
+                                                        vault_id,
+                                                        team_id,
+                                                        vault_key,
+                                                        &[],
+                                                    )
+                                                    .await
+                                            });
+                                            let _ = sender.send(result);
+                                        });
+
+                                        let share_window_close = share_window_for_apply.clone();
+                                        let window_for_result_inner = window_for_result.clone();
+                                        let on_state_changed_for_result_inner = Rc::clone(&on_state_changed_for_result);
+                                        glib::MainContext::default().spawn_local(async move {
+                                            match receiver.await {
+                                                Ok(Ok(())) => {
+                                                    share_window_close.close();
+                                                    on_state_changed_for_result_inner();
+                                                    Self::show_warning(
+                                                        &window_for_result_inner,
+                                                        crate::tr!("manage-teams-warning-share-title").as_str(),
+                                                        crate::tr!("manage-teams-warning-share-body").as_str(),
+                                                    );
+                                                }
+                                                Ok(Err(err)) => Self::show_error(&window_for_result_inner, err),
+                                                Err(_) => Self::show_error(&window_for_result_inner, AppError::Internal),
+                                            }
+                                        });
                                     });
 
-                                    let window_for_result = window_for_share.clone();
-                                    let on_state_changed_for_result = Rc::clone(&on_state_changed_for_share);
-                                    glib::MainContext::default().spawn_local(async move {
-                                        match receiver.await {
-                                            Ok(Ok(())) => {
-                                                on_state_changed_for_result();
-                                                Self::show_warning(
-                                                    &window_for_result,
-                                                    crate::tr!("manage-teams-warning-share-title").as_str(),
-                                                    crate::tr!("manage-teams-warning-share-body").as_str(),
-                                                );
-                                            }
-                                            Ok(Err(err)) => Self::show_error(&window_for_result, err),
-                                            Err(_) => Self::show_error(&window_for_result, AppError::Internal),
-                                        }
-                                    });
+                                    share_window.present();
                                 });
 
                                 let runtime_for_delete = runtime_for_recv.clone();

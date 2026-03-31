@@ -1236,6 +1236,88 @@
         background: transparent;
     }
 
+    .vault-secret-status-row {
+        border-radius: 18px;
+        border: 1px solid rgba(87, 185, 177, 0.38);
+        background: linear-gradient(135deg, rgba(255, 255, 255, 0.94), rgba(239, 249, 246, 0.96));
+        box-shadow:
+            0 10px 24px rgba(7, 57, 58, 0.08),
+            inset 0 1px 0 rgba(255, 255, 255, 0.74);
+        padding: 10px 12px;
+    }
+
+    .vault-secret-status-chip {
+        border-radius: 999px;
+        border: 1px solid rgba(19, 161, 161, 0.16);
+        background: rgba(19, 161, 161, 0.08);
+        padding: 4px 6px 4px 10px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.62);
+    }
+
+    .vault-secret-status-chip-warning {
+        background: linear-gradient(135deg, rgba(231, 76, 60, 0.08), rgba(255, 193, 7, 0.12));
+        border-color: rgba(231, 76, 60, 0.18);
+    }
+
+    .vault-secret-status-icon {
+        color: #0A5F5C;
+        opacity: 0.92;
+    }
+
+    .vault-secret-status-chip-warning .vault-secret-status-icon {
+        color: #C01C28;
+    }
+
+    .vault-secret-status-badge {
+        min-width: 28px;
+        padding-left: 10px;
+        padding-right: 10px;
+        background: rgba(19, 161, 161, 0.18);
+    }
+
+    .vault-secret-status-badge-warning {
+        color: #C01C28;
+        background: rgba(231, 76, 60, 0.12);
+        border: 1px solid rgba(231, 76, 60, 0.22);
+    }
+
+    .vault-secret-sort-switch {
+        border-radius: 999px;
+        border: 1px solid rgba(87, 185, 177, 0.35);
+        background: rgba(255, 255, 255, 0.76);
+        padding: 4px;
+        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.78);
+    }
+
+    button.vault-secret-sort-button {
+        min-width: 34px;
+        min-height: 34px;
+        border-radius: 999px;
+        border: 1px solid transparent;
+        background: transparent;
+        color: #5A7072;
+        transition: all 180ms ease;
+    }
+
+    button.vault-secret-sort-button:hover {
+        background: rgba(19, 161, 161, 0.10);
+        color: #0A5F5C;
+        border-color: rgba(87, 185, 177, 0.32);
+    }
+
+    button.vault-secret-sort-button:active {
+        background: rgba(19, 161, 161, 0.16);
+    }
+
+    button.vault-secret-sort-button.vault-secret-sort-button-active {
+        background: linear-gradient(120deg, #13A1A1, #1F8678);
+        color: #FFFFFF;
+        border-color: rgba(7, 57, 58, 0.22);
+        box-shadow:
+            0 8px 16px rgba(7, 57, 58, 0.18),
+            inset 0 1px 0 rgba(255, 255, 255, 0.22);
+    }
+
     .audit-count-badge {
         min-width: 24px;
         padding: 2px 8px;
@@ -1804,6 +1886,22 @@ list.main-category-list row:selected {
 
 .main-sidebar-icon {
     color: #0A5F5C;
+}
+
+.vault-shared-indicator {
+    color: #1B7D78;
+    opacity: 0.95;
+}
+
+.vault-share-role-badge {
+    border-radius: 999px;
+    border: 1px solid rgba(19, 161, 161, 0.32);
+    background: rgba(19, 161, 161, 0.12);
+    color: #0A5F5C;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.4px;
+    padding: 2px 8px;
 }
 
 .main-sidebar-label {

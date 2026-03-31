@@ -7,6 +7,7 @@ use std::process::Command;
 use std::cell::RefCell;
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 use gtk4::gdk;
@@ -18,6 +19,7 @@ use secrecy::{ExposeSecret, SecretBox};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Row, SqlitePool};
 use tokio::runtime::Builder;
+use tracing::debug;
 use tracing::info;
 use tracing::warn;
 use chrono::Local;
@@ -304,23 +306,36 @@ fn main() -> Result<()> {
 					app_for_restore_completed.quit();
 				},
 				move |session: AuthenticatedSession| {
+					let login_success_started = Instant::now();
+					info!("login flow trace: authenticated callback entered");
 					let session_user_id = session.user_id;
 					let session_username = session.username.clone();
 					let session_identity_label = session.identity_label.clone();
 					let session_master_key = session.master_key.expose_secret().clone();
+				debug!(key_len = session_master_key.len(), "session master key derived on login");
 
-					let preferred_language = runtime_for_success.block_on(async {
+					let profile_load_started = Instant::now();
+					let user_profile = runtime_for_success.block_on(async {
 						context_for_success
 							.user_service
 							.get_user_profile(session_user_id)
 							.await
 							.ok()
-							.map(|user| user.preferred_language)
 					});
-					if let Some(language) = preferred_language {
+					info!(
+						elapsed_ms = profile_load_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: post-login profile resolved"
+					);
+					let is_admin = user_profile
+						.as_ref()
+						.map(|u| matches!(u.role, heelonvault_rust::models::UserRole::Admin))
+						.unwrap_or(false);
+					if let Some(language) = user_profile.as_ref().map(|u| u.preferred_language.clone()) {
 						let _ = heelonvault_rust::i18n::set_language(language.as_str());
 					}
 
+					let main_window_build_started = Instant::now();
 					let main_for_success = Rc::new(MainWindow::new(
 							&app_for_main_success,
 						runtime_for_success.clone(),
@@ -338,10 +353,22 @@ fn main() -> Result<()> {
 						session_user_id,
 						session_master_key,
 						session_identity_label,
+						is_admin,
 					));
+					info!(
+						elapsed_ms = main_window_build_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: MainWindow::new completed"
+					);
 					main_for_success.window().set_icon_name(Some("heelonvault"));
 
+					let refresh_entries_started = Instant::now();
 					main_for_success.refresh_entries();
+					info!(
+						elapsed_ms = refresh_entries_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: refresh_entries invoked"
+					);
 
 					let runtime_for_history = runtime_for_success.clone();
 					let pool_for_history = context_for_success.pool.clone();
@@ -396,7 +423,20 @@ fn main() -> Result<()> {
 
 					*active_main_for_success.borrow_mut() = Some(Rc::clone(&main_for_success));
 
+					let present_started = Instant::now();
 					main_for_success.window().present();
+					info!(
+						elapsed_ms = present_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: main window present() called"
+					);
+					let login_success_started_for_idle = login_success_started;
+					glib::idle_add_local_once(move || {
+						info!(
+							total_elapsed_ms = login_success_started_for_idle.elapsed().as_millis() as u64,
+							"login flow trace: main loop reached first idle after present"
+						);
+					});
 					main_for_success.activate_auto_lock();
 				},
 				move || {

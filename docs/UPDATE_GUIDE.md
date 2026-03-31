@@ -71,6 +71,9 @@ Verifications fonctionnelles recommandees:
 2. Se reconnecter immédiatement: la grille des cartes doit être rechargée.
 3. Ouvrir `Profil & Sécurité` et changer la préférence d'affichage du mot de passe en édition.
 4. Modifier un secret de type mot de passe pour vérifier le comportement du champ selon la préférence.
+5. En tant qu'admin, ouvrir `Equipes` puis lancer un partage: un sélecteur explicite de coffre doit être proposé avant confirmation.
+6. Vérifier qu'un membre de team reçoit bien le coffre partagé et peut l'ouvrir selon son rôle (READ/WRITE/ADMIN).
+7. Vérifier le marquage visuel d'un coffre partagé: icône de partage visible sur les coffres partagés, sans badge texte redondant côté propriétaire/admin.
 
 ## Bonnes pratiques
 

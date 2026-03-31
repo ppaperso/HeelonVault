@@ -47,6 +47,11 @@ pub trait VaultService {
     async fn list_owned_vaults(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError>;
     async fn list_shared_vaults(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError>;
     async fn list_shared_vault_access(&self, user_id: Uuid) -> Result<Vec<AccessibleVault>, AppError>;
+    async fn is_vault_shared_with_others(
+        &self,
+        user_id: Uuid,
+        vault_id: Uuid,
+    ) -> Result<bool, AppError>;
     async fn delete_vault(&self, requester_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
 }
 
@@ -323,6 +328,32 @@ where
             .into_iter()
             .filter(|record| record.vault.owner_user_id != user_id)
             .collect())
+    }
+
+    async fn is_vault_shared_with_others(
+        &self,
+        user_id: Uuid,
+        vault_id: Uuid,
+    ) -> Result<bool, AppError> {
+        let user = self
+            .user_repo
+            .get_by_id(user_id)
+            .await?
+            .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+        check_permission(&user, Action::VaultList, &Resource::Global)?;
+
+        let access = self
+            .vault_repo
+            .get_vault_with_permission(user_id, vault_id)
+            .await?
+            .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+
+        if access.vault.owner_user_id != user_id {
+            return Ok(false);
+        }
+
+        let shared_user_ids = self.vault_repo.list_key_share_user_ids(vault_id).await?;
+        Ok(!shared_user_ids.is_empty())
     }
 
     async fn delete_vault(&self, requester_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
@@ -624,6 +655,7 @@ mod tests {
         async fn delete_user(&self, _: Uuid) -> Result<(), AppError> { Ok(()) }
         async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> { Ok(()) }
         async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> { Ok(vec![]) }
+        async fn get_password_envelope_by_user_id(&self, _: Uuid) -> Result<Option<SecretBox<Vec<u8>>>, AppError> { Ok(None) }
         async fn update_user_profile(&self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>) -> Result<(), AppError> { Ok(()) }
         async fn update_password_envelope(&self, _: Uuid, _: SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
         async fn update_totp_secret_envelope(&self, _: Uuid, _: SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
