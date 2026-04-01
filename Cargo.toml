@@ -1,6 +1,6 @@
 [package]
 name = "heelonvault-rust"
-version = "0.9.2-beta"
+version = "0.9.3-beta"
 edition = "2021"
 license-file = "LICENSE"
 description = "HeelonVault Rust migration skeleton (security-first architecture)"
