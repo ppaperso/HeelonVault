@@ -4,7 +4,7 @@ use std::sync::Mutex;
 
 use secrecy::{ExposeSecret, SecretBox, SecretString};
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::services::crypto_service::CryptoService;
 
 const PASSWORD_ENVELOPE_VERSION: u8 = 1;
@@ -208,7 +208,7 @@ where
                 .map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
-                .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
             (
                 SecretBox::new(Box::new(record.password_salt.expose_secret().clone())),
                 record.password_hash.expose_secret().clone(),
@@ -250,7 +250,7 @@ where
                 .map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
-                .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
 
             SecretBox::new(Box::new(record.password_salt.expose_secret().clone()))
         };
@@ -262,7 +262,7 @@ where
                 .map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
-                .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
             record.password_hash.expose_secret().clone()
         };
 
@@ -274,7 +274,7 @@ where
             derived_current.expose_secret().as_slice(),
             expected_hash.as_slice(),
         ) {
-            return Err(AppError::Authorization("invalid current password".to_string()));
+            return Err(AppError::Authorization(AccessDeniedReason::InvalidCredentials));
         }
 
         let new_salt = self.crypto_service.generate_kdf_salt().await?;
@@ -286,7 +286,7 @@ where
             .map_err(|_| AppError::Internal)?;
         let record = credentials
             .get_mut(username)
-            .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
         record.password_salt = new_salt;
         record.password_hash = new_hash;
 
@@ -361,7 +361,7 @@ where
             .map_err(|_| AppError::Internal)?;
         let record = credentials
             .get(username)
-            .ok_or_else(|| AppError::Authorization("invalid credentials".to_string()))?;
+            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
 
         Ok(Self::encode_password_envelope(record))
     }

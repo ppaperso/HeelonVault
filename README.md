@@ -19,8 +19,11 @@ avec GTK4 / libadwaita et SQLite.
 | **Chiffrement** | AES-256-GCM côté application — les secrets ne quittent jamais la machine en clair |
 | **Authentification** | Hachage Argon2id (résistant aux GPU) + TOTP 2FA (RFC 6238) |
 | **Multi-utilisateur** | Comptes séparés avec coffres isolés par utilisateur |
-| **Persistance** | SQLite local, versionné par migrations `sqlx` (9 migrations, sans interruption de service) |
-| **Import / Export** | Import CSV, export `.hvb` |
+| **Bootstrap** | Assistant d'initialisation guidé en 3 étapes pour la création du premier compte administrateur |
+| **Clé de récupération** | Phrase mnémotechnique 24 mots (style BIP39) générée à l'initialisation ; exportable depuis le profil ; copie avec effacement presse-papier automatique (60 s) |
+| **Persistance** | SQLite local, versionné par migrations `sqlx` (14 migrations, sans interruption de service) |
+| **Import / Export** | Import CSV, export `.hvb` avec contrôle d'accès RBAC |
+| **Journal d'audit** | Traçabilité des actions sensibles (création/modification/suppression de secrets, partages) |
 | **Corbeille** | Suppression logique avec restauration et purge définitive |
 | **Auto-verrouillage** | Politique configurable : 1 / 5 / 15 / 30 minutes ou jamais |
 | **Tableau de bord** | Fenêtre de sécurité dédiée avec score global du coffre |
@@ -188,3 +191,23 @@ cargo test
 - couverture FR/EN sur l'ensemble des documents Markdown opérationnels;
 - index central de documentation bilingue dans `docs/README.md`;
 - synchronisation des versions documentées et des chemins runtime avec l'état actuel du projet.
+
+### Bootstrap, clé de récupération et sauvegarde sécurisée (avril 2026)
+
+- assistant d'initialisation en 3 étapes intégré dans la fenêtre de login : identity (nom + mot de passe) → oath (affichage + vérification de la clé de récupération 24 mots) → pending (spinner de création du compte) ;
+- génération d'une phrase mnémotechnique 24 mots via `BackupService::generate_recovery_key()` lors du premier démarrage ;
+- vérification obligatoire de 2 mots tirés au sort avant de valider l'initialisation ;
+- copie presse-papier de la phrase avec effacement automatique après 60 secondes (et à la fermeture du dialogue) ;
+- Ré-export de la clé de récupération disponible depuis `Profil & Sécurité` pour tout admin ;
+- ajout du `BackupApplicationService` : contrôle d'accès RBAC sur les exports et imports `.hvb` ;
+- mise en place du journal d'audit (table `audit_log`, migration 0013) pour les actions sensibles.
+
+### Partage equipe, RBAC et UX admin (mars 2026)
+
+- correction du partage de coffre vers une team: derive une cle membre depuis `password_envelope` quand la cle explicite n'est pas fournie par l'UI;
+- protection anti faux-positif: echec explicite si aucun membre n'a recu de cle de coffre (`granted = 0`);
+- ajout d'un selecteur explicite de coffre dans le dialogue de partage team (plus d'ambiguite sur le coffre cible);
+- ajout d'un badge ADMIN dans l'entete a cote de l'identite connectee;
+- affichage de l'etat "coffre partage" pour les coffres du proprietaire (icone de partage conservee, badge texte retire pour eviter le doublon visuel);
+- harmonisation des labels de badges FR en majuscules (ex: ADMIN, DOUBLON, ACTIVEE);
+- nettoyage i18n: suppression de la cle obsolet `main-vault-shared-badge` en FR/EN.

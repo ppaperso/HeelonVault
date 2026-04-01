@@ -13,6 +13,22 @@ pub trait UserRepository {
         &self,
         identifier: &str,
     ) -> Result<Option<String>, AppError>;
+    async fn list_all(&self) -> Result<Vec<User>, AppError>;
+    async fn create_user_db(
+        &self,
+        user_id: Uuid,
+        username: &str,
+        role: &UserRole,
+    ) -> Result<(), AppError>;
+    async fn delete_user(&self, user_id: Uuid) -> Result<(), AppError>;
+    async fn update_user_role(&self, user_id: Uuid, role: &UserRole) -> Result<(), AppError>;
+    /// Returns (username, password_envelope_bytes) for every user that has an envelope.
+    /// Used at startup to populate the in-memory AuthService for all users.
+    async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError>;
+    async fn get_password_envelope_by_user_id(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<SecretBox<Vec<u8>>>, AppError>;
     async fn update_user_profile(
         &self,
         user_id: Uuid,
@@ -56,6 +72,13 @@ impl SqlxUserRepository {
             "user" => Ok(UserRole::User),
             "admin" => Ok(UserRole::Admin),
             _ => Err(AppError::Storage("invalid user role in storage".to_string())),
+        }
+    }
+
+    fn format_role(role: &UserRole) -> &'static str {
+        match role {
+            UserRole::Admin => "admin",
+            UserRole::User  => "user",
         }
     }
 }
@@ -222,6 +245,27 @@ impl UserRepository for SqlxUserRepository {
         }
     }
 
+    async fn get_password_envelope_by_user_id(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
+        let row_opt = sqlx::query("SELECT password_envelope FROM users WHERE id = ?1")
+            .bind(user_id.to_string())
+            .fetch_optional(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("get password envelope by user id", err))?;
+
+        match row_opt {
+            Some(row) => {
+                let envelope_bytes: Option<Vec<u8>> = row
+                    .try_get("password_envelope")
+                    .map_err(|err| Self::map_storage_err("read password envelope", err))?;
+                Ok(envelope_bytes.map(|value| SecretBox::new(Box::new(value))))
+            }
+            None => Ok(None),
+        }
+    }
+
     async fn update_user_profile(
         &self,
         user_id: Uuid,
@@ -317,6 +361,154 @@ impl UserRepository for SqlxUserRepository {
         }
 
         Ok(())
+    }
+
+    async fn list_all(&self) -> Result<Vec<User>, AppError> {
+        let rows = sqlx::query(
+            "SELECT id, username, role, email, display_name, \
+             COALESCE(NULLIF(preferred_language, ''), 'fr') AS preferred_language, \
+             show_passwords_in_edit, updated_at \
+             FROM users ORDER BY username",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list all users", err))?;
+
+        let mut users = Vec::with_capacity(rows.len());
+        for row in rows {
+            let id_str: String = row
+                .try_get("id")
+                .map_err(|err| Self::map_storage_err("read user id", err))?;
+            let username: String = row
+                .try_get("username")
+                .map_err(|err| Self::map_storage_err("read username", err))?;
+            let role_raw: String = row
+                .try_get("role")
+                .map_err(|err| Self::map_storage_err("read role", err))?;
+            let email: Option<String> = row
+                .try_get("email")
+                .map_err(|err| Self::map_storage_err("read email", err))?;
+            let display_name: Option<String> = row
+                .try_get("display_name")
+                .map_err(|err| Self::map_storage_err("read display_name", err))?;
+            let preferred_language: String = row
+                .try_get("preferred_language")
+                .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
+            let show_passwords_in_edit: i64 = row
+                .try_get("show_passwords_in_edit")
+                .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
+            let updated_at: Option<String> = row
+                .try_get("updated_at")
+                .map_err(|err| Self::map_storage_err("read updated_at", err))?;
+            let parsed_id = Uuid::parse_str(&id_str)
+                .map_err(|err| Self::map_storage_err("parse user id", err))?;
+            let role = Self::parse_role(&role_raw)?;
+            users.push(User {
+                id: parsed_id,
+                username,
+                role,
+                email,
+                display_name,
+                preferred_language,
+                show_passwords_in_edit: show_passwords_in_edit != 0,
+                updated_at,
+            });
+        }
+        Ok(users)
+    }
+
+    async fn create_user_db(
+        &self,
+        user_id: Uuid,
+        username: &str,
+        role: &UserRole,
+    ) -> Result<(), AppError> {
+        sqlx::query("INSERT INTO users (id, username, role) VALUES (?1, ?2, ?3)")
+            .bind(user_id.to_string())
+            .bind(username)
+            .bind(Self::format_role(role))
+            .execute(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("create user in db", err))?;
+        Ok(())
+    }
+
+    async fn delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
+        let user_id_str = user_id.to_string();
+
+        let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE id = ?1")
+            .bind(&user_id_str)
+            .fetch_one(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("check user exists before delete", err))?;
+        if exists == 0 {
+            return Err(AppError::NotFound("user not found for deletion".to_string()));
+        }
+
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|err| Self::map_storage_err("begin transaction for delete user", err))?;
+
+        // login_history has no ON DELETE CASCADE — must be cleaned up manually
+        sqlx::query("DELETE FROM login_history WHERE user_id = ?1")
+            .bind(&user_id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| Self::map_storage_err("delete login history for user", err))?;
+
+        // All other FK references cascade automatically (vaults → secret_items,
+        // team_members, vault_key_shares) or are SET NULL (audit_log, teams.created_by,
+        // accessible_vaults).
+        sqlx::query("DELETE FROM users WHERE id = ?1")
+            .bind(&user_id_str)
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| Self::map_storage_err("delete user", err))?;
+
+        tx.commit()
+            .await
+            .map_err(|err| Self::map_storage_err("commit delete user transaction", err))?;
+
+        Ok(())
+    }
+
+    async fn update_user_role(&self, user_id: Uuid, role: &UserRole) -> Result<(), AppError> {
+        let result = sqlx::query(
+            "UPDATE users SET role = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
+        )
+        .bind(Self::format_role(role))
+        .bind(user_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("update user role", err))?;
+        if result.rows_affected() == 0 {
+            return Err(AppError::NotFound("user not found for role update".to_string()));
+        }
+        Ok(())
+    }
+
+    async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> {
+        let rows = sqlx::query(
+            "SELECT username, password_envelope FROM users \
+             WHERE password_envelope IS NOT NULL",
+        )
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list all password envelopes", err))?;
+
+        let mut result = Vec::with_capacity(rows.len());
+        for row in rows {
+            let username: String = row
+                .try_get("username")
+                .map_err(|err| Self::map_storage_err("read username for envelope", err))?;
+            let envelope: Vec<u8> = row
+                .try_get("password_envelope")
+                .map_err(|err| Self::map_storage_err("read password envelope", err))?;
+            result.push((username, envelope));
+        }
+        Ok(result)
     }
 }
 

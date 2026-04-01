@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::models::User;
 use crate::repositories::user_repository::UserRepository;
 use crate::services::auth_service::AuthService;
@@ -20,6 +20,7 @@ pub struct UserProfileUpdate {
 #[allow(async_fn_in_trait)]
 pub trait UserService {
     async fn get_user_profile(&self, user_id: Uuid) -> Result<User, AppError>;
+    async fn get_user_profile_by_username(&self, username: &str) -> Result<User, AppError>;
     async fn resolve_username_for_login_identifier(
         &self,
         identifier: &str,
@@ -74,6 +75,15 @@ where
         Ok(user)
     }
 
+    async fn get_user_profile_by_username(&self, username: &str) -> Result<User, AppError> {
+        let user = self
+            .user_repo
+            .get_by_username(username)
+            .await?
+            .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
+        Ok(user)
+    }
+
     async fn resolve_username_for_login_identifier(
         &self,
         identifier: &str,
@@ -113,7 +123,7 @@ where
         if email_changed {
             let current_password = update.current_password.ok_or_else(|| {
                 AppError::Authorization(
-                    "current password is required to change email".to_string(),
+                    AccessDeniedReason::PasswordRequiredForChange,
                 )
             })?;
 
@@ -123,7 +133,7 @@ where
                 .await?;
             if !password_ok {
                 warn!(user_id = %user_id, "profile update denied: wrong current password for email change");
-                return Err(AppError::Authorization("invalid current password".to_string()));
+                return Err(AppError::Authorization(AccessDeniedReason::InvalidCredentials));
             }
         }
 

@@ -10,6 +10,7 @@ pub trait SecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError>;
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_all_trash_by_owner_id(&self, owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn insert_secret_blob(
         &self,
         item: &SecretItem,
@@ -222,6 +223,27 @@ impl SecretRepository for SqlxSecretRepository {
         Ok(items)
     }
 
+    async fn list_all_trash_by_owner_id(&self, owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        let rows = sqlx::query(
+            "SELECT s.id, s.vault_id, s.secret_type, s.title, s.metadata_json, s.tags, s.expires_at, s.created_at, s.modified_at, s.usage_count, s.blob_storage, s.secret_blob, s.file_blob_ref, s.deleted_at
+             FROM secret_items s
+             INNER JOIN vaults v ON v.id = s.vault_id
+             WHERE v.owner_user_id = ?1 AND s.deleted_at IS NOT NULL
+             ORDER BY s.deleted_at DESC, s.id DESC",
+        )
+        .bind(owner_user_id.to_string())
+        .fetch_all(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("list all trashed secrets by owner", err))?;
+
+        let mut items = Vec::with_capacity(rows.len());
+        for row in rows {
+            items.push(Self::row_to_secret_item(&row)?);
+        }
+
+        Ok(items)
+    }
+
     async fn insert_secret_blob(
         &self,
         item: &SecretItem,
@@ -390,6 +412,35 @@ impl SecretRepository for SqlxSecretRepository {
     }
 
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
+        let mut tx = self
+            .pool
+            .begin()
+            .await
+            .map_err(|err| Self::map_storage_err("start restore transaction", err))?;
+
+        let vault_deleted_at: Option<String> = sqlx::query_scalar(
+            "SELECT deleted_at
+             FROM vaults
+             WHERE id = ?1",
+        )
+        .bind(vault_id.to_string())
+        .fetch_optional(&mut *tx)
+        .await
+        .map_err(|err| Self::map_storage_err("load vault state for restore", err))?
+        .ok_or_else(|| AppError::Storage("vault not found for restore".to_string()))?;
+
+        if vault_deleted_at.is_some() {
+            sqlx::query(
+                "UPDATE vaults
+                 SET deleted_at = NULL
+                 WHERE id = ?1 AND deleted_at IS NOT NULL",
+            )
+            .bind(vault_id.to_string())
+            .execute(&mut *tx)
+            .await
+            .map_err(|err| Self::map_storage_err("restore parent vault", err))?;
+        }
+
         let result = sqlx::query(
             "UPDATE secret_items
              SET deleted_at = NULL
@@ -397,13 +448,17 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(secret_id.to_string())
         .bind(vault_id.to_string())
-        .execute(&self.pool)
+        .execute(&mut *tx)
         .await
         .map_err(|err| Self::map_storage_err("restore secret", err))?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage("secret not found in trash".to_string()));
         }
+
+        tx.commit()
+            .await
+            .map_err(|err| Self::map_storage_err("commit restore transaction", err))?;
 
         Ok(())
     }
@@ -460,6 +515,18 @@ mod tests {
             .map_err(|err| format!("connect in-memory sqlite: {err}"))?;
 
         sqlx::query(
+            "CREATE TABLE vaults (
+                id TEXT PRIMARY KEY NOT NULL,
+                owner_user_id TEXT,
+                name TEXT,
+                deleted_at TEXT
+            )",
+        )
+        .execute(&pool)
+        .await
+        .map_err(|err| format!("create vaults table: {err}"))?;
+
+        sqlx::query(
             "CREATE TABLE secret_items (
                 id TEXT PRIMARY KEY NOT NULL,
                 vault_id TEXT NOT NULL,
@@ -482,6 +549,32 @@ mod tests {
         .map_err(|err| format!("create secret_items table: {err}"))?;
 
         Ok(SqlxSecretRepository::new(pool))
+    }
+
+    async fn insert_vault(
+        repo: &SqlxSecretRepository,
+        vault_id: Uuid,
+        is_deleted: bool,
+    ) -> Result<(), String> {
+        let deleted_at = if is_deleted {
+            Some("2026-01-01T00:00:00Z")
+        } else {
+            None
+        };
+
+        sqlx::query(
+            "INSERT INTO vaults (id, owner_user_id, name, deleted_at)
+             VALUES (?1, ?2, ?3, ?4)",
+        )
+        .bind(vault_id.to_string())
+        .bind(Uuid::new_v4().to_string())
+        .bind("Test Vault")
+        .bind(deleted_at)
+        .execute(&repo.pool)
+        .await
+        .map_err(|err| format!("insert vault row: {err}"))?;
+
+        Ok(())
     }
 
     fn build_item(vault_id: Uuid, storage: BlobStorage) -> SecretItem {
@@ -810,6 +903,12 @@ mod tests {
         };
 
         let vault_id = Uuid::new_v4();
+        let insert_vault_result = insert_vault(&repo, vault_id, false).await;
+        assert!(insert_vault_result.is_ok(), "vault insert should succeed");
+        if insert_vault_result.is_err() {
+            return;
+        }
+
         let item = build_item(vault_id, BlobStorage::Inline);
         let insert_result = repo
             .insert_secret_blob(&item, SecretBox::new(Box::new(vec![8_u8, 8_u8])))
@@ -867,6 +966,72 @@ mod tests {
             Err(_) => return,
         };
         assert!(by_id.is_none());
+    }
+
+    #[tokio::test]
+    async fn restore_secret_auto_restores_deleted_vault() {
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "repo setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let vault_id = Uuid::new_v4();
+        let insert_vault_result = insert_vault(&repo, vault_id, true).await;
+        assert!(insert_vault_result.is_ok(), "vault insert should succeed");
+        if insert_vault_result.is_err() {
+            return;
+        }
+
+        let item = build_item(vault_id, BlobStorage::Inline);
+        let insert_result = repo
+            .insert_secret_blob(&item, SecretBox::new(Box::new(vec![9_u8, 9_u8])))
+            .await;
+        assert!(insert_result.is_ok(), "insert should succeed");
+        if insert_result.is_err() {
+            return;
+        }
+
+        let delete_result = repo.soft_delete(item.id).await;
+        assert!(delete_result.is_ok(), "soft delete should succeed");
+        if delete_result.is_err() {
+            return;
+        }
+
+        let restore_result = repo.restore_secret(item.id, vault_id).await;
+        assert!(restore_result.is_ok(), "restore should succeed");
+        if restore_result.is_err() {
+            return;
+        }
+
+        let vault_state_result = sqlx::query("SELECT deleted_at FROM vaults WHERE id = ?1")
+            .bind(vault_id.to_string())
+            .fetch_optional(&repo.pool)
+            .await;
+        assert!(vault_state_result.is_ok(), "vault lookup should succeed");
+        let vault_row_opt = match vault_state_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert!(vault_row_opt.is_some(), "vault should exist");
+        let vault_row = match vault_row_opt {
+            Some(value) => value,
+            None => return,
+        };
+        let deleted_at: Option<String> = vault_row
+            .try_get("deleted_at")
+            .unwrap_or(Some("unexpected".to_string()));
+        assert!(deleted_at.is_none(), "vault should be restored");
+
+        let active_result = repo.list_by_vault_id(vault_id).await;
+        assert!(active_result.is_ok(), "active list should succeed");
+        let active_items = match active_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+        assert_eq!(active_items.len(), 1);
+        assert_eq!(active_items[0].id, item.id);
     }
 
     #[tokio::test]

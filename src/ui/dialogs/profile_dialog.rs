@@ -1,15 +1,13 @@
 use std::cell::Cell;
-use std::fs;
 use std::path::PathBuf;
 use std::rc::Rc;
 use std::sync::Arc;
 
-use chrono::Local;
 use gtk4::glib;
 use gtk4::prelude::*;
 use libadwaita as adw;
 use libadwaita::prelude::*;
-use secrecy::{ExposeSecret, SecretBox};
+use secrecy::SecretBox;
 use tokio::runtime::Handle;
 use tracing::{info, warn};
 use uuid::Uuid;
@@ -22,6 +20,7 @@ use crate::services::import_service::ImportService;
 use crate::services::secret_service::SecretService;
 use crate::services::user_service::{UserProfileUpdate, UserService};
 use crate::services::vault_service::VaultService;
+use crate::ui::dialogs::recovery_key_export_dialog::{ExportRunner, RecoveryKeyExportDialog, RecoveryKeyExportDialogDeps};
 use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
 
 pub struct ProfileDialog;
@@ -341,398 +340,51 @@ impl ProfileDialog {
         let backup_for_export = Arc::clone(&backup_service);
         let db_path_for_export = database_path.clone();
         export_button.connect_clicked(move |_| {
-            let chooser = gtk4::FileChooserNative::builder()
-                .title(crate::tr!("profile-export-chooser-title").as_str())
-                .transient_for(&window_for_export)
-                .accept_label(crate::tr!("profile-export-accept").as_str())
-                .cancel_label(crate::tr!("common-cancel").as_str())
-                .action(gtk4::FileChooserAction::Save)
-                .build();
-            chooser.set_current_name("heelonvault_backup.hvb");
+            let parent_for_dialog = window_for_export.clone();
+            let backup_for_dialog = Arc::clone(&backup_for_export);
+            let backup_for_dialog_for_service = Arc::clone(&backup_for_dialog);
+            let db_path_for_dialog = db_path_for_export.clone();
 
-            let window_for_response = window_for_export.clone();
-            let backup_for_response = Arc::clone(&backup_for_export);
-            let db_path_for_response = db_path_for_export.clone();
-            chooser.connect_response(move |dialog, response| {
-                if response != gtk4::ResponseType::Accept {
-                    dialog.destroy();
-                    return;
-                }
-
-                let file_opt = dialog.file();
-                dialog.destroy();
-                let Some(file) = file_opt else {
-                    window_for_response.add_toast(adw::Toast::new(
-                        crate::tr!("profile-export-invalid-destination").as_str(),
-                    ));
-                    return;
+            let window_for_feedback = parent_for_dialog.clone();
+            let on_feedback: Rc<dyn Fn(&str, &str)> = Rc::new(move |title, body| {
+                let message = if title.is_empty() {
+                    body.to_string()
+                } else {
+                    format!("{}: {}", title, body)
                 };
-                let Some(mut backup_path) = file.path() else {
-                    window_for_response.add_toast(adw::Toast::new(
-                        crate::tr!("profile-export-invalid-path").as_str(),
-                    ));
-                    return;
-                };
-                if backup_path.extension().is_none() {
-                    backup_path.set_extension("hvb");
-                }
+                window_for_feedback.add_toast(adw::Toast::new(message.as_str()));
+            });
 
-                let recovery = match backup_for_response.generate_recovery_key() {
-                    Ok(value) => value,
-                    Err(_) => {
-                        window_for_response.add_toast(adw::Toast::new(
-                            crate::tr!("profile-export-recovery-key-failed").as_str(),
-                        ));
-                        return;
-                    }
-                };
-
-                let phrase_text = recovery.recovery_phrase.expose_secret().to_string();
-                let recovery_words: Vec<String> = phrase_text
-                    .split_whitespace()
-                    .map(|word| word.to_string())
-                    .collect();
-
-                if recovery_words.len() != 24 {
-                    window_for_response.add_toast(adw::Toast::new(
-                        crate::tr!("profile-export-recovery-invalid").as_str(),
-                    ));
-                    return;
-                }
-
-                let confirm_dialog = adw::MessageDialog::new(
-                    Some(&window_for_response),
-                    Some(crate::tr!("profile-export-recovery-dialog-title").as_str()),
-                    Some(crate::tr!("profile-export-recovery-dialog-body").as_str()),
-                );
-                confirm_dialog.add_response("cancel", crate::tr!("common-cancel").as_str());
-                confirm_dialog.add_response(
-                    "confirm",
-                    crate::tr!("profile-export-recovery-confirm").as_str(),
-                );
-                confirm_dialog.set_response_appearance(
-                    "confirm",
-                    adw::ResponseAppearance::Suggested,
-                );
-                confirm_dialog.set_response_enabled("confirm", false);
-
-                let content_box = gtk4::Box::builder()
-                    .orientation(gtk4::Orientation::Vertical)
-                    .spacing(10)
-                    .margin_top(8)
-                    .margin_bottom(8)
-                    .build();
-
-                let helper_label = gtk4::Label::new(Some(
-                    crate::tr!("profile-export-recovery-dialog-helper").as_str(),
-                ));
-                helper_label.set_wrap(true);
-                helper_label.set_halign(gtk4::Align::Start);
-                helper_label.add_css_class("dim-label");
-
-                let words_flow = gtk4::FlowBox::builder()
-                    .selection_mode(gtk4::SelectionMode::None)
-                    .max_children_per_line(2)
-                    .min_children_per_line(1)
-                    .column_spacing(8)
-                    .row_spacing(8)
-                    .build();
-
-                for (index, word) in recovery_words.iter().enumerate() {
-                    let chip_box = gtk4::Box::builder()
-                        .orientation(gtk4::Orientation::Horizontal)
-                        .spacing(8)
-                        .margin_top(6)
-                        .margin_bottom(6)
-                        .margin_start(8)
-                        .margin_end(8)
-                        .build();
-
-                    let number_label = gtk4::Label::new(Some(format!("{:02}.", index + 1).as_str()));
-                    number_label.add_css_class("dim-label");
-
-                    let separator_label = gtk4::Label::new(Some("|"));
-                    separator_label.add_css_class("dim-label");
-
-                    let word_label = gtk4::Label::new(Some(word.as_str()));
-                    word_label.add_css_class("monospace");
-                    word_label.set_selectable(true);
-                    word_label.set_xalign(0.0);
-
-                    chip_box.append(&number_label);
-                    chip_box.append(&separator_label);
-                    chip_box.append(&word_label);
-
-                    let frame = gtk4::Frame::new(None);
-                    frame.set_child(Some(&chip_box));
-                    words_flow.insert(&frame, -1);
-                }
-
-                let words_scroller = gtk4::ScrolledWindow::builder()
-                    .hscrollbar_policy(gtk4::PolicyType::Never)
-                    .vscrollbar_policy(gtk4::PolicyType::Automatic)
-                    .min_content_height(220)
-                    .max_content_height(300)
-                    .child(&words_flow)
-                    .build();
-
-                let actions_box = gtk4::Box::builder()
-                    .orientation(gtk4::Orientation::Horizontal)
-                    .spacing(8)
-                    .hexpand(true)
-                    .build();
-
-                let make_action_button = |icon: &str, label: &str| {
-                    let button = gtk4::Button::new();
-                    button.add_css_class("flat");
-                    let inner = gtk4::Box::builder()
-                        .orientation(gtk4::Orientation::Horizontal)
-                        .spacing(6)
-                        .build();
-                    inner.append(&gtk4::Image::from_icon_name(icon));
-                    inner.append(&gtk4::Label::new(Some(label)));
-                    button.set_child(Some(&inner));
-                    button
-                };
-
-                let copy_button = make_action_button(
-                    "edit-copy-symbolic",
-                    crate::tr!("profile-export-copy").as_str(),
-                );
-                let print_button = make_action_button(
-                    "printer-symbolic",
-                    crate::tr!("profile-export-print").as_str(),
-                );
-                let save_button = make_action_button(
-                    "document-save-symbolic",
-                    crate::tr!("profile-export-save-txt").as_str(),
-                );
-
-                actions_box.append(&copy_button);
-                actions_box.append(&print_button);
-                actions_box.append(&save_button);
-
-                content_box.append(&helper_label);
-                content_box.append(&words_scroller);
-                content_box.append(&actions_box);
-                confirm_dialog.set_extra_child(Some(&content_box));
-
-                let save_action_done = Rc::new(Cell::new(false));
-                let save_action_done_for_enable = Rc::clone(&save_action_done);
-                let dialog_for_enable = confirm_dialog.clone();
-                let enable_confirm = Rc::new(move || {
-                    if !save_action_done_for_enable.get() {
-                        save_action_done_for_enable.set(true);
-                        dialog_for_enable.set_response_enabled("confirm", true);
-                    }
-                });
-
-                let phrase_for_copy = phrase_text.clone();
-                let window_for_copy = window_for_response.clone();
-                let enable_for_copy = Rc::clone(&enable_confirm);
-                copy_button.connect_clicked(move |_| {
-                    let Some(display) = gtk4::gdk::Display::default() else {
-                        window_for_copy.add_toast(adw::Toast::new(
-                            crate::tr!("profile-export-clipboard-unavailable").as_str(),
-                        ));
-                        return;
-                    };
-
-                    let clipboard = display.clipboard();
-                    clipboard.set_text(phrase_for_copy.as_str());
-                    let clipboard_for_clear = clipboard.clone();
-                    glib::timeout_add_seconds_local(60, move || {
-                        clipboard_for_clear.set_text("");
-                        glib::ControlFlow::Break
-                    });
-                    window_for_copy.add_toast(adw::Toast::new(
-                        crate::tr!("profile-export-copied").as_str(),
-                    ));
-                    enable_for_copy();
-                });
-
-                let words_for_print = recovery_words.clone();
-                let window_for_print = window_for_response.clone();
-                let enable_for_print = Rc::clone(&enable_confirm);
-                print_button.connect_clicked(move |_| {
-                    info!("Recovery key print operation initiated");
-
-                    let print_operation = gtk4::PrintOperation::new();
-                    print_operation.connect_begin_print(|operation, _| {
-                        operation.set_n_pages(1);
-                    });
-
-                    let words = words_for_print.clone();
-                    let header_text = crate::tr!("profile-export-print-header");
-                    let date_label = crate::tr!("profile-export-print-date");
-                    print_operation.connect_draw_page(move |_, print_context, _| {
-                        let cr = print_context.cairo_context();
-
-                        let mut y = 36.0_f64;
-                        cr.select_font_face(
-                            "Monospace",
-                            gtk4::cairo::FontSlant::Normal,
-                            gtk4::cairo::FontWeight::Bold,
-                        );
-                        cr.set_font_size(16.0);
-                        cr.move_to(36.0, y);
-                        let _ = cr.show_text(header_text.as_str());
-
-                        y += 24.0;
-                        cr.select_font_face(
-                            "Monospace",
-                            gtk4::cairo::FontSlant::Normal,
-                            gtk4::cairo::FontWeight::Normal,
-                        );
-                        cr.set_font_size(11.0);
-                        let printed_at = Local::now().format("%d/%m/%Y %H:%M").to_string();
-                        cr.move_to(36.0, y);
-                        let _ = cr.show_text(
-                            format!("{}: {}", date_label.as_str(), printed_at).as_str(),
-                        );
-
-                        y += 28.0;
-                        cr.set_font_size(12.0);
-                        for (index, word) in words.iter().enumerate() {
-                            cr.move_to(36.0, y);
-                            let _ = cr.show_text(format!("{:02}. {}", index + 1, word).as_str());
-                            y += 18.0;
-                        }
-                    });
-
-                    match print_operation.run(
-                        gtk4::PrintOperationAction::PrintDialog,
-                        Some(&window_for_print),
-                    ) {
-                        Ok(result) => {
-                            if result != gtk4::PrintOperationResult::Cancel {
-                                enable_for_print();
-                            }
-                        }
-                        Err(_) => {
-                            window_for_print.add_toast(adw::Toast::new(
-                                crate::tr!("profile-export-print-failed").as_str(),
-                            ));
-                        }
-                    }
-                });
-
-                let words_for_file = recovery_words.clone();
-                let window_for_save = window_for_response.clone();
-                let enable_for_save = Rc::clone(&enable_confirm);
-                save_button.connect_clicked(move |_| {
-                    let chooser = gtk4::FileChooserNative::builder()
-                        .title(crate::tr!("profile-export-save-key-title").as_str())
-                        .transient_for(&window_for_save)
-                        .accept_label(crate::tr!("profile-export-save-key-accept").as_str())
-                        .cancel_label(crate::tr!("common-cancel").as_str())
-                        .action(gtk4::FileChooserAction::Save)
-                        .build();
-                    chooser.set_current_name("heelonvault_recovery_key.txt");
-
-                    let words_for_response = words_for_file.clone();
-                    let window_for_response = window_for_save.clone();
-                    let enable_for_response = Rc::clone(&enable_for_save);
-                    chooser.connect_response(move |dialog, response| {
-                        if response != gtk4::ResponseType::Accept {
-                            dialog.destroy();
-                            return;
-                        }
-
-                        let file_opt = dialog.file();
-                        dialog.destroy();
-                        let Some(file) = file_opt else {
-                            window_for_response.add_toast(adw::Toast::new(
-                                crate::tr!("profile-export-save-key-invalid-file").as_str(),
-                            ));
-                            return;
-                        };
-
-                        let Some(mut txt_path) = file.path() else {
-                            window_for_response.add_toast(adw::Toast::new(
-                                crate::tr!("profile-export-save-key-invalid-path").as_str(),
-                            ));
-                            return;
-                        };
-
-                        if txt_path.extension().is_none() {
-                            txt_path.set_extension("txt");
-                        }
-
-                        let mut content = format!("{}\n", crate::tr!("profile-export-print-header"));
-                        content.push_str(
-                            format!(
-                                "{}: {}\n\n",
-                                crate::tr!("profile-export-print-date"),
-                                Local::now().format("%d/%m/%Y %H:%M")
-                            )
-                            .as_str(),
-                        );
-                        for (index, word) in words_for_response.iter().enumerate() {
-                            content.push_str(format!("{:02}. {}\n", index + 1, word).as_str());
-                        }
-
-                        match fs::write(txt_path.as_path(), content.as_bytes()) {
-                            Ok(()) => {
-                                window_for_response.add_toast(adw::Toast::new(
-                                    crate::tr!("profile-export-save-key-saved").as_str(),
-                                ));
-                                enable_for_response();
-                            }
-                            Err(_) => {
-                                window_for_response.add_toast(adw::Toast::new(
-                                    crate::tr!("profile-export-save-key-failed").as_str(),
-                                ));
-                            }
-                        }
-                    });
-
-                    chooser.show();
-                });
-
-                let window_for_confirm = window_for_response.clone();
-                let backup_for_confirm = Arc::clone(&backup_for_response);
-                let db_path_for_confirm = db_path_for_response.clone();
-                confirm_dialog.connect_response(None, move |d, response_id| {
-                    d.close();
-                    if response_id != "confirm" {
-                        return;
-                    }
-
+            let run_export: ExportRunner = Rc::new(move |backup_path: PathBuf, recovery_phrase| {
+                let backup_for_task = Arc::clone(&backup_for_dialog);
+                let db_for_task = db_path_for_dialog.clone();
+                Box::pin(async move {
                     let (sender, receiver) = tokio::sync::oneshot::channel();
-                    let backup_for_task = Arc::clone(&backup_for_confirm);
-                    let db_for_task = db_path_for_confirm.clone();
-                    let backup_path_for_task = backup_path.clone();
-                    let recovery_for_task = recovery.recovery_phrase.clone();
                     std::thread::spawn(move || {
                         let result = backup_for_task.export_hvb_with_recovery_key(
                             db_for_task.as_path(),
-                            backup_path_for_task.as_path(),
-                            &recovery_for_task,
+                            backup_path.as_path(),
+                            &recovery_phrase,
                         );
-                        let _ = sender.send(result);
+                        let _ = sender.send(result.map(|_| ()));
                     });
 
-                    let window_for_result = window_for_confirm.clone();
-                    glib::MainContext::default().spawn_local(async move {
-                        match receiver.await {
-                            Ok(Ok(_)) => {
-                                window_for_result.add_toast(adw::Toast::new(
-                                    crate::tr!("profile-export-success-title").as_str(),
-                                ));
-                            }
-                            Ok(Err(_)) | Err(_) => {
-                                window_for_result.add_toast(adw::Toast::new(
-                                    crate::tr!("profile-export-failed").as_str(),
-                                ));
-                            }
-                        }
-                    });
-                });
-                confirm_dialog.present();
+                    match receiver.await {
+                        Ok(result) => result,
+                        Err(_) => Err(AppError::Internal),
+                    }
+                })
             });
 
-            chooser.show();
+            RecoveryKeyExportDialog::show(RecoveryKeyExportDialogDeps {
+                parent_window: parent_for_dialog.upcast::<gtk4::Window>(),
+                backup_service: backup_for_dialog_for_service,
+                cancel_label_key: "common-cancel",
+                on_feedback,
+                on_begin_critical: None,
+                on_end_critical: None,
+                run_export,
+            });
         });
 
         let window_for_import = window.clone();

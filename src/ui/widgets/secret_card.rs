@@ -19,6 +19,9 @@ pub struct SecretRowData {
 	pub health: String,          // "Robuste" or "Faible"
 	pub usage_count: u32,        // Number of times copied
 	pub is_duplicate: bool,      // Whether password is reused
+	pub is_shared_vault: bool,
+	pub can_edit: bool,
+	pub can_delete: bool,
 }
 
 /// A modern card widget for displaying a secret item
@@ -92,6 +95,14 @@ impl SecretCard {
 			badges_box.append(&dup_badge);
 		}
 
+		if data.is_shared_vault {
+			let shared_badge = Label::new(Some("Partagé"));
+			shared_badge.set_single_line_mode(true);
+			shared_badge.add_css_class("secret-badge");
+			shared_badge.add_css_class("badge-usage");
+			badges_box.append(&shared_badge);
+		}
+
 		// --- SEPARATOR ---
 		let separator = Separator::new(gtk4::Orientation::Horizontal);
 		separator.add_css_class("secret-card-separator");
@@ -119,6 +130,7 @@ impl SecretCard {
 		edit_button.add_css_class("secret-card-action-btn");
 		edit_button.set_tooltip_text(Some("Modifier"));
 		edit_button.set_hexpand(true);
+		edit_button.set_sensitive(data.can_edit);
 
 		let trash_button = Button::builder()
 			.icon_name("user-trash-symbolic")
@@ -127,6 +139,7 @@ impl SecretCard {
 		trash_button.add_css_class("secret-card-action-btn");
 		trash_button.set_tooltip_text(Some("Corbeille"));
 		trash_button.set_hexpand(true);
+		trash_button.set_sensitive(data.can_delete);
 
 		actions_box.append(&copy_button);
 		actions_box.append(&edit_button);

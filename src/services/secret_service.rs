@@ -1,9 +1,12 @@
+use std::sync::Arc;
+
 use secrecy::{ExposeSecret, SecretBox};
 use uuid::Uuid;
 
 use crate::errors::AppError;
-use crate::models::{BlobStorage, SecretItem, SecretType};
+use crate::models::{AuditAction, BlobStorage, SecretItem, SecretType};
 use crate::repositories::secret_repository::SecretRepository;
+use crate::services::audit_log_service::AuditLogService;
 use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN};
 
 #[derive(Debug)]
@@ -47,6 +50,7 @@ pub trait SecretService {
     ) -> Result<(), AppError>;
     async fn list_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn list_trash_by_vault(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_all_trash_by_user(&self, user_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError>;
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError>;
@@ -54,24 +58,28 @@ pub trait SecretService {
     async fn increment_usage_count(&self, secret_id: Uuid) -> Result<(), AppError>;
 }
 
-pub struct SecretServiceImpl<TRepo, TCrypto>
+pub struct SecretServiceImpl<TRepo, TCrypto, TAuditSvc>
 where
     TRepo: SecretRepository + Send + Sync,
     TCrypto: CryptoService + Send + Sync,
+    TAuditSvc: AuditLogService + Send + Sync,
 {
     secret_repo: TRepo,
     crypto_service: TCrypto,
+    audit_service: Arc<TAuditSvc>,
 }
 
-impl<TRepo, TCrypto> SecretServiceImpl<TRepo, TCrypto>
+impl<TRepo, TCrypto, TAuditSvc> SecretServiceImpl<TRepo, TCrypto, TAuditSvc>
 where
     TRepo: SecretRepository + Send + Sync,
     TCrypto: CryptoService + Send + Sync,
+    TAuditSvc: AuditLogService + Send + Sync,
 {
-    pub fn new(secret_repo: TRepo, crypto_service: TCrypto) -> Self {
+    pub fn new(secret_repo: TRepo, crypto_service: TCrypto, audit_service: Arc<TAuditSvc>) -> Self {
         Self {
             secret_repo,
             crypto_service,
+            audit_service,
         }
     }
 
@@ -117,10 +125,11 @@ where
     }
 }
 
-impl<TRepo, TCrypto> SecretService for SecretServiceImpl<TRepo, TCrypto>
+impl<TRepo, TCrypto, TAuditSvc> SecretService for SecretServiceImpl<TRepo, TCrypto, TAuditSvc>
 where
     TRepo: SecretRepository + Send + Sync,
     TCrypto: CryptoService + Send + Sync,
+    TAuditSvc: AuditLogService + Send + Sync,
 {
     async fn create_secret(
         &self,
@@ -162,6 +171,17 @@ where
         self.secret_repo
             .insert_secret_blob(&item, serialized_payload)
             .await?;
+
+        self.audit_service
+            .record_event(
+                None,
+                AuditAction::SecretCreated,
+                Some("secret"),
+                Some(&item.id.to_string()),
+                None,
+            )
+            .await
+            .ok();
 
         Ok(item)
     }
@@ -223,8 +243,23 @@ where
         self.secret_repo.list_trash_by_vault_id(vault_id).await
     }
 
+    async fn list_all_trash_by_user(&self, user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        self.secret_repo.list_all_trash_by_owner_id(user_id).await
+    }
+
     async fn soft_delete(&self, secret_id: Uuid) -> Result<(), AppError> {
-        self.secret_repo.soft_delete(secret_id).await
+        self.secret_repo.soft_delete(secret_id).await?;
+        self.audit_service
+            .record_event(
+                None,
+                AuditAction::SecretDeleted,
+                Some("secret"),
+                Some(&secret_id.to_string()),
+                Some("soft"),
+            )
+            .await
+            .ok();
+        Ok(())
     }
 
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
@@ -232,7 +267,18 @@ where
     }
 
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
-        self.secret_repo.permanent_delete(secret_id, vault_id).await
+        self.secret_repo.permanent_delete(secret_id, vault_id).await?;
+        self.audit_service
+            .record_event(
+                None,
+                AuditAction::SecretDeleted,
+                Some("secret"),
+                Some(&secret_id.to_string()),
+                Some("permanent"),
+            )
+            .await
+            .ok();
+        Ok(())
     }
 
     async fn empty_trash(&self, vault_id: Uuid) -> Result<usize, AppError> {
@@ -244,10 +290,11 @@ where
     }
 }
 
-impl<TRepo, TCrypto> SecretServiceImpl<TRepo, TCrypto>
+impl<TRepo, TCrypto, TAuditSvc> SecretServiceImpl<TRepo, TCrypto, TAuditSvc>
 where
     TRepo: SecretRepository + Send + Sync,
     TCrypto: CryptoService + Send + Sync,
+    TAuditSvc: AuditLogService + Send + Sync,
 {
     /// Évalue la robustesse d'un mot de passe basée sur sa longueur et sa complexité
     pub fn evaluate_password_strength(secret_value: &[u8]) -> String {
@@ -304,8 +351,9 @@ where
 mod tests {
     use super::{DecryptedSecret, SecretService, SecretServiceImpl};
     use crate::errors::AppError;
-    use crate::models::{BlobStorage, SecretItem, SecretType};
+    use crate::models::{AuditAction, AuditLogEntry, BlobStorage, SecretItem, SecretType};
     use crate::repositories::secret_repository::SecretRepository;
+    use crate::services::audit_log_service::AuditLogService;
     use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN};
     use secrecy::{ExposeSecret, SecretBox, SecretString};
     use std::collections::HashMap;
@@ -522,6 +570,30 @@ mod tests {
             Ok(before.saturating_sub(items.len()))
         }
 
+        async fn list_all_trash_by_owner_id(&self, _owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+            let items = self.lock_items()?;
+            let listed = items
+                .values()
+                .filter(|item| item.deleted)
+                .map(|item| SecretItem {
+                    id: item.id,
+                    vault_id: item.vault_id,
+                    secret_type: item.secret_type,
+                    title: item.title.clone(),
+                    metadata_json: item.metadata_json.clone(),
+                    tags: item.tags.clone(),
+                    expires_at: item.expires_at.clone(),
+                    created_at: None,
+                    modified_at: None,
+                    usage_count: 0,
+                    blob_storage: item.blob_storage,
+                    secret_blob: SecretBox::new(Box::new(item.blob.clone())),
+                    deleted_at: None,
+                })
+                .collect();
+            Ok(listed)
+        }
+
         async fn increment_usage_count(&self, _secret_id: Uuid) -> Result<(), AppError> {
             // Stub implementation: no-op
             Ok(())
@@ -572,12 +644,55 @@ mod tests {
         }
     }
 
+    #[derive(Default, Clone)]
+    struct StubAuditLogService;
+
+    impl AuditLogService for StubAuditLogService {
+        async fn record_event(
+            &self,
+            _actor_user_id: Option<Uuid>,
+            _action: AuditAction,
+            _target_type: Option<&str>,
+            _target_id: Option<&str>,
+            _detail: Option<&str>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+
+        async fn list_recent(
+            &self,
+            _requester_id: Uuid,
+            _limit: u32,
+        ) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
+
+        async fn list_for_user(
+            &self,
+            _requester_id: Uuid,
+            _actor_id: Uuid,
+            _limit: u32,
+        ) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
+
+        async fn list_for_target(
+            &self,
+            _requester_id: Uuid,
+            _target_type: &str,
+            _target_id: &str,
+            _limit: u32,
+        ) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
+    }
+
     async fn assert_secret_roundtrip(
         secret_type: SecretType,
         plaintext: &[u8],
     ) -> Result<DecryptedSecret, AppError> {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo.clone(), StubCryptoService);
+        let service = SecretServiceImpl::new(repo.clone(), StubCryptoService, Arc::new(StubAuditLogService));
         let vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![7_u8; 32]));
 
@@ -669,7 +784,7 @@ mod tests {
     #[tokio::test]
     async fn list_by_vault_and_soft_delete_excludes_deleted_secret() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService);
+        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_id = Uuid::new_v4();
         let other_vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![8_u8; 32]));
@@ -750,7 +865,7 @@ mod tests {
     #[tokio::test]
     async fn update_secret_without_new_payload_keeps_existing_blob() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService);
+        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![6_u8; 32]));
 
@@ -812,7 +927,7 @@ mod tests {
     #[tokio::test]
     async fn trash_lifecycle_and_empty_trash_are_scoped() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService);
+        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_a = Uuid::new_v4();
         let vault_b = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![5_u8; 32]));

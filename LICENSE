@@ -1,65 +1,43 @@
-# LIMITED SOURCE CODE LICENSE & COPYRIGHT NOTICE
+# Licence HeelonVault
 
-FRANÇAIS : Ce logiciel est publié à des fins de consultation, d'audit de sécurité
-et de vérification de conformité (RGPD) uniquement, pour des personnes physiques
-agissant à titre individuel. Toute copie, modification ou redistribution est
-formellement interdite.
+## 🇫🇷 FRANÇAIS : Résumé et Usage
 
-ENGLISH:
-Copyright (c) 2026 HEELONYS. All rights reserved.
+Ce logiciel est mis à disposition sous licence **Apache 2.0**.
 
-1; GRANT OF LICENSE
+**Ce que cela signifie :**
 
-This software and its source code are made available for the sole purposes of
-security auditing, privacy verification (GDPR compliance), and personal
-educational review, limited to individuals acting in their own capacity and
-not on behalf of any commercial or governmental entity.
+* **Transparence totale :** Le code source est librement consultable pour l'audit de sécurité et la vérification de conformité RGPD[cite: 3, 9].
+* **Droit d'usage :** Vous êtes autorisé à compiler, utiliser et modifier ce logiciel pour vos besoins internes.
+* **Contributions :** Les contributions à l'amélioration du coffre-fort sont encouragées via le guide de contribution.
+* **Propriété :** Le copyright et la marque HeelonVault restent la propriété exclusive de HEELONYS.
 
-2; RESTRICTIONS
+---
 
-Unless explicitly authorized in writing by the copyright holder, you are
-STRICTLY PROHIBITED from:
+## 🇬🇧 ENGLISH: Apache License, Version 2.0
 
-- Copying, modifying, or creating derivative works of this software.
-- Redistributing the source code or binaries, in whole or in part.
-- Using the software or its source code for any commercial purposes.
-- Sub-licensing or assigning these rights to any third party.
-- Publicly forking, mirroring, or re-hosting this repository or any portion of it.
+**Copyright (c) 2026 HEELONYS. All rights reserved.**
 
-3; PERMITTED USE
+Licensed under the Apache License, Version 2.0 (the "License");
+you may not use this file except in compliance with the License.
+You may obtain a copy of the License at
 
-You may download and compile the source code locally for the exclusive purpose
-of verifying its functionality and data processing practices. The resulting
-compiled binary may be used solely by you, on your own systems, for those
-verification purposes. It may not be distributed, transferred, or shared with
-any third party.
+    http://www.apache.org/licenses/LICENSE-2.0
 
-4; AUTHORIZATION IN WRITING
+Unless required by applicable law or agreed to in writing, software
+distributed under the License is distributed on an "AS IS" BASIS,
+WITHOUT WARRANTIES OR CONDITIONS OF ANY KIND, either express or implied.
+See the License for the specific language governing permissions and
+limitations under the License.
 
-"Authorized in writing" means a dated, explicit written authorization —
-including email from an official HEELONYS contact address — specifically
-granting the requested permission and referencing this license.
+---
 
-5; TERMINATION
-
-Any breach of the restrictions set out in Section 2 automatically and
-immediately terminates all rights granted under this license without notice.
-Upon termination, you must cease all use of the software and destroy all
-copies of the source code and compiled binaries in your possession.
-
-6; GOVERNING LAW AND JURISDICTION
-
-This license shall be governed by and construed in accordance with the laws
-of France, without regard to its conflict of law principles. Any dispute
-arising from or in connection with this license shall be subject to the
-exclusive jurisdiction of the competent courts of France.
-
-7; NO WARRANTY
+## NO WARRANTY / EXCLUSION DE GARANTIE
 
 THIS SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
 IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. [cite: 17]
+
+IN NO EVENT SHALL THE AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM,
+DAMAGES OR OTHER LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE,
+ARISING FROM, OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER
+DEALINGS IN THE SOFTWARE. [cite: 18]

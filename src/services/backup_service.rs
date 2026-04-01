@@ -342,6 +342,57 @@ impl BackupService for BackupServiceImpl {
         fs::write(backup_file_path, json_bytes)
             .map_err(|err| AppError::Storage(format!("failed to write .hvb file: {err}")))?;
 
+        // Validate the written .hvb artifact end-to-end before reporting success.
+        let written_bytes = fs::read(backup_file_path)
+            .map_err(|err| AppError::Storage(format!("failed to reread .hvb file: {err}")))?;
+        let written_payload = Self::parse_hvb_payload(written_bytes.as_slice())?;
+
+        if written_payload.version != 1 || written_payload.kdf != "argon2id" {
+            return Err(AppError::Validation(
+                "written .hvb payload failed format self-check".to_string(),
+            ));
+        }
+
+        let written_salt = base64::engine::general_purpose::STANDARD
+            .decode(written_payload.salt_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("written .hvb salt is invalid: {err}")))?;
+        let written_nonce_vec = base64::engine::general_purpose::STANDARD
+            .decode(written_payload.nonce_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("written .hvb nonce is invalid: {err}")))?;
+        let written_ciphertext = base64::engine::general_purpose::STANDARD
+            .decode(written_payload.ciphertext_b64.as_bytes())
+            .map_err(|err| AppError::Validation(format!("written .hvb ciphertext is invalid: {err}")))?;
+
+        if written_nonce_vec.len() != BACKUP_NONCE_LEN {
+            return Err(AppError::Validation(
+                "written .hvb nonce has invalid length".to_string(),
+            ));
+        }
+
+        let mut written_nonce = [0_u8; BACKUP_NONCE_LEN];
+        written_nonce.copy_from_slice(written_nonce_vec.as_slice());
+
+        let written_backup_key =
+            Self::derive_backup_key_from_recovery(recovery_phrase, written_salt.as_slice())?;
+        let restored_bytes = Self::decrypt_bytes(
+            written_payload.sha256_hex.as_str(),
+            written_nonce,
+            written_ciphertext.as_slice(),
+            &written_backup_key,
+        )?;
+
+        if restored_bytes.len() != sqlite_bytes.len() {
+            return Err(AppError::Validation(
+                "written .hvb self-check failed: plaintext size mismatch".to_string(),
+            ));
+        }
+
+        if restored_bytes.as_slice() != sqlite_bytes.as_slice() {
+            return Err(AppError::Validation(
+                "written .hvb self-check failed: plaintext mismatch".to_string(),
+            ));
+        }
+
         info!(
             file = %backup_file_path.display(),
             plaintext_size = sqlite_bytes.len(),

@@ -150,6 +150,22 @@ Audit position:
 
 - MFA can now be claimed as enforced for accounts with TOTP enabled.
 
+## 8.1 First-Admin Bootstrap and Recovery Key
+
+When the application starts with no admin account, a 3-step bootstrap wizard is presented:
+
+1. **Identity step** — the user provides a username and password (minimum strength enforced, confirmation required);
+2. **Oath step** — a 24-word BIP39-style mnemonic recovery phrase is generated via `BackupService::generate_recovery_key()`. The user must verify two randomly drawn words before confirming, proving they have recorded the phrase;
+3. **Pending step** — `AdminService::bootstrap_first_admin()` is called in a background thread; on success the session is opened automatically.
+
+Recovery key security properties:
+
+- generated from a cryptographically secure RNG (`getrandom`);
+- the phrase is never persisted in the database; it is the user's sole responsibility to store it safely;
+- clipboard copy sets a 60-second auto-clear timer; the clipboard is also wiped when the dialog closes;
+- after bootstrap, the recovery key can be re-exported at any time from `Profile & Security` (admin only), generating a new phrase wrapped in the same secure export dialog;
+- backup export/import (`.hvb` files) is gated behind `BackupApplicationService` which enforces RBAC: only admin-role users may perform these operations.
+
 ## 9. Logging and Security Events
 
 Current event coverage includes:
@@ -175,6 +191,7 @@ Minimum test routine before release:
     tests/security_crypto.rs
     tests/totp_activation_integration.rs
     tests/twofa_messages_integration.rs
+    tests/backup_security_integration.rs
 
 Recommended manual checks:
 
@@ -247,11 +264,15 @@ Coordinated disclosure policy:
 
 ## 12. Compliance and Hardening Roadmap
 
+Completed:
+
+- [x] MFA lifecycle hardened: TOTP activation/deactivation fully implemented
+- [x] Backup/recovery workflow secured: recovery key generation with clipboard auto-wipe, mandatory verification, RBAC-gated backup operations
+- [x] Audit trail for admin-sensitive operations (audit_log table, migration 0013)
+
 Near-term priorities:
 
 - unify master password policy to >= 16 across all flows
-- harden MFA lifecycle (backup/recovery workflow and admin-sensitive controls)
-- add stronger audit trails for admin-sensitive operations
 - document hardening profiles (standard, admin, high assurance)
 
 Reference standards:

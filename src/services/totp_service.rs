@@ -5,7 +5,7 @@ use sqlx::{Row, SqlitePool};
 use totp_rs::{Algorithm, Secret, TOTP};
 use uuid::Uuid;
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::services::auth_service::AuthService;
 use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN};
 
@@ -276,7 +276,7 @@ where
 
         let is_code_valid = self.verify_setup_code(username, base32_secret, code)?;
         if !is_code_valid {
-            return Err(AppError::Authorization("invalid TOTP setup code".to_string()));
+            return Err(AppError::Authorization(AccessDeniedReason::InvalidTotpCode));
         }
 
         let encrypted = self

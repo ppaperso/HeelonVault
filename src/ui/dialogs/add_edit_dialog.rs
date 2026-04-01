@@ -22,6 +22,7 @@ use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
 #[derive(Clone, Copy, Debug)]
 pub enum DialogMode {
 	Create,
+	CreateInVault(Uuid),
 	Edit(Uuid),
 }
 
@@ -52,7 +53,7 @@ impl AddEditDialog {
 	{
 		let on_saved: Rc<dyn Fn()> = Rc::new(on_saved);
 		let window_title = match mode {
-			DialogMode::Create => crate::tr!("add-edit-window-title-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-window-title-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-window-title-edit"),
 		};
 		let window = gtk4::Window::builder()
@@ -99,7 +100,7 @@ impl AddEditDialog {
 			.build();
 
 		let header_title_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-header-title-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-header-title-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-header-title-edit"),
 		};
 		let title = gtk4::Label::new(Some(header_title_text.as_str()));
@@ -108,7 +109,7 @@ impl AddEditDialog {
 		title.set_halign(Align::Start);
 
 		let subtitle_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-header-subtitle-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-header-subtitle-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-header-subtitle-edit"),
 		};
 		let subtitle = gtk4::Label::new(Some(subtitle_text.as_str()));
@@ -291,7 +292,7 @@ impl AddEditDialog {
 		let save_spinner = gtk4::Spinner::new();
 		save_spinner.set_visible(false);
 		let save_label_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-button-save-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-button-save-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-button-save-edit"),
 		};
 		let save_label = gtk4::Label::new(Some(save_label_text.as_str()));
@@ -436,7 +437,7 @@ impl AddEditDialog {
 				_ => (SecretType::Password, password_for_save.text().to_string()),
 			};
 
-			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
+			if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_)) && secret_text.trim().is_empty() {
 				error_for_save.set_text(crate::tr!("add-edit-error-secret-required").as_str());
 				error_for_save.set_visible(true);
 				return;
@@ -462,23 +463,57 @@ impl AddEditDialog {
 			let secret_payload = secret_text.into_bytes();
 			std::thread::spawn(move || {
 				let result = runtime_for_task.block_on(async move {
-					let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
-					let target_vault = vaults
-						.into_iter()
-						.next()
-						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
+					let target_vault_id = match mode_for_save {
+						DialogMode::CreateInVault(vid) => vid,
+						DialogMode::Create => {
+							let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
+							vaults
+								.into_iter()
+								.next()
+								.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?
+								.id
+						}
+						DialogMode::Edit(secret_id) => {
+							let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
+							let mut found_vault_id: Option<Uuid> = None;
+							for vault in vaults {
+								let items = secret_service_for_task.list_by_vault(vault.id).await?;
+								if items.into_iter().any(|item| item.id == secret_id) {
+									found_vault_id = Some(vault.id);
+									break;
+								}
+							}
+							found_vault_id.ok_or_else(|| {
+								crate::errors::AppError::NotFound("secret not found".to_string())
+							})?
+						}
+					};
+					let access = vault_service_for_task
+						.get_vault_access_for_user(admin_user_id, target_vault_id)
+						.await?
+						.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
+					let is_shared = access.vault.owner_user_id != admin_user_id;
+					if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_))
+						&& is_shared
+						&& !access.role.can_admin()
+					{
+						return Err(crate::errors::AppError::Authorization(
+							crate::errors::AccessDeniedReason::VaultSharedCreateDenied,
+						));
+					}
 					let vault_key = vault_service_for_task
-						.open_vault(
-							target_vault.id,
+						.open_vault_for_user(
+							admin_user_id,
+							target_vault_id,
 							SecretBox::new(Box::new(admin_master_for_task.clone())),
 						)
 						.await?;
 
 					match mode_for_save {
-						DialogMode::Create => {
+						DialogMode::Create | DialogMode::CreateInVault(_) => {
 							secret_service_for_task
 								.create_secret(
-									target_vault.id,
+									target_vault_id,
 									secret_type,
 									Some(title_for_task),
 									metadata_for_task,
@@ -662,7 +697,7 @@ impl AddEditDialog {
 			.build();
 
 		let inline_header_title_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-header-title-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-header-title-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-header-title-edit"),
 		};
 		let title = gtk4::Label::new(Some(inline_header_title_text.as_str()));
@@ -671,7 +706,7 @@ impl AddEditDialog {
 		title.set_halign(Align::Start);
 
 		let inline_subtitle_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-header-subtitle-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-header-subtitle-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-header-subtitle-edit"),
 		};
 		let subtitle = gtk4::Label::new(Some(inline_subtitle_text.as_str()));
@@ -736,7 +771,7 @@ impl AddEditDialog {
 
 		let password_hint = match mode {
 			DialogMode::Edit(_) => Some(crate::tr!("add-edit-password-edit-hint")),
-			DialogMode::Create => None,
+			DialogMode::Create | DialogMode::CreateInVault(_) => None,
 		};
 		let (password_panel, password_entry, password_strength_bar) =
 			Self::build_password_panel(password_hint.as_deref());
@@ -860,7 +895,7 @@ impl AddEditDialog {
 		let save_spinner = gtk4::Spinner::new();
 		save_spinner.set_visible(false);
 		let inline_save_label_text = match mode {
-			DialogMode::Create => crate::tr!("add-edit-button-save-create"),
+			DialogMode::Create | DialogMode::CreateInVault(_) => crate::tr!("add-edit-button-save-create"),
 			DialogMode::Edit(_) => crate::tr!("add-edit-button-save-edit"),
 		};
 		let save_label = gtk4::Label::new(Some(inline_save_label_text.as_str()));
@@ -1037,7 +1072,7 @@ impl AddEditDialog {
 				}
 			}
 
-			if matches!(mode_for_save, DialogMode::Create) && secret_text.trim().is_empty() {
+			if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_)) && secret_text.trim().is_empty() {
 				error_for_save.set_text(crate::tr!("add-edit-error-secret-required").as_str());
 				error_for_save.set_visible(true);
 				return;
@@ -1064,23 +1099,57 @@ impl AddEditDialog {
 			let secret_payload = secret_text.into_bytes();
 			std::thread::spawn(move || {
 				let result = runtime_for_task.block_on(async move {
-					let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
-					let target_vault = vaults
-						.into_iter()
-						.next()
-						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
+					let target_vault_id = match mode_for_save {
+						DialogMode::CreateInVault(vid) => vid,
+						DialogMode::Create => {
+							let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
+							vaults
+								.into_iter()
+								.next()
+								.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?
+								.id
+						}
+						DialogMode::Edit(secret_id) => {
+							let vaults = vault_service_for_task.list_user_vaults(admin_user_id).await?;
+							let mut found_vault_id: Option<Uuid> = None;
+							for vault in vaults {
+								let items = secret_service_for_task.list_by_vault(vault.id).await?;
+								if items.into_iter().any(|item| item.id == secret_id) {
+									found_vault_id = Some(vault.id);
+									break;
+								}
+							}
+							found_vault_id.ok_or_else(|| {
+								crate::errors::AppError::NotFound("secret not found".to_string())
+							})?
+						}
+					};
+					let access = vault_service_for_task
+						.get_vault_access_for_user(admin_user_id, target_vault_id)
+						.await?
+						.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
+					let is_shared = access.vault.owner_user_id != admin_user_id;
+					if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_))
+						&& is_shared
+						&& !access.role.can_admin()
+					{
+						return Err(crate::errors::AppError::Authorization(
+							crate::errors::AccessDeniedReason::VaultSharedCreateDenied,
+						));
+					}
 					let vault_key = vault_service_for_task
-						.open_vault(
-							target_vault.id,
+						.open_vault_for_user(
+							admin_user_id,
+							target_vault_id,
 							SecretBox::new(Box::new(admin_master_for_task.clone())),
 						)
 						.await?;
 
 					match mode_for_save {
-						DialogMode::Create => {
+						DialogMode::Create | DialogMode::CreateInVault(_) => {
 							secret_service_for_task
 								.create_secret(
-									target_vault.id,
+									target_vault_id,
 									secret_type,
 									Some(title_for_task),
 									metadata_for_task,
@@ -1471,29 +1540,28 @@ impl AddEditDialog {
 			let result: Result<(crate::models::SecretItem, Option<String>), crate::errors::AppError> =
 				runtime_handle.block_on(async move {
 					let vaults = vault_service.list_user_vaults(admin_user_id).await?;
-					let target_vault = vaults
-						.into_iter()
-						.next()
-						.ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
-
-					let vault_key = vault_service
-						.open_vault(
-							target_vault.id,
-							SecretBox::new(Box::new(admin_master_key.clone())),
-						)
-						.await?;
-
-					let items = secret_service.list_by_vault(target_vault.id).await?;
-					let item = items
-						.into_iter()
-						.find(|item| item.id == secret_id)
-						.ok_or_else(|| {
-							crate::errors::AppError::NotFound("secret not found".to_string())
-						})?;
+					let mut found: Option<(Uuid, crate::models::SecretItem)> = None;
+					for vault in vaults {
+						let items = secret_service.list_by_vault(vault.id).await?;
+						if let Some(item) = items.into_iter().find(|item| item.id == secret_id) {
+							found = Some((vault.id, item));
+							break;
+						}
+					}
+					let (target_vault_id, item) = found.ok_or_else(|| {
+						crate::errors::AppError::NotFound("secret not found".to_string())
+					})?;
 
 					let existing_password = if show_passwords_in_edit
 						&& matches!(item.secret_type, SecretType::Password)
 					{
+						let vault_key = vault_service
+							.open_vault_for_user(
+								admin_user_id,
+								target_vault_id,
+								SecretBox::new(Box::new(admin_master_key.clone())),
+							)
+							.await?;
 						let decrypted = secret_service
 							.get_secret(
 								secret_id,

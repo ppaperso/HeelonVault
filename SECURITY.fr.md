@@ -101,6 +101,22 @@ Recommendation : ne pas placer de secrets sensibles dans ces champs indexables.
 - login en deux etapes (mot de passe puis code TOTP) ;
 - secret TOTP stocke chiffre en base.
 
+## 8.1 Bootstrap initial et cle de recuperation
+
+Lorsque l'application demarre sans compte administrateur, un assistant en 3 etapes est presente :
+
+1. **Etape identite** — saisie du nom d'utilisateur et du mot de passe (force minimale verifiee, confirmation requise) ;
+2. **Etape serment (oath)** — une phrase mnemotechnique de 24 mots (style BIP39) est generee via `BackupService::generate_recovery_key()`. L'utilisateur doit verifier deux mots tires au sort avant de confirmer, prouvant qu'il a bien note la phrase ;
+3. **Etape pending** — `AdminService::bootstrap_first_admin()` est appele en arriere-plan ; la session s'ouvre automatiquement apres succes.
+
+Proprietes de securite de la cle de recuperation :
+
+- generee par un RNG cryptographique (`getrandom`) ;
+- la phrase n'est jamais persistee en base de donnees ; l'utilisateur en est l'unique gardien ;
+- la copie presse-papier declenche un effacement automatique apres 60 secondes ; le presse-papier est aussi vide a la fermeture du dialogue ;
+- apres le bootstrap, la cle peut etre re-exportee depuis `Profil & Securite` (admin uniquement) ;
+- les exports/imports `.hvb` sont soumis au `BackupApplicationService` qui applique un controle RBAC : seuls les comptes de role admin peuvent effectuer ces operations.
+
 ## 9. Journalisation
 
 Couverture actuelle :
@@ -121,6 +137,7 @@ Avant release :
    - `tests/security_crypto.rs`
    - `tests/totp_activation_integration.rs`
    - `tests/twofa_messages_integration.rs`
+   - `tests/backup_security_integration.rs`
 
 ## 11. Divulgation responsable
 
@@ -145,10 +162,15 @@ Merci d'inclure : version impactee, environnement, etapes de reproduction, impac
 
 ## 13. Roadmap de durcissement
 
+Realise :
+
+- [x] Cycle de vie MFA durci : activation/desactivation TOTP entierement implementee
+- [x] Flux de recuperation securise : generation de cle avec effacement presse-papier automatique, verification obligatoire, operations de sauvegarde soumises au RBAC
+- [x] Journal d'audit pour les actions sensibles (table `audit_log`, migration 0013)
+
 Priorites court terme :
 
 - unifier toutes les entrees de politique mot de passe sur >= 16 ;
-- renforcer le cycle de vie MFA (recuperation, controles admin) ;
-- enrichir les traces d'audit pour actions sensibles.
+- documenter les profils de durcissement (standard, admin, haute assurance).
 
 References : ANSSI, OWASP Password Storage Cheat Sheet, NIST SP 800-63B.

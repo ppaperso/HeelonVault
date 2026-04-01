@@ -4,8 +4,10 @@ use std::fs::{File, OpenOptions};
 use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::process::Command;
+use std::cell::{Cell, RefCell};
 use std::rc::Rc;
 use std::sync::Arc;
+use std::time::Instant;
 
 use anyhow::{anyhow, Context, Result};
 use gtk4::gdk;
@@ -17,6 +19,7 @@ use secrecy::{ExposeSecret, SecretBox};
 use sqlx::sqlite::SqliteConnectOptions;
 use sqlx::{Row, SqlitePool};
 use tokio::runtime::Builder;
+use tracing::debug;
 use tracing::info;
 use tracing::warn;
 use chrono::Local;
@@ -27,31 +30,59 @@ use tracing_subscriber::EnvFilter;
 
 use heelonvault_rust::config::constants::APP_ID;
 use heelonvault_rust::errors::AppError;
+use heelonvault_rust::models::UserRole;
+use heelonvault_rust::repositories::audit_log_repository::SqlxAuditLogRepository;
 use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
-use heelonvault_rust::repositories::user_repository::SqlxUserRepository;
+use heelonvault_rust::repositories::team_repository::SqlxTeamRepository;
+use heelonvault_rust::repositories::user_repository::{SqlxUserRepository, UserRepository};
 use heelonvault_rust::repositories::vault_repository::SqlxVaultRepository;
+use heelonvault_rust::services::admin_service::{AdminService, AdminServiceImpl};
+use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
 use heelonvault_rust::services::auth_policy_service::{AuthPolicyService, SqlxAuthPolicyService};
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::{BackupService, BackupServiceImpl};
+use heelonvault_rust::services::backup_application_service::BackupApplicationServiceImpl;
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::import_service::ImportServiceImpl;
 use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
+use heelonvault_rust::services::team_service::TeamServiceImpl;
 use heelonvault_rust::services::totp_service::SqliteTotpService;
 use heelonvault_rust::services::user_service::{UserService, UserServiceImpl};
 use heelonvault_rust::services::vault_service::{
-	VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
+	VaultKeyEnvelopeRepository, VaultServiceImpl,
 };
-use heelonvault_rust::ui::dialogs::login_dialog::LoginDialog;
+use heelonvault_rust::ui::dialogs::login_dialog::{
+	AuthenticatedSession, BootstrapServicesContext, LoginDialog,
+};
 use heelonvault_rust::ui::windows::main_window::MainWindow;
 use uuid::Uuid;
 
 type VaultServiceHandle =
-	VaultServiceImpl<SqlxVaultRepository, SqlxVaultEnvelopeRepository, CryptoServiceImpl>;
-type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl>;
+	VaultServiceImpl<
+		SqlxVaultRepository,
+		SqlxVaultEnvelopeRepository,
+		SqlxUserRepository,
+		SqlxTeamRepository,
+		AuditLogServiceHandle,
+		CryptoServiceImpl,
+	>;
+type SecretServiceHandle = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl, AuditLogServiceHandle>;
 type UserServiceHandle = UserServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>>;
 type TotpServiceHandle = SqliteTotpService<AuthServiceImpl<CryptoServiceImpl>, CryptoServiceImpl>;
+type AuditLogServiceHandle = AuditLogServiceImpl<SqlxUserRepository, SqlxAuditLogRepository>;
+type AdminServiceHandle =
+	AdminServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>, AuditLogServiceHandle>;
+type TeamServiceHandle = TeamServiceImpl<
+	SqlxTeamRepository,
+	SqlxUserRepository,
+	SqlxVaultRepository,
+	CryptoServiceImpl,
+	AuditLogServiceHandle,
+>;
+type BackupApplicationServiceHandle =
+	BackupApplicationServiceImpl<SqlxUserRepository, BackupServiceImpl>;
 
 struct SqlxVaultEnvelopeRepository {
 	pool: SqlitePool,
@@ -102,11 +133,18 @@ struct AppContext {
 	import_service: Arc<ImportServiceImpl>,
 	user_service: Arc<UserServiceHandle>,
 	totp_service: Arc<TotpServiceHandle>,
-	admin_user_id: Uuid,
-	admin_username: String,
-	admin_identity_label: String,
-	admin_master_key: Vec<u8>,
+	_audit_log_service: Arc<AuditLogServiceHandle>,
+	admin_service: Arc<AdminServiceHandle>,
+	team_service: Arc<TeamServiceHandle>,
+	#[allow(dead_code)]
+	backup_app_service: Arc<BackupApplicationServiceHandle>,
 	_password_service: PasswordServiceImpl,
+}
+
+enum AppStartMode {
+	Ready(AppContext),
+	/// Database migrated but no admin user found – the init wizard must run.
+	NeedsBootstrap(AppContext),
 }
 
 struct DailyLogFileWriter {
@@ -183,7 +221,11 @@ fn main() -> Result<()> {
 	let runtime = Arc::new(runtime);
 	info!("tokio runtime started");
 
-	let app_context = Arc::new(runtime.block_on(initialize_app_context())?);
+	let app_start = runtime.block_on(initialize_app_context())?;
+	let (app_context, start_needs_bootstrap) = match app_start {
+		AppStartMode::Ready(ctx) => (Arc::new(ctx), false),
+		AppStartMode::NeedsBootstrap(ctx) => (Arc::new(ctx), true),
+	};
 
 	let application = adw::Application::builder()
 		.application_id(APP_ID)
@@ -197,53 +239,78 @@ fn main() -> Result<()> {
 	let runtime_handle = runtime.handle().clone();
 	let runtime_for_activate = Arc::clone(&runtime);
 	let app_context_for_activate = Arc::clone(&app_context);
+	let needs_bootstrap_for_activate = Rc::new(Cell::new(start_needs_bootstrap));
 	application.connect_activate(move |app| {
 		let context = Arc::clone(&app_context_for_activate);
 		let runtime_for_restore = Arc::clone(&runtime_for_activate);
-
-		let main_window = Rc::new(MainWindow::new(
-			app,
-			runtime_handle.clone(),
-			Arc::clone(&context.secret_service),
-			Arc::clone(&context.vault_service),
-			Arc::clone(&context.user_service),
-			Arc::clone(&context.totp_service),
-			Arc::clone(&context.auth_policy_service),
-			Arc::clone(&context.backup_service),
-			Arc::clone(&context.import_service),
-			context.pool.clone(),
-			context.database_path.clone(),
-			context.admin_user_id,
-			context.admin_master_key.clone(),
-			context.admin_identity_label.clone(),
-		));
-		main_window.window().set_icon_name(Some("heelonvault"));
-		main_window.window().set_visible(false);
-
+		let needs_bootstrap_flag = Rc::clone(&needs_bootstrap_for_activate);
 		let app_for_login = app.clone();
 		let app_for_restore = app.clone();
+		let login_parent = adw::ApplicationWindow::builder()
+			.application(app)
+			.title("HeelonVault")
+			.default_width(1)
+			.default_height(1)
+			.build();
+		login_parent.set_visible(false);
 		let runtime_for_login = runtime_handle.clone();
 		let context_for_login = Arc::clone(&context);
-		let main_for_login = Rc::clone(&main_window);
+		let active_main_window: Rc<RefCell<Option<Rc<MainWindow>>>> = Rc::new(RefCell::new(None));
+		let present_login_holder: Rc<RefCell<Option<Rc<dyn Fn()>>>> = Rc::new(RefCell::new(None));
+
+		let active_main_for_login = Rc::clone(&active_main_window);
+		let present_holder_for_login = Rc::clone(&present_login_holder);
+		let needs_bootstrap_for_login = Rc::clone(&needs_bootstrap_flag);
 		let present_login: Rc<dyn Fn()> = Rc::new(move || {
-			main_for_login.deactivate_auto_lock();
-			main_for_login.window().set_visible(false);
+			if let Some(main) = active_main_for_login.borrow().as_ref() {
+				main.deactivate_auto_lock();
+				main.window().set_visible(false);
+			}
 
 			let app_for_cancel = app_for_login.clone();
 			let app_for_restore_completed = app_for_restore.clone();
-			let main_for_success = Rc::clone(&main_for_login);
 			let context_for_success = Arc::clone(&context_for_login);
 			let context_for_restore = Arc::clone(&context_for_login);
 			let runtime_for_success = runtime_for_login.clone();
 			let runtime_for_restore_task = Arc::clone(&runtime_for_restore);
+			let active_main_for_success = Rc::clone(&active_main_for_login);
+			let present_holder_for_logout = Rc::clone(&present_holder_for_login);
+			let needs_bootstrap_for_dialog = Rc::clone(&needs_bootstrap_for_login);
+			let app_for_main_success = app_for_login.clone();
+			let login_parent_for_dialog = login_parent.clone();
+			let bootstrap_ctx_for_dialog = if needs_bootstrap_for_dialog.get() {
+				let backup_for_bootstrap = Arc::clone(&context_for_login.backup_service);
+				let admin_for_bootstrap = Arc::clone(&context_for_login.admin_service);
+				let runtime_for_bootstrap = runtime_for_login.clone();
+				Some(BootstrapServicesContext {
+					generate_recovery_key: Arc::new(move || {
+						backup_for_bootstrap.generate_recovery_key().map(|bundle| {
+							bundle.recovery_phrase.expose_secret().to_string()
+						})
+					}),
+					do_bootstrap: Arc::new(move |username: String, password_bytes: Vec<u8>| {
+						runtime_for_bootstrap.block_on(async {
+							admin_for_bootstrap
+								.bootstrap_first_admin(
+									username.as_str(),
+									SecretBox::new(Box::new(password_bytes)),
+								)
+								.await
+						})
+					}),
+				})
+			} else {
+				None
+			};
 			let login_dialog = LoginDialog::new(
 				&app_for_login,
-				main_for_login.window(),
+				&login_parent_for_dialog,
 				runtime_for_login.clone(),
 				Arc::clone(&context_for_login.auth_service),
 				Arc::clone(&context_for_login.auth_policy_service),
 				Arc::clone(&context_for_login.user_service),
 				Arc::clone(&context_for_login.totp_service),
+				bootstrap_ctx_for_dialog,
 				move |backup_file_path, recovery_phrase, new_password| {
 					let staging_path = build_restore_staging_path(&context_for_restore.database_path);
 					cleanup_restore_staging_path(&staging_path).map_err(|error| {
@@ -285,26 +352,74 @@ fn main() -> Result<()> {
 					}
 					app_for_restore_completed.quit();
 				},
-				move || {
-					let preferred_language = runtime_for_success.block_on(async {
+				move |session: AuthenticatedSession| {
+					needs_bootstrap_for_dialog.set(false);
+					let login_success_started = Instant::now();
+					info!("login flow trace: authenticated callback entered");
+					let session_user_id = session.user_id;
+					let session_username = session.username.clone();
+					let session_identity_label = session.identity_label.clone();
+					let session_master_key = session.master_key.expose_secret().clone();
+				debug!(key_len = session_master_key.len(), "session master key derived on login");
+
+					let profile_load_started = Instant::now();
+					let user_profile = runtime_for_success.block_on(async {
 						context_for_success
 							.user_service
-							.get_user_profile(context_for_success.admin_user_id)
+							.get_user_profile(session_user_id)
 							.await
 							.ok()
-							.map(|user| user.preferred_language)
 					});
-					if let Some(language) = preferred_language {
+					info!(
+						elapsed_ms = profile_load_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: post-login profile resolved"
+					);
+					let is_admin = user_profile
+						.as_ref()
+						.map(|u| matches!(u.role, heelonvault_rust::models::UserRole::Admin))
+						.unwrap_or(false);
+					if let Some(language) = user_profile.as_ref().map(|u| u.preferred_language.clone()) {
 						let _ = heelonvault_rust::i18n::set_language(language.as_str());
 					}
 
-					main_for_success
-						.set_session_master_key(context_for_success.admin_master_key.clone());
+					let main_window_build_started = Instant::now();
+					let main_for_success = Rc::new(MainWindow::new(
+							&app_for_main_success,
+						runtime_for_success.clone(),
+						Arc::clone(&context_for_success.secret_service),
+						Arc::clone(&context_for_success.vault_service),
+						Arc::clone(&context_for_success.user_service),
+						Arc::clone(&context_for_success.admin_service),
+						Arc::clone(&context_for_success.team_service),
+						Arc::clone(&context_for_success.totp_service),
+						Arc::clone(&context_for_success.auth_policy_service),
+						Arc::clone(&context_for_success.backup_service),					Arc::clone(&context_for_success.backup_app_service),						Arc::clone(&context_for_success.import_service),
+						context_for_success.pool.clone(),
+						context_for_success.database_path.clone(),
+						session_user_id,
+						session_master_key,
+						session_identity_label,
+						is_admin,
+					));
+					info!(
+						elapsed_ms = main_window_build_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: MainWindow::new completed"
+					);
+					main_for_success.window().set_icon_name(Some("heelonvault"));
+
+					let refresh_entries_started = Instant::now();
 					main_for_success.refresh_entries();
+					info!(
+						elapsed_ms = refresh_entries_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: refresh_entries invoked"
+					);
 
 					let runtime_for_history = runtime_for_success.clone();
 					let pool_for_history = context_for_success.pool.clone();
-					let user_id_for_history = context_for_success.admin_user_id;
+					let user_id_for_history = session_user_id;
 					std::thread::spawn(move || {
 						let device_info = format!("{} / GTK4 Desktop", std::env::consts::OS);
 						let _ = runtime_for_history.block_on(async move {
@@ -321,7 +436,7 @@ fn main() -> Result<()> {
 					let (sender, receiver) = tokio::sync::oneshot::channel();
 					let runtime_for_task = runtime_for_success.clone();
 					let policy_for_task = Arc::clone(&context_for_success.auth_policy_service);
-					let username_for_task = context_for_success.admin_username.clone();
+					let username_for_task = session_username;
 					std::thread::spawn(move || {
 						let result = runtime_for_task.block_on(async move {
 							policy_for_task.get_auto_lock_delay(username_for_task.as_str()).await
@@ -336,7 +451,39 @@ fn main() -> Result<()> {
 						}
 					});
 
+					let main_for_logout = Rc::clone(&main_for_success);
+					let active_main_for_logout = Rc::clone(&active_main_for_success);
+					let present_for_logout = Rc::clone(&present_holder_for_logout);
+					main_for_success.set_on_logout(Rc::new(move || {
+						main_for_logout.clear_sensitive_session();
+						main_for_logout.window().set_visible(false);
+						*active_main_for_logout.borrow_mut() = None;
+						if let Some(present_login_cb) = present_for_logout.borrow().as_ref() {
+							present_login_cb.as_ref()();
+						}
+					}));
+
+					let main_for_auto_lock = Rc::clone(&main_for_success);
+					main_for_success.set_on_auto_lock(Rc::new(move || {
+						main_for_auto_lock.trigger_logout();
+					}));
+
+					*active_main_for_success.borrow_mut() = Some(Rc::clone(&main_for_success));
+
+					let present_started = Instant::now();
 					main_for_success.window().present();
+					info!(
+						elapsed_ms = present_started.elapsed().as_millis() as u64,
+						total_elapsed_ms = login_success_started.elapsed().as_millis() as u64,
+						"login flow trace: main window present() called"
+					);
+					let login_success_started_for_idle = login_success_started;
+					glib::idle_add_local_once(move || {
+						info!(
+							total_elapsed_ms = login_success_started_for_idle.elapsed().as_millis() as u64,
+							"login flow trace: main loop reached first idle after present"
+						);
+					});
 					main_for_success.activate_auto_lock();
 				},
 				move || {
@@ -346,17 +493,7 @@ fn main() -> Result<()> {
 			login_dialog.present();
 		});
 
-		let main_for_logout = Rc::clone(&main_window);
-		let present_for_logout = Rc::clone(&present_login);
-		main_window.set_on_logout(Rc::new(move || {
-			main_for_logout.clear_sensitive_session();
-			present_for_logout.as_ref()();
-		}));
-
-		let main_for_auto_lock = Rc::clone(&main_window);
-		main_window.set_on_auto_lock(Rc::new(move || {
-			main_for_auto_lock.trigger_logout();
-		}));
+		*present_login_holder.borrow_mut() = Some(Rc::clone(&present_login));
 
 		present_login.as_ref()();
 	});
@@ -502,7 +639,7 @@ fn init_logging() -> Result<WorkerGuard> {
 	Ok(guard)
 }
 
-async fn initialize_app_context() -> Result<AppContext> {
+async fn initialize_app_context() -> Result<AppStartMode> {
 	let database_path = resolve_database_path()?;
 	if let Some(parent) = database_path.parent() {
 		if !parent.as_os_str().is_empty() {
@@ -533,45 +670,66 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	let crypto_service = CryptoServiceImpl::default();
 	let auth_service = Arc::new(AuthServiceImpl::new(CryptoServiceImpl::default()));
+	let audit_log_service = Arc::new(AuditLogServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		SqlxAuditLogRepository::new(pool.clone()),
+	));
 	let auth_policy_service = Arc::new(SqlxAuthPolicyService::new(pool.clone()));
 	let vault_service = Arc::new(VaultServiceImpl::new(
 		SqlxVaultRepository::new(pool.clone()),
 		SqlxVaultEnvelopeRepository::new(pool.clone()),
+		SqlxUserRepository::new(pool.clone()),
+		SqlxTeamRepository::new(pool.clone()),
+		Arc::clone(&audit_log_service),
 		CryptoServiceImpl::default(),
 	));
 	let secret_service = Arc::new(SecretServiceImpl::new(
 		SqlxSecretRepository::new(pool.clone()),
 		CryptoServiceImpl::default(),
+		Arc::clone(&audit_log_service),
 	));
-    let user_service = Arc::new(UserServiceImpl::new(
-        SqlxUserRepository::new(pool.clone()),
-        Arc::clone(&auth_service),
-    ));
+	let user_service = Arc::new(UserServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		Arc::clone(&auth_service),
+	));
+	let admin_service = Arc::new(AdminServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		Arc::clone(&auth_service),
+		Arc::clone(&audit_log_service),
+	));
+	let team_service = Arc::new(TeamServiceImpl::new(
+		SqlxTeamRepository::new(pool.clone()),
+		SqlxUserRepository::new(pool.clone()),
+		SqlxVaultRepository::new(pool.clone()),
+		CryptoServiceImpl::default(),
+		Arc::clone(&audit_log_service),
+	));
 
-	let (admin_user_id, admin_master_key) = ensure_dev_admin_context(
-		&pool,
-		&auth_service,
-		Arc::clone(&vault_service),
-	)
-	.await?;
+	let needs_bootstrap = match ensure_privileged_account_context_initialized(&pool, &auth_service).await {
+		Ok(()) => false,
+		Err(e)
+			if e.downcast_ref::<AppError>()
+				.map_or(false, |ae| matches!(ae, AppError::InitializationRequired(_))) =>
+		{
+			true
+		}
+		Err(e) => return Err(e),
+	};
 
-	let admin_row = sqlx::query(
-		"SELECT username, COALESCE(NULLIF(display_name, ''), username) AS identity_label FROM users WHERE id = ?1",
-	)
-	.bind(admin_user_id.to_string())
-	.fetch_one(&pool)
-	.await
-	.context("failed to resolve admin identity label")?;
-
-	let admin_username: String = admin_row
-		.try_get("username")
-		.context("failed to read admin username")?;
-	let admin_identity_label: String = admin_row
-		.try_get("identity_label")
-		.context("failed to read admin identity label")?;
+	if !needs_bootstrap {
+		load_password_envelopes_from_db(
+			&SqlxUserRepository::new(pool.clone()),
+			&auth_service,
+		)
+		.await?;
+	}
 
 	let password_service = PasswordServiceImpl::new();
 	let backup_service = Arc::new(BackupServiceImpl::new());
+	let backup_app_service = Arc::new(BackupApplicationServiceImpl::new(
+		SqlxUserRepository::new(pool.clone()),
+		BackupServiceImpl::new(),
+	));
 	let import_service = Arc::new(ImportServiceImpl::new());
 	let totp_service = Arc::new(SqliteTotpService::new(
 		pool.clone(),
@@ -582,7 +740,7 @@ async fn initialize_app_context() -> Result<AppContext> {
 
 	info!("all services are initialized and ready");
 
-	Ok(AppContext {
+	let ctx = AppContext {
 		database_path,
 		pool,
 		_crypto_service: crypto_service,
@@ -594,37 +752,18 @@ async fn initialize_app_context() -> Result<AppContext> {
 		import_service,
 		user_service,
 		totp_service,
-		admin_user_id,
-		admin_username,
-		admin_identity_label,
-		admin_master_key,
+		_audit_log_service: audit_log_service,
+		admin_service,
+		team_service,
+		backup_app_service,
 		_password_service: password_service,
-	})
-}
-
-fn resolve_database_path() -> Result<PathBuf> {
-	if let Ok(path_raw) = env::var("HEELONVAULT_DB_PATH") {
-		let trimmed = path_raw.trim();
-		if !trimmed.is_empty() {
-			return Ok(PathBuf::from(trimmed));
-		}
+	};
+	if needs_bootstrap {
+		Ok(AppStartMode::NeedsBootstrap(ctx))
+	} else {
+		Ok(AppStartMode::Ready(ctx))
 	}
-
-	let current_dir = env::current_dir().context("failed to resolve current directory")?;
-	Ok(resolve_default_database_path(&current_dir))
 }
-
-fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
-	let db_name = "heelonvault-rust-dev.db";
-	if current_dir.file_name().is_some_and(|name| name == "rust") {
-		if let Some(project_root) = current_dir.parent() {
-			return project_root.join("data").join(db_name);
-		}
-	}
-
-	current_dir.join("data").join(db_name)
-}
-
 #[cfg(test)]
 mod tests {
 	use super::resolve_default_database_path;
@@ -752,8 +891,9 @@ async fn apply_restored_login_password(database_path: &Path, new_password: &str)
 		})?;
 
 	let selected_user = sqlx::query(
-		"SELECT username FROM users ORDER BY CASE WHEN username = 'admin' THEN 0 ELSE 1 END, rowid LIMIT 1",
+		"SELECT username FROM users ORDER BY CASE WHEN role = ?1 THEN 0 ELSE 1 END, rowid LIMIT 1",
 	)
+	.bind(UserRole::Admin.to_db_str())
 	.fetch_optional(&pool)
 	.await
 	.context("failed to resolve restored user for password reset")?
@@ -789,84 +929,97 @@ async fn apply_restored_login_password(database_path: &Path, new_password: &str)
 	Ok(())
 }
 
-async fn ensure_dev_admin_context(
+async fn ensure_privileged_account_context_initialized(
 	pool: &SqlitePool,
 	auth_service: &Arc<AuthServiceImpl<CryptoServiceImpl>>,
-	vault_service: Arc<VaultServiceHandle>,
-) -> Result<(Uuid, Vec<u8>)> {
-	let (admin_user_id, password_envelope): (Uuid, Option<Vec<u8>>) = match sqlx::query("SELECT id, password_envelope FROM users WHERE username = ?1")
-		.bind("admin")
+) -> Result<()> {
+	let (_privileged_user_id, privileged_username, password_envelope): (Uuid, String, Option<Vec<u8>>) = match sqlx::query(
+		"SELECT id, username, password_envelope FROM users WHERE role = ?1 ORDER BY rowid LIMIT 1",
+	)
+		.bind(UserRole::Admin.to_db_str())
 		.fetch_optional(pool)
 		.await
-		.context("failed to query admin user")?
+		.context("failed to query privileged account")?
 	{
 		Some(row) => {
 			let id_raw: String = row
 				.try_get("id")
-				.context("failed to read admin user id")?;
-			let parsed_id = Uuid::parse_str(&id_raw).context("failed to parse admin user id")?;
+				.context("failed to read privileged account user id")?;
+			let parsed_id = Uuid::parse_str(&id_raw).context("failed to parse privileged account user id")?;
+			let username: String = row
+				.try_get("username")
+				.context("failed to read privileged account username")?;
 			let envelope: Option<Vec<u8>> = row
 				.try_get("password_envelope")
-				.context("failed to read admin password envelope")?;
-			(parsed_id, envelope)
+				.context("failed to read privileged account password envelope")?;
+			(parsed_id, username, envelope)
 		}
 		None => {
-			let user_id = Uuid::new_v4();
-			sqlx::query("INSERT INTO users (id, username, role) VALUES (?1, ?2, ?3)")
-				.bind(user_id.to_string())
-				.bind("admin")
-				.bind("admin")
-				.execute(pool)
-				.await
-				.context("failed to insert admin user row")?;
-			(user_id, None)
+			return Err(anyhow!(AppError::InitializationRequired(
+				"missing required privileged account with admin role; run the explicit initialization flow before startup"
+					.to_string(),
+			)));
 		}
 	};
 
 	if let Some(envelope) = password_envelope {
 		auth_service
-			.upsert_password_envelope("admin", SecretBox::new(Box::new(envelope)))
-			.await
-			.map_err(|error| anyhow!("failed to load persisted admin auth credentials: {error}"))?;
-		info!("admin credentials loaded from password envelope");
-	} else {
-		// TODO: remove before release
-		auth_service
-			.create_user("admin", SecretBox::new(Box::new(b"Admin1234!".to_vec())))
-			.await
-			.map_err(|error| anyhow!("failed to create default development admin user: {error}"))?;
-
-		let generated_envelope = auth_service
-			.get_password_envelope("admin")
-			.await
-			.map_err(|error| anyhow!("failed to export admin password envelope: {error}"))?;
-
-		sqlx::query("UPDATE users SET password_envelope = ?1 WHERE id = ?2")
-			.bind(generated_envelope.expose_secret().as_slice())
-			.bind(admin_user_id.to_string())
-			.execute(pool)
-			.await
-			.context("failed to persist admin password envelope")?;
-		info!("admin password envelope persisted");
-	}
-
-	let admin_master_key = vec![0x41_u8; 32];
-	let vaults = vault_service
-		.list_user_vaults(admin_user_id)
-		.await
-		.context("failed to list admin vaults")?;
-	if vaults.is_empty() {
-		// TODO: remove before release
-		let _vault = vault_service
-			.create_vault(
-				admin_user_id,
-				"Admin",
-				SecretBox::new(Box::new(admin_master_key.clone())),
+			.upsert_password_envelope(
+				privileged_username.as_str(),
+				SecretBox::new(Box::new(envelope)),
 			)
 			.await
-			.context("failed to create default admin vault")?;
-		info!("development admin vault created");
+			.map_err(|error| anyhow!("failed to load persisted privileged auth credentials: {error}"))?;
+		info!(username = %privileged_username, "privileged account credentials loaded from password envelope");
+	} else {
+		return Err(anyhow!(AppError::InitializationRequired(
+			"privileged account with admin role has no password envelope; run the explicit initialization flow before startup"
+				.to_string(),
+		)));
 	}
 
-	Ok((admin_user_id, admin_master_key))
+	Ok(())
+}
+
+async fn load_password_envelopes_from_db(
+	user_repo: &SqlxUserRepository,
+	auth_service: &Arc<AuthServiceImpl<CryptoServiceImpl>>,
+) -> Result<()> {
+	let envelopes = user_repo
+		.list_all_password_envelopes()
+		.await
+		.map_err(|error| anyhow!("failed to list password envelopes: {error}"))?;
+
+	for (username, envelope) in &envelopes {
+		auth_service
+			.upsert_password_envelope(username.as_str(), SecretBox::new(Box::new(envelope.clone())))
+			.await
+			.map_err(|error| anyhow!("failed to load credentials for user {username}: {error}"))?;
+	}
+
+	info!(count = envelopes.len(), "loaded password envelopes from database into auth service");
+	Ok(())
+}
+
+fn resolve_database_path() -> Result<PathBuf> {
+	if let Ok(path_raw) = env::var("HEELONVAULT_DB_PATH") {
+		let trimmed = path_raw.trim();
+		if !trimmed.is_empty() {
+			return Ok(PathBuf::from(trimmed));
+		}
+	}
+
+	let current_dir = env::current_dir().context("failed to resolve current directory")?;
+	Ok(resolve_default_database_path(&current_dir))
+}
+
+fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
+	let db_name = "heelonvault-rust-dev.db";
+	if current_dir.file_name().is_some_and(|name| name == "rust") {
+		if let Some(project_root) = current_dir.parent() {
+			return project_root.join("data").join(db_name);
+		}
+	}
+
+	current_dir.join("data").join(db_name)
 }

@@ -56,6 +56,9 @@ Recommended functional checks:
 2. Re-login immediately: secret cards should reload.
 3. Open Profile and Security and change password-visibility preference.
 4. Edit a password secret and verify field behavior matches preference.
+5. As admin, open Teams and start a share action: an explicit vault selector must be shown before confirmation.
+6. Verify that a team member receives the shared vault and can open it according to assigned role (READ/WRITE/ADMIN).
+7. Verify shared-state visual marker behavior: shared icon visible on shared vaults, without redundant owner/admin text badge.
 
 ## Rollback
 
