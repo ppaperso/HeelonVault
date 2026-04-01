@@ -18,8 +18,11 @@ HeelonVault is a local-first desktop secrets manager built in Rust with GTK4/lib
 | **Encryption** | AES-256-GCM at application level; secrets never leave the machine in plaintext |
 | **Authentication** | Argon2id password hashing + TOTP 2FA (RFC 6238) |
 | **Multi-user** | Isolated accounts and vaults per user |
-| **Persistence** | Local SQLite with versioned `sqlx` migrations |
-| **Import / Export** | CSV import, `.hvb` export |
+| **Bootstrap** | Guided 3-step wizard for first-admin account creation on initial startup |
+| **Recovery Key** | 24-word BIP39-style mnemonic phrase generated at bootstrap; re-exportable from profile; clipboard copy with automatic 60-second auto-clear |
+| **Persistence** | Local SQLite with versioned `sqlx` migrations (14 migrations, zero downtime) |
+| **Import / Export** | CSV import, `.hvb` export with RBAC access control |
+| **Audit Log** | Traceability for sensitive actions (secret create/update/delete, vault sharing) |
 | **Trash** | Soft-delete with restore and permanent purge |
 | **Auto-lock** | Configurable policy: 1 / 5 / 15 / 30 minutes or never |
 | **Dashboard** | Dedicated security dashboard with global vault score |
@@ -154,6 +157,16 @@ Central index: [docs/README.md](docs/README.md)
 - FR/EN coverage across operational Markdown documentation;
 - central bilingual documentation index in `docs/README.md`;
 - synchronized documented versions and runtime paths with the current project state.
+
+### Bootstrap wizard, recovery key, and secure backup (April 2026)
+
+- 3-step first-admin setup wizard embedded in the login dialog: identity (username + password) → oath (24-word recovery phrase display + word verification) → pending (account creation spinner);
+- 24-word mnemonic recovery phrase generated via `BackupService::generate_recovery_key()` on first startup;
+- mandatory spot-check of 2 randomly drawn words before the bootstrap can be confirmed;
+- clipboard copy of the phrase with automatic wipe after 60 seconds (also wiped on dialog close);
+- recovery key re-export available from `Profile & Security` for any admin;
+- `BackupApplicationService` added: RBAC access control on `.hvb` export and import operations;
+- audit log introduced (table `audit_log`, migration 0013) for sensitive action traceability.
 
 ### Team sharing, RBAC, and admin UX (March 2026)
 

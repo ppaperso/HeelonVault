@@ -3,7 +3,7 @@ use std::sync::Arc;
 use tracing::{info, warn};
 use uuid::Uuid;
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::models::User;
 use crate::repositories::user_repository::UserRepository;
 use crate::services::auth_service::AuthService;
@@ -123,7 +123,7 @@ where
         if email_changed {
             let current_password = update.current_password.ok_or_else(|| {
                 AppError::Authorization(
-                    "current password is required to change email".to_string(),
+                    AccessDeniedReason::PasswordRequiredForChange,
                 )
             })?;
 
@@ -133,7 +133,7 @@ where
                 .await?;
             if !password_ok {
                 warn!(user_id = %user_id, "profile update denied: wrong current password for email change");
-                return Err(AppError::Authorization("invalid current password".to_string()));
+                return Err(AppError::Authorization(AccessDeniedReason::InvalidCredentials));
             }
         }
 

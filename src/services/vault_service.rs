@@ -3,7 +3,7 @@ use std::sync::Arc;
 use secrecy::{ExposeSecret, SecretBox};
 use uuid::Uuid;
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::models::{AccessibleVault, AuditAction, Vault};
 use crate::repositories::team_repository::TeamRepository;
 use crate::repositories::user_repository::UserRepository;
@@ -220,7 +220,7 @@ where
             .vault_repo
             .get_vault_with_permission(requester_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
         let has_direct_share = matches!(permission.access_kind, crate::models::VaultAccessKind::DirectShare);
@@ -246,7 +246,7 @@ where
             self.vault_repo
                 .get_key_share(vault_id, requester_id)
                 .await?
-                .ok_or_else(|| AppError::Authorization("vault key share not found".to_string()))?
+                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?
         };
 
         let payload = Self::deserialize_envelope(&envelope)?;
@@ -346,7 +346,7 @@ where
             .vault_repo
             .get_vault_with_permission(user_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
         if access.vault.owner_user_id != user_id {
             return Ok(false);
@@ -367,7 +367,7 @@ where
             .vault_repo
             .get_vault_with_permission(requester_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
         let has_direct_share = matches!(permission.access_kind, crate::models::VaultAccessKind::DirectShare);

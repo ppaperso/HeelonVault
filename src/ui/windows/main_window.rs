@@ -22,6 +22,7 @@ use zeroize::Zeroize;
 use crate::services::auth_policy_service::AuthPolicyService;
 use crate::services::admin_service::AdminService;
 use crate::services::backup_service::BackupService;
+use crate::services::backup_application_service::BackupApplicationService;
 use crate::services::import_service::ImportService;
 use crate::services::login_history_service::list_recent_logins;
 use crate::services::secret_service::SecretService;
@@ -33,6 +34,7 @@ use crate::services::vault_service::VaultService;
 use crate::ui::dialogs::add_edit_dialog::{AddEditDialog, DialogMode};
 use crate::ui::dialogs::manage_teams_dialog::ManageTeamsDialog;
 use crate::ui::dialogs::manage_users_dialog::ManageUsersDialog;
+use crate::ui::dialogs::recovery_key_export_dialog::{ExportRunner, RecoveryKeyExportDialog, RecoveryKeyExportDialogDeps};
 use crate::ui::dialogs::trash_dialog::TrashDialog;
 use crate::ui::widgets::secret_card::{SecretCard, SecretRowData};
 
@@ -83,7 +85,6 @@ struct SecretFilterMeta {
 	is_weak: bool,
 	is_duplicate: bool,
 }
-
 #[derive(Clone)]
 struct FilterRuntime {
 	meta_by_widget: Rc<RefCell<HashMap<String, SecretFilterMeta>>>,
@@ -138,8 +139,8 @@ impl MainWindow {
 
 		(width, height)
 	}
-
-	pub fn new<TSecret, TVault, TUser, TAdmin, TTeam, TTotp, TPolicy, TBackup, TImport>(
+    
+	pub fn new<TSecret, TVault, TUser, TAdmin, TTeam, TTotp, TPolicy, TBackup, TBackupApp, TImport>(
 		application: &adw::Application,
 		runtime_handle: Handle,
 		secret_service: Arc<TSecret>,
@@ -150,6 +151,7 @@ impl MainWindow {
 		totp_service: Arc<TTotp>,
 		auth_policy_service: Arc<TPolicy>,
 		backup_service: Arc<TBackup>,
+		backup_app_service: Arc<TBackupApp>,
 		import_service: Arc<TImport>,
 		database_pool: SqlitePool,
 		database_path: PathBuf,
@@ -167,6 +169,7 @@ impl MainWindow {
 		TTotp: TotpService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
 		TBackup: BackupService + Send + Sync + 'static,
+		TBackupApp: BackupApplicationService + Send + Sync + 'static,
 		TImport: ImportService + Send + Sync + 'static,
 	{
 		let (initial_width, initial_height) = Self::initial_window_size();
@@ -950,16 +953,18 @@ impl MainWindow {
 			window.clone(),
 			runtime_handle.clone(),
 			Arc::clone(&user_service),
-				Arc::clone(&totp_service),
+			Arc::clone(&totp_service),
 			Arc::clone(&auth_policy_service),
 			Arc::clone(&backup_service),
+			Arc::clone(&backup_app_service),
 			Arc::clone(&import_service),
 			Arc::clone(&secret_service),
 			Arc::clone(&vault_service),
 			database_path.clone(),
 			admin_user_id,
+			is_admin,
 			profile_button.clone(),
-				Rc::clone(&critical_ops_in_flight),
+			Rc::clone(&critical_ops_in_flight),
 			Rc::clone(&auto_lock_timeout_secs),
 			Rc::clone(&auto_lock_source),
 			Rc::clone(&auto_lock_armed),
@@ -1282,7 +1287,7 @@ impl MainWindow {
 					let access = vault_for_task
 						.get_vault_access_for_user(admin_user_id, vault_id)
 						.await?
-						.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+						.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
 					let is_shared = access.vault.owner_user_id != admin_user_id;
 					Ok::<bool, crate::errors::AppError>(!is_shared || access.role.can_admin())
 				});
@@ -2298,18 +2303,20 @@ impl MainWindow {
 	}
 
 	#[allow(clippy::too_many_arguments)]
-	fn build_profile_view<TUser, TTotp, TPolicy, TBackup, TImport, TSecret, TVault>(
+	fn build_profile_view<TUser, TTotp, TPolicy, TBackup, TBackupApp, TImport, TSecret, TVault>(
 		window: adw::ApplicationWindow,
 		runtime_handle: Handle,
 		user_service: Arc<TUser>,
 		totp_service: Arc<TTotp>,
 		auth_policy_service: Arc<TPolicy>,
 		backup_service: Arc<TBackup>,
+		backup_app_service: Arc<TBackupApp>,
 		import_service: Arc<TImport>,
 		secret_service: Arc<TSecret>,
 		vault_service: Arc<TVault>,
 		database_path: PathBuf,
 		user_id: Uuid,
+		_is_admin: bool,
 		profile_badge: gtk4::MenuButton,
 		critical_ops_in_flight: Rc<Cell<u32>>,
 		auto_lock_timeout_secs: Rc<Cell<u64>>,
@@ -2326,6 +2333,7 @@ impl MainWindow {
 		TTotp: TotpService + Send + Sync + 'static,
 		TPolicy: AuthPolicyService + Send + Sync + 'static,
 		TBackup: BackupService + Send + Sync + 'static,
+		TBackupApp: BackupApplicationService + Send + Sync + 'static,
 		TImport: ImportService + Send + Sync + 'static,
 		TSecret: SecretService + Send + Sync + 'static,
 		TVault: VaultService + Send + Sync + 'static,
@@ -3596,94 +3604,51 @@ impl MainWindow {
 		});
 
 		let window_for_export = window.clone();
+		let backup_app_for_export: Arc<TBackupApp> = Arc::clone(&backup_app_service);
 		let backup_for_export = Arc::clone(&backup_service);
 		let database_path_for_export = database_path.clone();
+		let actor_user_id_for_export: Uuid = user_id;
 		let begin_critical_for_export = Rc::clone(&begin_critical_operation);
 		let end_critical_for_export = Rc::clone(&end_critical_operation);
 		export_button.connect_clicked(move |_| {
-			let chooser = gtk4::FileChooserNative::builder()
-				.title(crate::tr!("profile-export-chooser-title").as_str())
-				.transient_for(&window_for_export)
-				.accept_label(crate::tr!("profile-export-accept").as_str())
-				.cancel_label(crate::tr!("trash-dialog-cancel").as_str())
-				.action(gtk4::FileChooserAction::Save)
-				.build();
-			chooser.set_current_name("heelonvault_backup.hvb");
+			let window_for_dialog = window_for_export.clone();
+			let backup_for_dialog = Arc::clone(&backup_for_export);
+			let backup_app_for_dialog = Arc::clone(&backup_app_for_export);
+			let db_path_for_dialog = database_path_for_export.clone();
+			let actor_id_for_dialog = actor_user_id_for_export;
+			let begin_critical_for_dialog = Rc::clone(&begin_critical_for_export);
+			let end_critical_for_dialog = Rc::clone(&end_critical_for_export);
 
-			let window_for_response = window_for_export.clone();
-			let backup_for_response = Arc::clone(&backup_for_export);
-			let db_path_for_response = database_path_for_export.clone();
-			let begin_critical_for_response = Rc::clone(&begin_critical_for_export);
-			let end_critical_for_response = Rc::clone(&end_critical_for_export);
-			chooser.connect_response(move |dialog, response| {
-				if response != gtk4::ResponseType::Accept {
-					dialog.destroy();
-					return;
-				}
-
-				let selected = dialog.file();
-				dialog.destroy();
-				let Some(file) = selected else {
-					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-invalid-destination").as_str());
-					return;
-				};
-				let Some(mut export_path) = file.path() else {
-					Self::show_feedback_dialog(&window_for_response, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-invalid-path").as_str());
-					return;
-				};
-				if export_path.extension().is_none() {
-					export_path.set_extension("hvb");
-				}
-
-				let recovery = match backup_for_response.generate_recovery_key() {
-					Ok(value) => value,
-					Err(_) => {
-						Self::show_feedback_dialog(
-							&window_for_response,
-							crate::tr!("profile-export-accept").as_str(),
-							crate::tr!("profile-export-recovery-key-failed").as_str(),
-						);
-						return;
-					}
-				};
-
-				let recovery_text = recovery.recovery_phrase.expose_secret().to_string();
-				let (sender, receiver) = tokio::sync::oneshot::channel();
-				let backup_for_task = Arc::clone(&backup_for_response);
-				let db_for_task = db_path_for_response.clone();
-				let path_for_task = export_path.clone();
-				let phrase_for_task = recovery.recovery_phrase.clone();
-				begin_critical_for_response();
-				std::thread::spawn(move || {
-					let result = backup_for_task.export_hvb_with_recovery_key(
-						db_for_task.as_path(),
-						path_for_task.as_path(),
-						&phrase_for_task,
-					);
-					let _ = sender.send(result);
-				});
-
-				let window_for_result = window_for_response.clone();
-				let end_critical_for_result = Rc::clone(&end_critical_for_response);
-				glib::MainContext::default().spawn_local(async move {
-					let result = receiver.await;
-					end_critical_for_result();
-					match result {
-						Ok(Ok(_)) => {
-							let message = crate::i18n::tr_args(
-								"profile-export-success-body",
-								&[("key", crate::i18n::I18nArg::Str(recovery_text.as_str()))],
-							);
-							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-export-success-title").as_str(), message.as_str());
-						}
-						_ => {
-							Self::show_feedback_dialog(&window_for_result, crate::tr!("profile-export-accept").as_str(), crate::tr!("profile-export-failed").as_str());
-						}
-					}
-				});
+			let window_for_feedback = window_for_dialog.clone();
+			let on_feedback: Rc<dyn Fn(&str, &str)> = Rc::new(move |title, body| {
+				Self::show_feedback_dialog(&window_for_feedback, title, body);
 			});
 
-			chooser.show();
+			let run_export: ExportRunner = Rc::new(move |backup_path: PathBuf, recovery_phrase| {
+				let backup_app_for_task = Arc::clone(&backup_app_for_dialog);
+				let db_for_task = db_path_for_dialog.clone();
+				Box::pin(async move {
+					backup_app_for_task
+						.export_backup_secured(
+							actor_id_for_dialog,
+							db_for_task.as_path(),
+							backup_path.as_path(),
+							&recovery_phrase,
+						)
+						.await
+						.map(|_| ())
+				})
+			});
+
+			RecoveryKeyExportDialog::show(RecoveryKeyExportDialogDeps {
+				parent_window: window_for_dialog.upcast::<gtk4::Window>(),
+				backup_service: backup_for_dialog,
+				cancel_label_key: "trash-dialog-cancel",
+				on_feedback,
+				on_begin_critical: Some(begin_critical_for_dialog),
+				on_end_critical: Some(end_critical_for_dialog),
+				run_export,
+			});
 		});
 
 		let window_for_import = window.clone();
@@ -4425,7 +4390,7 @@ impl MainWindow {
 				let access = vault_for_loader
 					.get_vault_access_for_user(admin_user_id, selected_vault.id)
 					.await?
-					.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+					.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
 				let is_shared = selected_vault.owner_user_id != admin_user_id;
 				let can_write = access.role.can_write();
 				let can_admin = access.role.can_admin();

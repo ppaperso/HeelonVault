@@ -1,6 +1,6 @@
 use uuid::Uuid;
 
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::models::{AuditAction, AuditLogEntry, UserRole};
 use crate::repositories::audit_log_repository::AuditLogRepository;
 use crate::repositories::user_repository::UserRepository;
@@ -73,7 +73,7 @@ where
             .ok_or_else(|| AppError::NotFound("requester not found".to_string()))?;
         if !matches!(user.role, UserRole::Admin) {
             return Err(AppError::Authorization(
-                "admin access required".to_string(),
+                AccessDeniedReason::AdminRequired,
             ));
         }
         Ok(())
@@ -122,7 +122,7 @@ where
 
         if !matches!(requester.role, UserRole::Admin) && requester_id != actor_id {
             return Err(AppError::Authorization(
-                "insufficient permissions to view another user's audit log".to_string(),
+                AccessDeniedReason::AuditCrossUserDenied,
             ));
         }
 

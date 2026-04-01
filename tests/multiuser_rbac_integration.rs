@@ -1,6 +1,6 @@
 use std::sync::Arc;
 
-use heelonvault_rust::errors::AppError;
+use heelonvault_rust::errors::{AccessDeniedReason, AppError};
 use heelonvault_rust::models::{SecretType, UserRole, VaultShareRole};
 use heelonvault_rust::repositories::audit_log_repository::SqlxAuditLogRepository;
 use heelonvault_rust::repositories::secret_repository::SqlxSecretRepository;
@@ -207,12 +207,12 @@ async fn create_secret_via_ui_service_flow(
     let access = vault_service
         .get_vault_access_for_user(requester_id, target_vault_id)
         .await?
-        .ok_or_else(|| AppError::Authorization("vault access denied for this user".to_string()))?;
+        .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
     let is_shared = access.vault.owner_user_id != requester_id;
     if is_shared && !access.role.can_admin() {
         return Err(AppError::Authorization(
-            "creating secrets in shared vault requires admin role".to_string(),
+            AccessDeniedReason::VaultSharedCreateDenied,
         ));
     }
 

@@ -491,14 +491,14 @@ impl AddEditDialog {
 					let access = vault_service_for_task
 						.get_vault_access_for_user(admin_user_id, target_vault_id)
 						.await?
-						.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+						.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
 					let is_shared = access.vault.owner_user_id != admin_user_id;
 					if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_))
 						&& is_shared
 						&& !access.role.can_admin()
 					{
 						return Err(crate::errors::AppError::Authorization(
-							"creating secrets in shared vault requires admin role".to_string(),
+							crate::errors::AccessDeniedReason::VaultSharedCreateDenied,
 						));
 					}
 					let vault_key = vault_service_for_task
@@ -1127,14 +1127,14 @@ impl AddEditDialog {
 					let access = vault_service_for_task
 						.get_vault_access_for_user(admin_user_id, target_vault_id)
 						.await?
-						.ok_or_else(|| crate::errors::AppError::Authorization("vault access denied for this user".to_string()))?;
+						.ok_or_else(|| crate::errors::AppError::Authorization(crate::errors::AccessDeniedReason::VaultAccessDenied))?;
 					let is_shared = access.vault.owner_user_id != admin_user_id;
 					if matches!(mode_for_save, DialogMode::Create | DialogMode::CreateInVault(_))
 						&& is_shared
 						&& !access.role.can_admin()
 					{
 						return Err(crate::errors::AppError::Authorization(
-							"creating secrets in shared vault requires admin role".to_string(),
+							crate::errors::AccessDeniedReason::VaultSharedCreateDenied,
 						));
 					}
 					let vault_key = vault_service_for_task

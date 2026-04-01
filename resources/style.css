@@ -2068,3 +2068,36 @@ button.profile-action-btn {
     font-family: monospace;
     font-size: 0.92rem;
 }
+
+.init-warning-banner {
+    border-radius: 12px;
+    border: 1px solid rgba(192, 129, 11, 0.38);
+    background: rgba(255, 244, 214, 0.8);
+}
+
+.init-recovery-grid-frame {
+    border-radius: 14px;
+    border: 1px solid rgba(87, 185, 177, 0.42);
+    background: rgba(255, 255, 255, 0.92);
+}
+
+.init-recovery-badge {
+    border-radius: 10px;
+    border: 1px solid rgba(164, 223, 207, 0.95);
+    background: linear-gradient(160deg, rgba(255, 255, 255, 0.98), rgba(234, 243, 241, 0.92));
+    padding: 6px 10px;
+    min-width: 90px;
+}
+
+.init-badge-num {
+    font-size: 0.68rem;
+    opacity: 0.62;
+    letter-spacing: 0.06em;
+}
+
+.init-badge-word {
+    font-family: monospace;
+    font-size: 0.9rem;
+    font-weight: 700;
+    color: #0A5F5C;
+}

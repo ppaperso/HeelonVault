@@ -1,4 +1,4 @@
-use crate::errors::AppError;
+use crate::errors::{AccessDeniedReason, AppError};
 use crate::models::{TeamMemberRole, User, UserRole, VaultShareRole};
 
 #[derive(Debug, Clone, Copy)]
@@ -16,6 +16,8 @@ pub enum Action {
     VaultRotate,
     AuditRead,
     AuditWrite,
+    BackupExport,
+    BackupRestore,
 }
 
 #[derive(Debug, Clone)]
@@ -38,21 +40,21 @@ pub fn check_permission(user: &User, action: Action, resource: &Resource) -> Res
     }
 
     match (action, resource) {
-        (Action::AdminManageUsers, _) => Err(AppError::Authorization("admin role required".to_string())),
-        (Action::AuditRead, _) => Err(AppError::Authorization("admin role required".to_string())),
+        (Action::AdminManageUsers, _) => Err(AppError::Authorization(AccessDeniedReason::AdminRequired)),
+        (Action::AuditRead, _) => Err(AppError::Authorization(AccessDeniedReason::AdminRequired)),
         (Action::AuditWrite, _) => Ok(()),
         (Action::TeamManageMembers, Resource::Team { requester_role }) => {
             if matches!(requester_role, Some(TeamMemberRole::Leader)) {
                 Ok(())
             } else {
-                Err(AppError::Authorization("team leader role required".to_string()))
+                Err(AppError::Authorization(AccessDeniedReason::TeamLeaderRequired))
             }
         }
         (Action::TeamReadMembers, Resource::Team { requester_role }) => {
             if requester_role.is_some() {
                 Ok(())
             } else {
-                Err(AppError::Authorization("team membership required".to_string()))
+                Err(AppError::Authorization(AccessDeniedReason::TeamMembershipRequired))
             }
         }
         (Action::VaultCreate, Resource::Global) => Ok(()),
@@ -69,9 +71,7 @@ pub fn check_permission(user: &User, action: Action, resource: &Resource) -> Res
             if *is_owner || share_role.is_some_and(|role| role.can_admin()) {
                 Ok(())
             } else {
-                Err(AppError::Authorization(
-                    "vault deletion requires admin permission on the vault".to_string(),
-                ))
+                Err(AppError::Authorization(AccessDeniedReason::VaultAdminRequired))
             }
         }
         (
@@ -87,9 +87,7 @@ pub fn check_permission(user: &User, action: Action, resource: &Resource) -> Res
             if has_access && (*is_owner || share_role.is_some_and(|role| role.can_write())) {
                 Ok(())
             } else {
-                Err(AppError::Authorization(
-                    "vault write denied for this user".to_string(),
-                ))
+                Err(AppError::Authorization(AccessDeniedReason::VaultWriteDenied))
             }
         }
         (
@@ -104,9 +102,7 @@ pub fn check_permission(user: &User, action: Action, resource: &Resource) -> Res
             if *is_owner || *has_direct_share || *has_team_share {
                 Ok(())
             } else {
-                Err(AppError::Authorization(
-                    "vault access denied for this user".to_string(),
-                ))
+                Err(AppError::Authorization(AccessDeniedReason::VaultAccessDenied))
             }
         }
         (
@@ -122,11 +118,11 @@ pub fn check_permission(user: &User, action: Action, resource: &Resource) -> Res
             if has_access && (*is_owner || share_role.is_some_and(|role| role.can_admin())) {
                 Ok(())
             } else {
-                Err(AppError::Authorization(
-                    "vault administration denied for this user".to_string(),
-                ))
+                Err(AppError::Authorization(AccessDeniedReason::VaultAdminRequired))
             }
         }
-        _ => Err(AppError::Authorization("unauthorized action".to_string())),
+        (Action::BackupExport, _) => Err(AppError::Authorization(AccessDeniedReason::AdminRequired)),
+        (Action::BackupRestore, _) => Err(AppError::Authorization(AccessDeniedReason::AdminRequired)),
+        _ => Err(AppError::Authorization(AccessDeniedReason::Unauthorized)),
     }
 }

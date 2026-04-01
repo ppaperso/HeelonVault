@@ -21,6 +21,13 @@ pub struct CreateUserResult {
     pub master_key: SecretBox<Vec<u8>>,
 }
 
+/// Result of a successful first-admin bootstrap.
+pub struct BootstrapResult {
+    pub user_id: Uuid,
+    pub username: String,
+    pub master_key: SecretBox<Vec<u8>>,
+}
+
 #[allow(async_fn_in_trait)]
 pub trait AdminService {
     /// Create a new user account.
@@ -59,6 +66,15 @@ pub trait AdminService {
         target_user_id: Uuid,
         new_password: SecretBox<Vec<u8>>,
     ) -> Result<SecretBox<Vec<u8>>, AppError>;
+
+    /// Bootstrap the very first admin account.
+    /// Atomically checks that no users exist yet, then creates the admin.
+    /// Fails with [`AppError::Conflict`] if any user already exists.
+    async fn bootstrap_first_admin(
+        &self,
+        username: &str,
+        password: SecretBox<Vec<u8>>,
+    ) -> Result<BootstrapResult, AppError>;
 }
 
 pub struct AdminServiceImpl<TUserRepo, TAuth, TAuditSvc>
@@ -319,6 +335,47 @@ where
 
         info!(actor = %actor_id, target = %target_user_id, "admin reset user password");
         Ok(master_key)
+    }
+
+    async fn bootstrap_first_admin(
+        &self,
+        username: &str,
+        password: SecretBox<Vec<u8>>,
+    ) -> Result<BootstrapResult, AppError> {
+        // Atomic guard: refuse if any user already exists.
+        if !self.user_repo.list_all().await?.is_empty() {
+            return Err(AppError::Conflict(
+                "vault already initialized; use the login form to access your account".to_string(),
+            ));
+        }
+
+        let trimmed = username.trim();
+        if trimmed.is_empty() {
+            return Err(AppError::Validation("username must not be empty".to_string()));
+        }
+
+        let password_bytes = password.expose_secret().clone();
+        self.auth_service
+            .create_user(trimmed, SecretBox::new(Box::new(password_bytes.clone())))
+            .await?;
+
+        let master_key = self
+            .auth_service
+            .derive_key_if_valid(trimmed, SecretBox::new(Box::new(password_bytes)))
+            .await?
+            .ok_or(AppError::Internal)?;
+
+        let envelope = self.auth_service.get_password_envelope(trimmed).await?;
+        let user_id = Uuid::new_v4();
+        self.user_repo.create_user_db(user_id, trimmed, &UserRole::Admin).await?;
+        self.user_repo.update_password_envelope(user_id, envelope).await?;
+
+        info!(user_id = %user_id, username = trimmed, "bootstrap: first admin account created");
+        Ok(BootstrapResult {
+            user_id,
+            username: trimmed.to_string(),
+            master_key,
+        })
     }
 }
 
