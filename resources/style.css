@@ -1645,6 +1645,14 @@ window {
     font-weight: 600;
 }
 
+.login-license-badge {
+    background: linear-gradient(120deg, #A4DFCF, #57B9B1);
+    border: 1px solid rgba(255, 255, 255, 0.42);
+    color: #07393A;
+    font-weight: 800;
+    box-shadow: 0 8px 18px rgba(7, 57, 58, 0.26);
+}
+
 .login-badge {
     background: rgba(255, 255, 255, 0.14);
     color: #A4DFCF;

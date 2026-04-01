@@ -59,6 +59,7 @@ impl LoginDialog {
 		user_service: Arc<TUser>,
 		totp_service: Arc<TTotp>,
 		bootstrap_ctx: Option<BootstrapServicesContext>,
+		license_badge_text: String,
 		on_restore_requested: impl Fn(PathBuf, String, String) -> Result<(), AppError>
 			+ Send
 			+ Sync
@@ -169,6 +170,10 @@ impl LoginDialog {
 			badge.add_css_class("login-hero-badge");
 			badges_box.append(&badge);
 		}
+		let license_badge = gtk4::Label::new(Some(license_badge_text.as_str()));
+		license_badge.add_css_class("login-hero-badge");
+		license_badge.add_css_class("login-license-badge");
+		badges_box.append(&license_badge);
 
 		hero_top.append(&hero_icon);
 		hero_top.append(&eyebrow_label);

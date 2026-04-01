@@ -458,3 +458,8 @@ profile-export-save-key-invalid-file = Invalid TXT file.
 profile-export-save-key-invalid-path = Invalid TXT path.
 profile-export-save-key-saved = Recovery Key saved as TXT.
 profile-export-save-key-failed = Failed to save the TXT file.
+
+## License Status (displayed in UI)
+license-status-community = Community Edition
+license-status-professional = Professional Edition
+license-status-invalid = Invalid License

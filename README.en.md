@@ -1,12 +1,10 @@
-# HeelonVault 0.9.3-beta
+# HeelonVault 0.9.4-beta
 
 Language: EN | [FR](README.md)
 
 HeelonVault is a local-first desktop secrets manager built in Rust with GTK4/libadwaita and SQLite.
 
-> **⚠️ License - Source-Available (not open source)**
-> The source code is published for audit and compliance verification purposes only.
-> Copying, modification, and redistribution are prohibited unless explicitly authorized in writing by HEELONYS.
+> Distributed under the **Apache 2.0 License** — free to use, modify, and redistribute under Apache terms.
 > See [LICENSE](LICENSE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
@@ -28,6 +26,7 @@ HeelonVault is a local-first desktop secrets manager built in Rust with GTK4/lib
 | **Dashboard** | Dedicated security dashboard with global vault score |
 | **Strength Meter** | Real-time `zxcvbn` evaluation for each password |
 | **Advanced Search** | Multi-field search with Unicode normalization |
+| **License** | Ed25519 signature verification for signed licenses; badge visible before and after login; automatic Community fallback |
 | **Structured Logs** | Rotating JSON logs in `~/.local/state/heelonvault/logs` |
 
 ---
@@ -38,7 +37,7 @@ HeelonVault follows a security-first approach for GDPR-oriented data protection.
 
 ### License and transparency
 
-- **Source-Available**: code is readable for security and GDPR verification, but protected against copying and commercial reuse (see [LICENSE](LICENSE)).
+- **Apache 2.0**: free to use, modify, and redistribute; copyright and the HeelonVault brand remain the property of HEELONYS (see [LICENSE](LICENSE)).
 - **Dependency inventory**: complete third-party component list and licenses are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **LGPL runtime linking**: GTK4/libadwaita are dynamically linked by the operating system.
 
@@ -74,7 +73,7 @@ HeelonVault/
 ├── docs/                  # Technical documentation
 ├── data/                  # Local dev database
 ├── logs/                  # Runtime logs
-├── LICENSE                # Source-Available license
+├── LICENSE                # Apache 2.0 license
 ├── THIRD_PARTY_LICENSES.md# Third-party dependency licenses
 └── install.sh             # Linux installer
 ```
@@ -122,6 +121,7 @@ Central index: [docs/README.md](docs/README.md)
 
 | Document | English | French |
 | -------- | ------- | ------ |
+| Changelog | [CHANGELOG.en.md](CHANGELOG.en.md) | [CHANGELOG.md](CHANGELOG.md) |
 | Overview | [README.en.md](README.en.md) | [README.md](README.md) |
 | Quickstart | [QUICKSTART.md](QUICKSTART.md) | [QUICKSTART.fr.md](QUICKSTART.fr.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) |
@@ -136,44 +136,4 @@ Central index: [docs/README.md](docs/README.md)
 
 ---
 
-## Release Notes 0.9.2-beta
-
-### Internationalization and UX
-
-- login language selector replaced with FR/EN flags;
-- fixed a UI freeze during language switching on the login screen;
-- harmonized live i18n refresh across main-window global areas (sidebar, tooltips, placeholders, stack titles);
-- user language preference now persists and applies live from `Profile & Security`.
-
-### Installer, CI/CD, and release reliability
-
-- installer hardened with explicit validation of critical artifacts (`run.sh`, desktop entries);
-- dual desktop-entry installation (`com.heelonvault.rust.desktop` and `heelonvault.desktop`) for environment compatibility;
-- installer smoke test added to the release workflow;
-- dedicated CI pipeline added (`.github/workflows/ci.yml`) with formatting, lint, build, test compilation, desktop validation, and installer smoke test.
-
-### Bilingual documentation
-
-- FR/EN coverage across operational Markdown documentation;
-- central bilingual documentation index in `docs/README.md`;
-- synchronized documented versions and runtime paths with the current project state.
-
-### Bootstrap wizard, recovery key, and secure backup (April 2026)
-
-- 3-step first-admin setup wizard embedded in the login dialog: identity (username + password) → oath (24-word recovery phrase display + word verification) → pending (account creation spinner);
-- 24-word mnemonic recovery phrase generated via `BackupService::generate_recovery_key()` on first startup;
-- mandatory spot-check of 2 randomly drawn words before the bootstrap can be confirmed;
-- clipboard copy of the phrase with automatic wipe after 60 seconds (also wiped on dialog close);
-- recovery key re-export available from `Profile & Security` for any admin;
-- `BackupApplicationService` added: RBAC access control on `.hvb` export and import operations;
-- audit log introduced (table `audit_log`, migration 0013) for sensitive action traceability.
-
-### Team sharing, RBAC, and admin UX (March 2026)
-
-- fixed team vault sharing flow by deriving member keys from `password_envelope` when explicit keys are not provided by the UI;
-- added fail-fast protection to prevent false success when no member receives a vault key (`granted = 0`);
-- added an explicit vault picker in the team sharing dialog to remove target-vault ambiguity;
-- added an ADMIN badge in the header next to the connected identity;
-- added owner-side shared-state visibility for owned vaults (shared icon kept, text badge removed to avoid duplicate signal);
-- normalized FR badge labels to uppercase for visual consistency (for example: ADMIN, DOUBLON, ACTIVEE);
-- i18n cleanup: removed obsolete `main-vault-shared-badge` key in FR/EN.
+> Detailed release notes are in [CHANGELOG.en.md](CHANGELOG.en.md).

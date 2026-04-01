@@ -1,13 +1,11 @@
-# HeelonVault 0.9.3-beta
+# HeelonVault 0.9.4-beta
 
 Langue: FR | [EN](README.en.md)
 
 HeelonVault est un gestionnaire de secrets desktop **local-first**, écrit en Rust et construit
 avec GTK4 / libadwaita et SQLite.
 
-> **⚠️ Licence — Source-Available (non open source)**
-> Le code source est publié **à des fins d'audit et de vérification de conformité uniquement**.
-> Toute copie, modification ou redistribution est interdite sauf autorisation écrite d'HEELONYS.
+> Distribué sous licence **Apache 2.0** — utilisation, modification et redistribution libres sous conditions Apache.
 > Consulter [LICENSE](LICENSE) et [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 
 ---
@@ -29,6 +27,7 @@ avec GTK4 / libadwaita et SQLite.
 | **Tableau de bord** | Fenêtre de sécurité dédiée avec score global du coffre |
 | **Indicateur de force** | Évaluation `zxcvbn` en temps réel sur chaque mot de passe |
 | **Recherche avancée** | Multi-champs (titre, login, email, URL, notes, catégorie, tags, type) avec normalisation Unicode |
+| **Licence** | Vérification Ed25519 de la licence signée ; badge visible avant et après login ; fallback Community automatique |
 | **Logs structurés** | Tracing JSON rotatif dans `~/.local/state/heelonvault/logs` |
 
 ---
@@ -40,9 +39,8 @@ et la protection des données utilisateurs.
 
 ### Licence et transparence
 
-- **Source-Available** : le code est consultable pour audit de sécurité et vérification RGPD,
-  mais protégé contre la copie et toute exploitation commerciale (voir [LICENSE](LICENSE)).
-- **Inventaire des dépendances** : la totalité des 440 bibliothèques tierces (Rust + système)
+- **Apache 2.0** : utilisation, modification et redistribution libres ; le copyright et la marque HeelonVault restent la propriété d'HEELONYS (voir [LICENSE](LICENSE)).
+- **Inventaire des dépendances** : la totalité des bibliothèques tierces (Rust + système)
   et leurs licences exactes sont documentées dans [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **Aucune dépendance copyleft** compilée statiquement dans le binaire — les seules bibliothèques
   LGPL (GTK4, libadwaita) sont liées dynamiquement par le système d'exploitation.
@@ -94,7 +92,7 @@ HeelonVault/
 ├── logs/                  # Logs runtime
 ├── Cargo.toml             # Manifest Cargo
 ├── clippy.toml            # Politique Clippy sécurité
-├── LICENSE                # Licence source-available HEELONYS
+├── LICENSE                # Licence Apache 2.0
 ├── THIRD_PARTY_LICENSES.md# Inventaire des bibliothèques tierces
 ├── SECURITY.md            # Politique de divulgation
 ├── run-dev.sh             # Lancement développement
@@ -151,63 +149,25 @@ cargo test
 
 | Fichier | Contenu |
 | ------- | ------- |
+| [CHANGELOG.md](CHANGELOG.md) | Journal des modifications (FR) |
+| [CHANGELOG.en.md](CHANGELOG.en.md) | Changelog (EN) |
 | [QUICKSTART.md](QUICKSTART.md) | Installation et premiers pas |
-| [QUICKSTART.fr.md](QUICKSTART.fr.md) | Guide de demarrage rapide (FR) |
+| [QUICKSTART.fr.md](QUICKSTART.fr.md) | Guide de démarrage rapide (FR) |
 | [docs/README.md](docs/README.md) | Index central de la documentation bilingue |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique détaillée |
 | [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md) | Technical architecture (EN) |
 | [docs/UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md) | Procédure de mise à jour |
 | [docs/UPDATE_GUIDE.en.md](docs/UPDATE_GUIDE.en.md) | Production update guide (EN) |
 | [SECURITY.md](SECURITY.md) | Politique de sécurité et divulgation |
-| [SECURITY.fr.md](SECURITY.fr.md) | Politique de securite (FR) |
+| [SECURITY.fr.md](SECURITY.fr.md) | Politique de sécurité (FR) |
 | [CONTRIBUTING.md](CONTRIBUTING.md) | Contribution guide (EN) |
 | [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) | Guide de contribution (FR) |
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Code de conduite (FR) |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Code of Conduct (EN) |
-| [LICENSE](LICENSE) | Licence source-available HEELONYS |
+| [LICENSE](LICENSE) | Licence Apache 2.0 |
 | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Inventaire complet des dépendances tierces |
 | [THIRD_PARTY_LICENSES.fr.md](THIRD_PARTY_LICENSES.fr.md) | Guide FR des licences tierces |
 
 ---
 
-## Notes de version 0.9.2-beta
-
-### Internationalisation et UX
-
-- sélecteur de langue de login converti en drapeaux FR/EN;
-- correction d'un gel UI lors des changements de langue sur l'écran de login;
-- harmonisation du rafraîchissement i18n dans les zones globales de la fenêtre principale (sidebar, tooltips, placeholders, titres de vues);
-- persistance et application à chaud de la langue utilisateur dans `Profil & Securite`.
-
-### Installation, CI/CD et fiabilité release
-
-- installateur renforcé avec vérification explicite des artefacts critiques (`run.sh`, entrées desktop);
-- installation de deux entrées desktop (`com.heelonvault.rust.desktop` et `heelonvault.desktop`) pour compatibilité environnementale;
-- ajout d'un smoke test installateur dans le workflow de release;
-- ajout d'un pipeline CI dédié (`.github/workflows/ci.yml`) avec format, lint, build, compilation des tests, validation desktop et smoke test installateur.
-
-### Documentation bilingue
-
-- couverture FR/EN sur l'ensemble des documents Markdown opérationnels;
-- index central de documentation bilingue dans `docs/README.md`;
-- synchronisation des versions documentées et des chemins runtime avec l'état actuel du projet.
-
-### Bootstrap, clé de récupération et sauvegarde sécurisée (avril 2026)
-
-- assistant d'initialisation en 3 étapes intégré dans la fenêtre de login : identity (nom + mot de passe) → oath (affichage + vérification de la clé de récupération 24 mots) → pending (spinner de création du compte) ;
-- génération d'une phrase mnémotechnique 24 mots via `BackupService::generate_recovery_key()` lors du premier démarrage ;
-- vérification obligatoire de 2 mots tirés au sort avant de valider l'initialisation ;
-- copie presse-papier de la phrase avec effacement automatique après 60 secondes (et à la fermeture du dialogue) ;
-- Ré-export de la clé de récupération disponible depuis `Profil & Sécurité` pour tout admin ;
-- ajout du `BackupApplicationService` : contrôle d'accès RBAC sur les exports et imports `.hvb` ;
-- mise en place du journal d'audit (table `audit_log`, migration 0013) pour les actions sensibles.
-
-### Partage equipe, RBAC et UX admin (mars 2026)
-
-- correction du partage de coffre vers une team: derive une cle membre depuis `password_envelope` quand la cle explicite n'est pas fournie par l'UI;
-- protection anti faux-positif: echec explicite si aucun membre n'a recu de cle de coffre (`granted = 0`);
-- ajout d'un selecteur explicite de coffre dans le dialogue de partage team (plus d'ambiguite sur le coffre cible);
-- ajout d'un badge ADMIN dans l'entete a cote de l'identite connectee;
-- affichage de l'etat "coffre partage" pour les coffres du proprietaire (icone de partage conservee, badge texte retire pour eviter le doublon visuel);
-- harmonisation des labels de badges FR en majuscules (ex: ADMIN, DOUBLON, ACTIVEE);
-- nettoyage i18n: suppression de la cle obsolet `main-vault-shared-badge` en FR/EN.
+> Les notes de version détaillées sont dans [CHANGELOG.md](CHANGELOG.md).

@@ -110,6 +110,8 @@ pub struct MainWindow {
 	session_master_key: Rc<RefCell<Vec<u8>>>,
 	on_auto_lock: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
 	on_logout: Rc<RefCell<Option<Rc<dyn Fn()>>>>,
+	#[allow(dead_code)]
+	audit_service: Rc<Arc<crate::services::audit_service::AuditService>>,
 }
 
 impl MainWindow {
@@ -153,11 +155,13 @@ impl MainWindow {
 		backup_service: Arc<TBackup>,
 		backup_app_service: Arc<TBackupApp>,
 		import_service: Arc<TImport>,
+		audit_service: Arc<crate::services::audit_service::AuditService>,
 		database_pool: SqlitePool,
 		database_path: PathBuf,
 		admin_user_id: Uuid,
 		admin_master_key: Vec<u8>,
 		connected_identity_label: String,
+		license_badge_text: String,
 		is_admin: bool,
 	) -> Self
 	where
@@ -235,9 +239,13 @@ impl MainWindow {
 		let header_beta_badge = gtk4::Label::new(Some("BETA"));
 		header_beta_badge.add_css_class("beta-badge");
 		header_beta_badge.add_css_class("header-beta-badge");
+		let header_license_badge = gtk4::Label::new(Some(license_badge_text.as_str()));
+		header_license_badge.add_css_class("header-badge");
+		header_license_badge.add_css_class("license-badge-community");
 		title_box.append(&logo);
 		title_box.append(&title_label);
 		title_box.append(&header_beta_badge);
+		title_box.append(&header_license_badge);
 		header_bar.set_title_widget(Some(&title_box));
 
 		let profile_button = gtk4::MenuButton::new();
@@ -1696,6 +1704,7 @@ impl MainWindow {
 			session_master_key,
 			on_auto_lock,
 			on_logout,
+			audit_service: Rc::new(audit_service),
 		}
 	}
 

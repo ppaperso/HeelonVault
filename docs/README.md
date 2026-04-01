@@ -15,6 +15,7 @@ This folder contains bilingual technical documentation for HeelonVault.
 ## Project-level Docs
 
 - Overview: [../README.en.md](../README.en.md) | [../README.md](../README.md)
+- Changelog: [../CHANGELOG.en.md](../CHANGELOG.en.md) | [../CHANGELOG.md](../CHANGELOG.md)
 - Quickstart: [../QUICKSTART.md](../QUICKSTART.md) | [../QUICKSTART.fr.md](../QUICKSTART.fr.md)
 - Security: [../SECURITY.md](../SECURITY.md) | [../SECURITY.fr.md](../SECURITY.fr.md)
 - Contributing: [../CONTRIBUTING.md](../CONTRIBUTING.md) | [../CONTRIBUTING.fr.md](../CONTRIBUTING.fr.md)

@@ -458,3 +458,8 @@ profile-export-save-key-invalid-file = Fichier TXT invalide.
 profile-export-save-key-invalid-path = Chemin TXT invalide.
 profile-export-save-key-saved = Recovery Key enregistree en TXT.
 profile-export-save-key-failed = Echec de l'enregistrement TXT.
+
+## Statut de licence (affiche dans l'interface)
+license-status-community = Edition Communautaire
+license-status-professional = Edition Professionnelle
+license-status-invalid = Licence invalide

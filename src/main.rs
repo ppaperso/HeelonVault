@@ -38,12 +38,14 @@ use heelonvault_rust::repositories::user_repository::{SqlxUserRepository, UserRe
 use heelonvault_rust::repositories::vault_repository::SqlxVaultRepository;
 use heelonvault_rust::services::admin_service::{AdminService, AdminServiceImpl};
 use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
+use heelonvault_rust::services::audit_service::{AuditAction, AuditService};
 use heelonvault_rust::services::auth_policy_service::{AuthPolicyService, SqlxAuthPolicyService};
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::backup_service::{BackupService, BackupServiceImpl};
 use heelonvault_rust::services::backup_application_service::BackupApplicationServiceImpl;
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::import_service::ImportServiceImpl;
+use heelonvault_rust::services::license_service::LicenseService;
 use heelonvault_rust::services::login_history_service::record_successful_login;
 use heelonvault_rust::services::password_service::PasswordServiceImpl;
 use heelonvault_rust::services::secret_service::SecretServiceImpl;
@@ -134,10 +136,13 @@ struct AppContext {
 	user_service: Arc<UserServiceHandle>,
 	totp_service: Arc<TotpServiceHandle>,
 	_audit_log_service: Arc<AuditLogServiceHandle>,
+	audit_service: Arc<AuditService>,
 	admin_service: Arc<AdminServiceHandle>,
 	team_service: Arc<TeamServiceHandle>,
 	#[allow(dead_code)]
 	backup_app_service: Arc<BackupApplicationServiceHandle>,
+	#[allow(dead_code)]
+	license_service: Arc<LicenseService>,
 	_password_service: PasswordServiceImpl,
 }
 
@@ -302,6 +307,16 @@ fn main() -> Result<()> {
 			} else {
 				None
 			};
+			let login_license_badge_text = context_for_login
+				.license_service
+				.get_cached()
+				.map(|license| match license.tier {
+					heelonvault_rust::models::LicenseTier::Community => "Licence free".to_string(),
+					heelonvault_rust::models::LicenseTier::Professional => {
+						format!("Licence pro - {}", license.customer_name)
+					}
+				})
+				.unwrap_or_else(|| "Licence free".to_string());
 			let login_dialog = LoginDialog::new(
 				&app_for_login,
 				&login_parent_for_dialog,
@@ -311,6 +326,7 @@ fn main() -> Result<()> {
 				Arc::clone(&context_for_login.user_service),
 				Arc::clone(&context_for_login.totp_service),
 				bootstrap_ctx_for_dialog,
+				login_license_badge_text,
 				move |backup_file_path, recovery_phrase, new_password| {
 					let staging_path = build_restore_staging_path(&context_for_restore.database_path);
 					cleanup_restore_staging_path(&staging_path).map_err(|error| {
@@ -384,6 +400,16 @@ fn main() -> Result<()> {
 					}
 
 					let main_window_build_started = Instant::now();
+					let license_badge_text = context_for_success
+						.license_service
+						.get_cached()
+						.map(|license| match license.tier {
+							heelonvault_rust::models::LicenseTier::Community => "Licence free".to_string(),
+							heelonvault_rust::models::LicenseTier::Professional => {
+								format!("Licence pro - {}", license.customer_name)
+							}
+						})
+						.unwrap_or_else(|| "Licence free".to_string());
 					let main_for_success = Rc::new(MainWindow::new(
 							&app_for_main_success,
 						runtime_for_success.clone(),
@@ -395,11 +421,13 @@ fn main() -> Result<()> {
 						Arc::clone(&context_for_success.totp_service),
 						Arc::clone(&context_for_success.auth_policy_service),
 						Arc::clone(&context_for_success.backup_service),					Arc::clone(&context_for_success.backup_app_service),						Arc::clone(&context_for_success.import_service),
+						Arc::clone(&context_for_success.audit_service),
 						context_for_success.pool.clone(),
 						context_for_success.database_path.clone(),
 						session_user_id,
 						session_master_key,
 						session_identity_label,
+						license_badge_text,
 						is_admin,
 					));
 					info!(
@@ -737,6 +765,33 @@ async fn initialize_app_context() -> Result<AppStartMode> {
 		CryptoServiceImpl::default(),
 		"HeelonVault",
 	));
+	let audit_service = Arc::new(AuditService::new(pool.clone()));
+	let mut license_service = LicenseService::new();
+	
+	// Load and verify license (Community fallback if not available)
+	match license_service.load_license().await {
+		Ok(license) => {
+			info!(customer = license.customer_name, tier = %license.tier, "license loaded successfully");
+			audit_service.log_async(
+				None,
+				AuditAction::LicenseCheckSuccess,
+				Some("license"),
+				None,
+				Some(&format!("{}({})", license.tier, license.customer_name)),
+			);
+		}
+		Err(e) => {
+			warn!(error = %e, "failed to load license, defaulting to community edition");
+			audit_service.log_async(
+				None,
+				AuditAction::LicenseCheckFailure,
+				Some("license"),
+				None,
+				Some(&format!("license verification failed: {}", e)),
+			);
+		}
+	}
+	let license_service = Arc::new(license_service);
 
 	info!("all services are initialized and ready");
 
@@ -753,9 +808,11 @@ async fn initialize_app_context() -> Result<AppStartMode> {
 		user_service,
 		totp_service,
 		_audit_log_service: audit_log_service,
+		audit_service,
 		admin_service,
 		team_service,
 		backup_app_service,
+		license_service,
 		_password_service: password_service,
 	};
 	if needs_bootstrap {
