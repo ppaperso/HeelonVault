@@ -7,6 +7,24 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.0] — 2026-04-02
+
+### Release stable
+
+- Passage officiel en **1.0.0** (sortie stable), suppression du suffixe beta dans la version applicative et la documentation de référence.
+
+### Rapport d'audit PDF
+
+- En-tête premium visuel simplifié: suppression de l'encadré or.
+- Nouveau titre principal en noir: **REGISTRE DE TRAÇABILITÉ DES ACCÈS**.
+- Journal d'audit exporté sous forme de tableau exploitable (date, action, acteur, cible, détail).
+
+### Traçabilité et lisibilité
+
+- Résolution des identités acteur par nom d'affichage / nom utilisateur dans les exports.
+- Enrichissement des cibles d'audit avec noms de coffre et titres de secrets quand disponibles.
+- Enrichissement de l'événement `secret.created` avec le titre du secret dans le détail d'audit.
+
 ## [0.9.4-beta] — 2026-04-01
 
 ### Licence

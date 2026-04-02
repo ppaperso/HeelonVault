@@ -7,6 +7,24 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.0] — 2026-04-02
+
+### Stable release
+
+- Official move to **1.0.0** (stable release), removing the beta suffix from the application version and reference documentation.
+
+### PDF audit report
+
+- Simplified premium visual header: removed the gold framed panel.
+- New black primary title: **REGISTRE DE TRAÇABILITÉ DES ACCÈS**.
+- Signed audit log exported as an actionable table (date, action, actor, target, detail).
+
+### Traceability and readability
+
+- Actor identity resolution now prefers display name / username in exports.
+- Audit targets enriched with vault names and secret titles when available.
+- `secret.created` event now includes secret title in audit detail payload.
+
 ## [0.9.4-beta] — 2026-04-01
 
 ### License

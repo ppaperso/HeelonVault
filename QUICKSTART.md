@@ -2,7 +2,7 @@
 
 Language: EN | [FR](QUICKSTART.fr.md)
 
-Documented quickstart version: `0.9.2-beta`
+Documented quickstart version: `1.0.0`
 
 ## 1. Build Check
 

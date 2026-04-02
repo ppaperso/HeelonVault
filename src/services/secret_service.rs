@@ -172,13 +172,18 @@ where
             .insert_secret_blob(&item, serialized_payload)
             .await?;
 
+        let secret_title_detail = format!(
+            r#"{{"title":"{}"}}"#,
+            item.title.as_deref().unwrap_or("Sans titre")
+        );
+
         self.audit_service
             .record_event(
                 None,
                 AuditAction::SecretCreated,
                 Some("secret"),
                 Some(&item.id.to_string()),
-                None,
+                Some(secret_title_detail.as_str()),
             )
             .await
             .ok();

@@ -4,6 +4,7 @@ pub mod admin_service;
 pub mod access_control;
 pub mod audit_log_service;
 pub mod audit_service;
+pub mod audit_report_service;
 pub mod backup_service;
 pub mod backup_application_service;
 pub mod crypto_service;

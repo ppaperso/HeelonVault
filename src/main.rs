@@ -411,7 +411,7 @@ fn main() -> Result<()> {
 						})
 						.unwrap_or_else(|| "Licence free".to_string());
 					let main_for_success = Rc::new(MainWindow::new(
-							&app_for_main_success,
+						&app_for_main_success,
 						runtime_for_success.clone(),
 						Arc::clone(&context_for_success.secret_service),
 						Arc::clone(&context_for_success.vault_service),
@@ -420,8 +420,11 @@ fn main() -> Result<()> {
 						Arc::clone(&context_for_success.team_service),
 						Arc::clone(&context_for_success.totp_service),
 						Arc::clone(&context_for_success.auth_policy_service),
-						Arc::clone(&context_for_success.backup_service),					Arc::clone(&context_for_success.backup_app_service),						Arc::clone(&context_for_success.import_service),
+						Arc::clone(&context_for_success.backup_service),
+						Arc::clone(&context_for_success.backup_app_service),
+						Arc::clone(&context_for_success.import_service),
 						Arc::clone(&context_for_success.audit_service),
+						Arc::clone(&context_for_success.license_service),
 						context_for_success.pool.clone(),
 						context_for_success.database_path.clone(),
 						session_user_id,

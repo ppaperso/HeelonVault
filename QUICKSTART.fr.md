@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](QUICKSTART.md)
 
-Version rapide documentee : `0.9.2-beta`
+Version rapide documentee : `1.0.0`
 
 ## 1. Verification du build
 

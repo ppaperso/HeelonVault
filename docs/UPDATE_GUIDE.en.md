@@ -2,7 +2,7 @@
 
 Language: EN | [FR](UPDATE_GUIDE.md)
 
-Documented version: `0.9.2-beta`
+Documented version: `1.0.0`
 
 This guide explains how to update HeelonVault in its Rust-only architecture.
 

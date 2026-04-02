@@ -1,11 +1,10 @@
-# HeelonVault 0.9.4-beta
+# HeelonVault 1.0.0
 
 Language: EN | [FR](README.md)
 
 HeelonVault is a local-first desktop secrets manager built in Rust with GTK4/libadwaita and SQLite.
 
-> Distributed under the **Apache 2.0 License** — free to use, modify, and redistribute under Apache terms.
-> See [LICENSE](LICENSE) and [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+> Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](LEGAL.md) for trademark and Authenticity Seal terms.
 
 ---
 
@@ -37,7 +36,7 @@ HeelonVault follows a security-first approach for GDPR-oriented data protection.
 
 ### License and transparency
 
-- **Apache 2.0**: free to use, modify, and redistribute; copyright and the HeelonVault brand remain the property of HEELONYS (see [LICENSE](LICENSE)).
+- Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](LEGAL.md) for trademark and Authenticity Seal terms.
 - **Dependency inventory**: complete third-party component list and licenses are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
 - **LGPL runtime linking**: GTK4/libadwaita are dynamically linked by the operating system.
 

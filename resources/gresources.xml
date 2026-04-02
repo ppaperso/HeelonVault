@@ -6,6 +6,7 @@
     <file>icons/hicolor/128x128/apps/heelonvault.png</file>
     <file>icons/hicolor/256x256/apps/heelonvault.png</file>
     <file>images/cps_card.png</file>
+    <file>images/nis2-rgpd.png</file>
     <file>style.css</file>
   </gresource>
 </gresources>

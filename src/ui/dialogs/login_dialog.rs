@@ -50,6 +50,19 @@ enum LoginAttemptOutcome {
 }
 
 impl LoginDialog {
+	fn professional_customer_name(license_badge_text: &str) -> Option<String> {
+		for prefix in ["Licence pro - ", "Pro: ", "Professional - ", "Professional: "] {
+			if let Some(customer_name) = license_badge_text.strip_prefix(prefix) {
+				let normalized = customer_name.trim();
+				if !normalized.is_empty() {
+					return Some(normalized.to_ascii_uppercase());
+				}
+			}
+		}
+
+		None
+	}
+
 	pub fn new<TAuth, TPolicy, TUser, TTotp>(
 		application: &adw::Application,
 		parent: &adw::ApplicationWindow,
@@ -141,10 +154,10 @@ impl LoginDialog {
 		eyebrow_label.add_css_class("login-badge");
 		eyebrow_label.set_halign(Align::Start);
 
-		let hero_beta_badge = gtk4::Label::new(Some("BETA"));
-		hero_beta_badge.add_css_class("beta-badge");
-		hero_beta_badge.add_css_class("login-beta-badge");
-		hero_beta_badge.set_halign(Align::Start);
+		let top_plan_badge = gtk4::Label::new(Some(&format!("v{}", env!("CARGO_PKG_VERSION"))));
+		top_plan_badge.add_css_class("beta-badge");
+		top_plan_badge.add_css_class("login-beta-badge");
+		top_plan_badge.set_halign(Align::Start);
 
 		let title_label = gtk4::Label::new(Some(crate::tr!("login-hero-title").as_str()));
 		title_label.add_css_class("title-1");
@@ -164,20 +177,67 @@ impl LoginDialog {
 		for text in [
 			"AES-256-GCM".to_string(),
 			"2FA TOTP".to_string(),
-			format!("v{}", env!("CARGO_PKG_VERSION")),
 		] {
 			let badge = gtk4::Label::new(Some(text.as_str()));
 			badge.add_css_class("login-hero-badge");
 			badges_box.append(&badge);
 		}
-		let license_badge = gtk4::Label::new(Some(license_badge_text.as_str()));
-		license_badge.add_css_class("login-hero-badge");
-		license_badge.add_css_class("login-license-badge");
-		badges_box.append(&license_badge);
+		if let Some(customer_name) = Self::professional_customer_name(license_badge_text.as_str()) {
+			let license_seal = gtk4::Box::builder()
+				.orientation(Orientation::Horizontal)
+				.spacing(8)
+				.halign(Align::Start)
+				.valign(Align::Center)
+				.build();
+			license_seal.add_css_class("heelonys-seal");
+			license_seal.add_css_class("heelonys-seal-login");
+
+			let icon_box = gtk4::Box::builder()
+				.orientation(Orientation::Horizontal)
+				.spacing(2)
+				.valign(Align::Center)
+				.build();
+			icon_box.add_css_class("heelonys-seal-emblem");
+
+			let shield_icon = gtk4::Image::from_icon_name("security-high-symbolic");
+			shield_icon.add_css_class("heelonys-seal-shield");
+			let check_dot = gtk4::Label::new(Some("•"));
+			check_dot.add_css_class("heelonys-seal-dot");
+			icon_box.append(&shield_icon);
+			icon_box.append(&check_dot);
+
+			let divider = gtk4::Separator::new(Orientation::Vertical);
+			divider.add_css_class("heelonys-seal-divider");
+
+			let text_box = gtk4::Box::builder()
+				.orientation(Orientation::Vertical)
+				.spacing(1)
+				.valign(Align::Center)
+				.build();
+
+			let cert_label = gtk4::Label::new(Some("CERTIFIE PAR HEELONYS"));
+			cert_label.set_halign(Align::Start);
+			cert_label.add_css_class("heelonys-seal-cert");
+			let customer_label = gtk4::Label::new(Some(customer_name.as_str()));
+			customer_label.set_halign(Align::Start);
+			customer_label.add_css_class("heelonys-seal-customer");
+			text_box.append(&cert_label);
+			text_box.append(&customer_label);
+
+			license_seal.append(&icon_box);
+			license_seal.append(&divider);
+			license_seal.append(&text_box);
+			badges_box.append(&license_seal);
+		} else {
+			let license_badge = gtk4::Label::new(Some(license_badge_text.as_str()));
+			license_badge.add_css_class("login-hero-badge");
+			license_badge.add_css_class("login-license-badge");
+			badges_box.append(&license_badge);
+		}
 
 		hero_top.append(&hero_icon);
 		hero_top.append(&eyebrow_label);
-		hero_top.append(&hero_beta_badge);
+		hero_top.append(&top_plan_badge);
 		hero_box.append(&hero_top);
 		hero_box.append(&title_label);
 		hero_box.append(&subtitle_label);

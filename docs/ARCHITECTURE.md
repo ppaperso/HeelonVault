@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](ARCHITECTURE.en.md)
 
-Version cible documentée: `0.9.4-beta`
+Version cible documentée: `1.0.0`
 
 ## Vue d'ensemble
 

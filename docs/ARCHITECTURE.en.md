@@ -2,7 +2,7 @@
 
 Language: EN | [FR](ARCHITECTURE.md)
 
-Documented target version: `0.9.4-beta`
+Documented target version: `1.0.0`
 
 ## Overview
 
