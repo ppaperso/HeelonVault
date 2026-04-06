@@ -303,6 +303,7 @@ impl TeamRepository for SqlxTeamRepository {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{SqlxTeamRepository, TeamRepository};
     use crate::models::TeamMemberRole;
@@ -376,35 +377,73 @@ mod tests {
 
     #[tokio::test]
     async fn create_and_get_team() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let team_id = Uuid::new_v4();
-        let team = repo
-            .create_team(team_id, "DevOps", None)
-            .await
-            .expect("create_team");
+        let team_result = repo.create_team(team_id, "DevOps", None).await;
+        assert!(team_result.is_ok(), "create_team should succeed");
+        let team = match team_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(team.name, "DevOps");
         assert_eq!(team.id, team_id);
 
-        let found = repo.get_by_id(team_id).await.expect("get_by_id");
+        let found_result = repo.get_by_id(team_id).await;
+        assert!(found_result.is_ok(), "get_by_id should succeed");
+        let found = match found_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert!(found.is_some());
-        assert_eq!(found.unwrap().name, "DevOps");
+        let found_team = match found {
+            Some(value) => value,
+            None => return,
+        };
+        assert_eq!(found_team.name, "DevOps");
     }
 
     #[tokio::test]
     async fn add_and_list_members() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let team_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
 
-        seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Alpha", None)
-            .await
-            .expect("create_team");
-        repo.add_member(team_id, user_id, &TeamMemberRole::Leader)
-            .await
-            .expect("add_member");
+        let seed_result = seed_user(&repo, user_id).await;
+        assert!(seed_result.is_ok(), "seed user should succeed");
+        if seed_result.is_err() {
+            return;
+        }
 
-        let members = repo.list_members(team_id).await.expect("list_members");
+        let create_result = repo.create_team(team_id, "Alpha", None).await;
+        assert!(create_result.is_ok(), "create_team should succeed");
+        if create_result.is_err() {
+            return;
+        }
+
+        let add_result = repo
+            .add_member(team_id, user_id, &TeamMemberRole::Leader)
+            .await;
+        assert!(add_result.is_ok(), "add_member should succeed");
+        if add_result.is_err() {
+            return;
+        }
+
+        let members_result = repo.list_members(team_id).await;
+        assert!(members_result.is_ok(), "list_members should succeed");
+        let members = match members_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].user_id, user_id);
         assert_eq!(members[0].role, TeamMemberRole::Leader);
@@ -412,44 +451,93 @@ mod tests {
 
     #[tokio::test]
     async fn remove_member_decrement() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let team_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
 
-        seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Beta", None)
-            .await
-            .expect("create_team");
-        repo.add_member(team_id, user_id, &TeamMemberRole::Member)
-            .await
-            .expect("add_member");
-        repo.remove_member(team_id, user_id)
-            .await
-            .expect("remove_member");
+        let seed_result = seed_user(&repo, user_id).await;
+        assert!(seed_result.is_ok(), "seed user should succeed");
+        if seed_result.is_err() {
+            return;
+        }
 
-        let members = repo.list_members(team_id).await.expect("list_members");
+        let create_result = repo.create_team(team_id, "Beta", None).await;
+        assert!(create_result.is_ok(), "create_team should succeed");
+        if create_result.is_err() {
+            return;
+        }
+
+        let add_result = repo
+            .add_member(team_id, user_id, &TeamMemberRole::Member)
+            .await;
+        assert!(add_result.is_ok(), "add_member should succeed");
+        if add_result.is_err() {
+            return;
+        }
+
+        let remove_result = repo.remove_member(team_id, user_id).await;
+        assert!(remove_result.is_ok(), "remove_member should succeed");
+        if remove_result.is_err() {
+            return;
+        }
+
+        let members_result = repo.list_members(team_id).await;
+        assert!(members_result.is_ok(), "list_members should succeed");
+        let members = match members_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert!(members.is_empty());
     }
 
     #[tokio::test]
     async fn delete_team_cascades_members() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let team_id = Uuid::new_v4();
         let user_id = Uuid::new_v4();
 
-        seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Gamma", None)
-            .await
-            .expect("create_team");
-        repo.add_member(team_id, user_id, &TeamMemberRole::Member)
-            .await
-            .expect("add_member");
-        repo.delete_team(team_id).await.expect("delete_team");
+        let seed_result = seed_user(&repo, user_id).await;
+        assert!(seed_result.is_ok(), "seed user should succeed");
+        if seed_result.is_err() {
+            return;
+        }
 
-        let ids = repo
-            .list_member_user_ids(team_id)
-            .await
-            .expect("list_member_user_ids");
+        let create_result = repo.create_team(team_id, "Gamma", None).await;
+        assert!(create_result.is_ok(), "create_team should succeed");
+        if create_result.is_err() {
+            return;
+        }
+
+        let add_result = repo
+            .add_member(team_id, user_id, &TeamMemberRole::Member)
+            .await;
+        assert!(add_result.is_ok(), "add_member should succeed");
+        if add_result.is_err() {
+            return;
+        }
+
+        let delete_result = repo.delete_team(team_id).await;
+        assert!(delete_result.is_ok(), "delete_team should succeed");
+        if delete_result.is_err() {
+            return;
+        }
+
+        let ids_result = repo.list_member_user_ids(team_id).await;
+        assert!(ids_result.is_ok(), "list_member_user_ids should succeed");
+        let ids = match ids_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert!(ids.is_empty(), "cascade should remove members");
     }
 }

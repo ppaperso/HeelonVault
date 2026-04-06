@@ -510,7 +510,7 @@ impl AddEditDialog {
                     let access = vault_service_for_task
                         .get_vault_access_for_user(admin_user_id, target_vault_id)
                         .await?
-                        .ok_or_else(|| {
+                        .ok_or({
                             crate::errors::AppError::Authorization(
                                 crate::errors::AccessDeniedReason::VaultAccessDenied,
                             )
@@ -1169,7 +1169,7 @@ impl AddEditDialog {
                     let access = vault_service_for_task
                         .get_vault_access_for_user(admin_user_id, target_vault_id)
                         .await?
-                        .ok_or_else(|| {
+                        .ok_or({
                             crate::errors::AppError::Authorization(
                                 crate::errors::AccessDeniedReason::VaultAccessDenied,
                             )

@@ -138,6 +138,12 @@ pub struct PasswordStrengthBar {
     state: Rc<StrengthState>,
 }
 
+impl Default for PasswordStrengthBar {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 impl PasswordStrengthBar {
     pub fn new() -> Self {
         let root = gtk4::Box::builder()

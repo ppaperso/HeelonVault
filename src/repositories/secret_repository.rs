@@ -506,6 +506,7 @@ impl SecretRepository for SqlxSecretRepository {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{SecretRepository, SqlxSecretRepository};
     use crate::errors::AppError;

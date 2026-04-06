@@ -203,9 +203,9 @@ where
 
         let (password_salt, expected_password_hash) = {
             let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
-            let record = credentials
-                .get(username)
-                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+            let record = credentials.get(username).ok_or(AppError::Authorization(
+                AccessDeniedReason::InvalidCredentials,
+            ))?;
             (
                 SecretBox::new(Box::new(record.password_salt.expose_secret().clone())),
                 record.password_hash.expose_secret().clone(),
@@ -242,18 +242,18 @@ where
 
         let current_salt = {
             let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
-            let record = credentials
-                .get(username)
-                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+            let record = credentials.get(username).ok_or(AppError::Authorization(
+                AccessDeniedReason::InvalidCredentials,
+            ))?;
 
             SecretBox::new(Box::new(record.password_salt.expose_secret().clone()))
         };
 
         let expected_hash = {
             let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
-            let record = credentials
-                .get(username)
-                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+            let record = credentials.get(username).ok_or(AppError::Authorization(
+                AccessDeniedReason::InvalidCredentials,
+            ))?;
             record.password_hash.expose_secret().clone()
         };
 
@@ -279,7 +279,9 @@ where
         let mut credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
         let record = credentials
             .get_mut(username)
-            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+            .ok_or(AppError::Authorization(
+                AccessDeniedReason::InvalidCredentials,
+            ))?;
         record.password_salt = new_salt;
         record.password_hash = new_hash;
 
@@ -345,9 +347,9 @@ where
         self.ensure_not_shutting_down()?;
 
         let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
-        let record = credentials
-            .get(username)
-            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+        let record = credentials.get(username).ok_or(AppError::Authorization(
+            AccessDeniedReason::InvalidCredentials,
+        ))?;
 
         Ok(Self::encode_password_envelope(record))
     }
@@ -358,6 +360,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{AuthService, AuthServiceImpl};
     use crate::services::crypto_service::CryptoServiceImpl;

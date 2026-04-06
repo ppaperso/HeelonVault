@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 //! Security test template for crypto primitives.
 //! Focused on contract-level checks for KDF and AEAD behavior.
 

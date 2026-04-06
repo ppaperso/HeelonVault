@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use std::sync::Arc;
 
 use heelonvault_rust::repositories::user_repository::SqlxUserRepository;

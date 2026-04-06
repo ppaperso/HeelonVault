@@ -1,3 +1,5 @@
+#![allow(clippy::type_complexity, clippy::too_many_arguments)]
+
 use std::cell::Cell;
 use std::path::PathBuf;
 use std::rc::Rc;

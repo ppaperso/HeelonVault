@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 //! Security test template for authentication and 2FA.
 //! Contract-level checks for auth flows using the service skeleton.
 

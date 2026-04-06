@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 /// Shared test stubs for integration tests.
 ///
 /// Usage: add `#[path = "../common/mod.rs"] mod common;` at the top of a test file,

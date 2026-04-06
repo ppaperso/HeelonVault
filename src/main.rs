@@ -1,3 +1,5 @@
+#![allow(clippy::items_after_test_module, clippy::type_complexity)]
+
 use std::cell::{Cell, RefCell};
 use std::env;
 use std::fs;
@@ -468,7 +470,7 @@ fn main() -> Result<()> {
                     let user_id_for_history = session_user_id;
                     std::thread::spawn(move || {
                         let device_info = format!("{} / GTK4 Desktop", std::env::consts::OS);
-                        let _ = runtime_for_history.block_on(async move {
+                        runtime_for_history.block_on(async move {
                             let _ = record_successful_login(
                                 &pool_for_history,
                                 user_id_for_history,
@@ -758,9 +760,8 @@ async fn initialize_app_context() -> Result<AppStartMode> {
         match ensure_privileged_account_context_initialized(&pool, &auth_service).await {
             Ok(()) => false,
             Err(e)
-                if e.downcast_ref::<AppError>().map_or(false, |ae| {
-                    matches!(ae, AppError::InitializationRequired(_))
-                }) =>
+                if e.downcast_ref::<AppError>()
+                    .is_some_and(|ae| matches!(ae, AppError::InitializationRequired(_))) =>
             {
                 true
             }

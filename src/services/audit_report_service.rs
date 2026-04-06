@@ -616,13 +616,19 @@ mod tests {
     }
 
     fn setup_service(tier: LicenseTier) -> (Runtime, AuditReportService) {
-        let runtime = Runtime::new().expect("create tokio runtime");
+        let runtime = match Runtime::new() {
+            Ok(value) => value,
+            Err(err) => panic!("create tokio runtime: {err}"),
+        };
         let pool = runtime.block_on(async {
             let pool = SqlitePoolOptions::new()
                 .max_connections(1)
                 .connect("sqlite::memory:")
-                .await
-                .expect("connect in-memory sqlite");
+                .await;
+            let pool = match pool {
+                Ok(value) => value,
+                Err(err) => panic!("connect in-memory sqlite: {err}"),
+            };
 
             sqlx::query(
                 "CREATE TABLE audit_log (
@@ -637,7 +643,7 @@ mod tests {
             )
             .execute(&pool)
             .await
-            .expect("create audit_log table");
+            .unwrap_or_else(|err| panic!("create audit_log table: {err}"));
 
             sqlx::query(
                 "CREATE TABLE users (
@@ -648,7 +654,7 @@ mod tests {
             )
             .execute(&pool)
             .await
-            .expect("create users table");
+            .unwrap_or_else(|err| panic!("create users table: {err}"));
 
             sqlx::query(
                 "CREATE TABLE vaults (
@@ -659,7 +665,7 @@ mod tests {
             )
             .execute(&pool)
             .await
-            .expect("create vaults table");
+            .unwrap_or_else(|err| panic!("create vaults table: {err}"));
 
             sqlx::query(
                 "CREATE TABLE secret_items (
@@ -672,7 +678,7 @@ mod tests {
             )
             .execute(&pool)
             .await
-            .expect("create secret_items table");
+            .unwrap_or_else(|err| panic!("create secret_items table: {err}"));
 
             sqlx::query(
                 "INSERT INTO users (id, username, display_name)
@@ -683,7 +689,7 @@ mod tests {
             .bind("Patrick")
             .execute(&pool)
             .await
-            .expect("insert user row");
+            .unwrap_or_else(|err| panic!("insert user row: {err}"));
 
             sqlx::query(
                 "INSERT INTO audit_log (actor_user_id, action, target_type, target_id, detail)
@@ -696,7 +702,7 @@ mod tests {
             .bind("Login successful")
             .execute(&pool)
             .await
-            .expect("insert audit log row");
+            .unwrap_or_else(|err| panic!("insert audit log row: {err}"));
 
             pool
         });
@@ -710,7 +716,10 @@ mod tests {
 
     #[test]
     fn generate_report_requires_certified_license() {
-        let _guard = env_lock().lock().expect("lock env");
+        let _guard = match env_lock().lock() {
+            Ok(value) => value,
+            Err(_) => panic!("lock env"),
+        };
         std::env::remove_var("HEELONVAULT_AUDIT_SIGNING_KEY");
         std::env::remove_var("HEELONVAULT_AUDIT_SIGNING_KEY_PATH");
 
@@ -722,9 +731,15 @@ mod tests {
 
     #[test]
     fn generate_report_auto_provisions_signing_key_for_pro_license() {
-        let _guard = env_lock().lock().expect("lock env");
+        let _guard = match env_lock().lock() {
+            Ok(value) => value,
+            Err(_) => panic!("lock env"),
+        };
         std::env::remove_var("HEELONVAULT_AUDIT_SIGNING_KEY");
-        let temp_dir = tempdir().expect("create temp dir");
+        let temp_dir = match tempdir() {
+            Ok(value) => value,
+            Err(err) => panic!("create temp dir: {err}"),
+        };
         let key_path = temp_dir.path().join("audit.key");
         std::env::set_var("HEELONVAULT_AUDIT_SIGNING_KEY_PATH", &key_path);
 
@@ -742,7 +757,10 @@ mod tests {
 
     #[test]
     fn generate_report_rejects_invalid_signing_key() {
-        let _guard = env_lock().lock().expect("lock env");
+        let _guard = match env_lock().lock() {
+            Ok(value) => value,
+            Err(_) => panic!("lock env"),
+        };
         std::env::set_var("HEELONVAULT_AUDIT_SIGNING_KEY", "cle-invalide");
         std::env::remove_var("HEELONVAULT_AUDIT_SIGNING_KEY_PATH");
 

@@ -73,9 +73,8 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("actor user not found".to_string()))?;
 
-        check_permission(&actor, Action::BackupExport, &Resource::Global).map_err(|err| {
+        check_permission(&actor, Action::BackupExport, &Resource::Global).inspect_err(|_err| {
             warn!(actor_id = %actor_id, "backup export permission denied");
-            err
         })?;
 
         self.backup_service.export_hvb_with_recovery_key(
@@ -98,9 +97,8 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("actor user not found".to_string()))?;
 
-        check_permission(&actor, Action::BackupRestore, &Resource::Global).map_err(|err| {
+        check_permission(&actor, Action::BackupRestore, &Resource::Global).inspect_err(|_err| {
             warn!(actor_id = %actor_id, "backup restore permission denied");
-            err
         })?;
 
         self.backup_service.import_hvb_with_recovery_key(
@@ -112,7 +110,10 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
+    use std::collections::HashMap;
+    use std::sync::MutexGuard;
     use std::sync::{Arc, Mutex};
     use uuid::Uuid;
 
@@ -125,30 +126,36 @@ mod tests {
 
     #[derive(Default, Clone)]
     struct StubUserRepo {
-        users: Arc<Mutex<std::collections::HashMap<Uuid, User>>>,
+        users: Arc<Mutex<HashMap<Uuid, User>>>,
     }
 
     impl StubUserRepo {
+        fn lock_users(&self) -> Result<MutexGuard<'_, HashMap<Uuid, User>>, AppError> {
+            self.users.lock().map_err(|_| AppError::Internal)
+        }
+
         fn insert_user(&self, id: Uuid, role: UserRole) {
-            self.users.lock().unwrap().insert(
-                id,
-                User {
+            if let Ok(mut users) = self.users.lock() {
+                users.insert(
                     id,
-                    username: format!("user_{}", id),
-                    role,
-                    email: None,
-                    display_name: None,
-                    preferred_language: "fr".to_string(),
-                    show_passwords_in_edit: false,
-                    updated_at: None,
-                },
-            );
+                    User {
+                        id,
+                        username: format!("user_{}", id),
+                        role,
+                        email: None,
+                        display_name: None,
+                        preferred_language: "fr".to_string(),
+                        show_passwords_in_edit: false,
+                        updated_at: None,
+                    },
+                );
+            }
         }
     }
 
     impl UserRepository for StubUserRepo {
         async fn get_by_id(&self, id: Uuid) -> Result<Option<User>, AppError> {
-            Ok(self.users.lock().unwrap().get(&id).cloned())
+            Ok(self.lock_users()?.get(&id).cloned())
         }
         async fn get_by_username(&self, _: &str) -> Result<Option<User>, AppError> {
             Ok(None)
@@ -274,7 +281,7 @@ mod tests {
         let admin_id = Uuid::new_v4();
         user_repo.insert_user(admin_id, UserRole::Admin);
 
-        let backup_service = StubBackupService::default();
+        let backup_service = StubBackupService;
         let app_service = BackupApplicationServiceImpl::new(user_repo, backup_service);
 
         let result = app_service
@@ -295,7 +302,7 @@ mod tests {
         let user_id = Uuid::new_v4();
         user_repo.insert_user(user_id, UserRole::User);
 
-        let backup_service = StubBackupService::default();
+        let backup_service = StubBackupService;
         let app_service = BackupApplicationServiceImpl::new(user_repo, backup_service);
 
         let result = app_service
@@ -316,7 +323,7 @@ mod tests {
         let admin_id = Uuid::new_v4();
         user_repo.insert_user(admin_id, UserRole::Admin);
 
-        let backup_service = StubBackupService::default();
+        let backup_service = StubBackupService;
         let app_service = BackupApplicationServiceImpl::new(user_repo, backup_service);
 
         let result = app_service
@@ -337,7 +344,7 @@ mod tests {
         let user_id = Uuid::new_v4();
         user_repo.insert_user(user_id, UserRole::User);
 
-        let backup_service = StubBackupService::default();
+        let backup_service = StubBackupService;
         let app_service = BackupApplicationServiceImpl::new(user_repo, backup_service);
 
         let result = app_service
@@ -357,7 +364,7 @@ mod tests {
         let user_repo = StubUserRepo::default();
         let missing_id = Uuid::new_v4();
 
-        let backup_service = StubBackupService::default();
+        let backup_service = StubBackupService;
         let app_service = BackupApplicationServiceImpl::new(user_repo, backup_service);
 
         let result = app_service

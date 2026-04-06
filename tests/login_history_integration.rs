@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods)]
+
 use heelonvault_rust::services::login_history_service::{
     list_recent_logins, record_successful_login,
 };

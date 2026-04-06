@@ -1,6 +1,7 @@
+#![allow(clippy::disallowed_methods)]
+
 /// Integration tests for backup security via BackupApplicationService
 /// Tests authorization enforcement and data integrity
-
 #[path = "common/mod.rs"]
 mod common;
 

@@ -654,8 +654,10 @@ fn generate_vault_key() -> Result<SecretBox<Vec<u8>>, AppError> {
 // ── unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use std::collections::HashMap;
+    use std::sync::MutexGuard;
     use std::sync::{Arc, Mutex};
 
     use secrecy::{ExposeSecret, SecretBox};
@@ -668,7 +670,7 @@ mod tests {
     };
     use crate::repositories::team_repository::TeamRepository;
     use crate::repositories::user_repository::UserRepository;
-    use crate::repositories::vault_repository::VaultRepository;
+    use crate::repositories::vault_repository::{VaultKeyShareEnvelope, VaultRepository};
     use crate::services::audit_log_service::AuditLogService;
     use crate::services::crypto_service::CryptoServiceImpl;
 
@@ -680,6 +682,16 @@ mod tests {
     struct StubTeamRepo {
         teams: Arc<Mutex<HashMap<Uuid, Team>>>,
         members: Arc<Mutex<Vec<TeamMember>>>,
+    }
+
+    impl StubTeamRepo {
+        fn lock_teams(&self) -> Result<MutexGuard<'_, HashMap<Uuid, Team>>, AppError> {
+            self.teams.lock().map_err(|_| AppError::Internal)
+        }
+
+        fn lock_members(&self) -> Result<MutexGuard<'_, Vec<TeamMember>>, AppError> {
+            self.members.lock().map_err(|_| AppError::Internal)
+        }
     }
 
     impl TeamRepository for StubTeamRepo {
@@ -695,39 +707,34 @@ mod tests {
                 created_by,
                 created_at: "2026-01-01".to_string(),
             };
-            self.teams.lock().unwrap().insert(id, team.clone());
+            self.lock_teams()?.insert(id, team.clone());
             Ok(team)
         }
         async fn get_by_id(&self, team_id: Uuid) -> Result<Option<Team>, AppError> {
-            Ok(self.teams.lock().unwrap().get(&team_id).cloned())
+            Ok(self.lock_teams()?.get(&team_id).cloned())
         }
         async fn list_all(&self) -> Result<Vec<Team>, AppError> {
-            Ok(self.teams.lock().unwrap().values().cloned().collect())
+            Ok(self.lock_teams()?.values().cloned().collect())
         }
         async fn list_for_user(&self, user_id: Uuid) -> Result<Vec<Team>, AppError> {
-            let guard = self.members.lock().unwrap();
+            let guard = self.lock_members()?;
             let team_ids: Vec<Uuid> = guard
                 .iter()
                 .filter(|m| m.user_id == user_id)
                 .map(|m| m.team_id)
                 .collect();
             drop(guard);
-            let teams_guard = self.teams.lock().unwrap();
+            let teams_guard = self.lock_teams()?;
             Ok(team_ids
                 .iter()
                 .filter_map(|tid| teams_guard.get(tid).cloned())
                 .collect())
         }
         async fn delete_team(&self, team_id: Uuid) -> Result<(), AppError> {
-            self.teams
-                .lock()
-                .unwrap()
+            self.lock_teams()?
                 .remove(&team_id)
                 .ok_or_else(|| AppError::NotFound("team not found".to_string()))?;
-            self.members
-                .lock()
-                .unwrap()
-                .retain(|m| m.team_id != team_id);
+            self.lock_members()?.retain(|m| m.team_id != team_id);
             Ok(())
         }
         async fn add_member(
@@ -736,7 +743,7 @@ mod tests {
             user_id: Uuid,
             role: &TeamMemberRole,
         ) -> Result<(), AppError> {
-            let mut guard = self.members.lock().unwrap();
+            let mut guard = self.lock_members()?;
             guard.retain(|m| !(m.team_id == team_id && m.user_id == user_id));
             guard.push(TeamMember {
                 team_id,
@@ -747,7 +754,7 @@ mod tests {
             Ok(())
         }
         async fn remove_member(&self, team_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-            let mut guard = self.members.lock().unwrap();
+            let mut guard = self.lock_members()?;
             let before = guard.len();
             guard.retain(|m| !(m.team_id == team_id && m.user_id == user_id));
             if guard.len() == before {
@@ -757,9 +764,7 @@ mod tests {
         }
         async fn list_members(&self, team_id: Uuid) -> Result<Vec<TeamMember>, AppError> {
             Ok(self
-                .members
-                .lock()
-                .unwrap()
+                .lock_members()?
                 .iter()
                 .filter(|m| m.team_id == team_id)
                 .cloned()
@@ -771,18 +776,14 @@ mod tests {
             user_id: Uuid,
         ) -> Result<Option<TeamMemberRole>, AppError> {
             Ok(self
-                .members
-                .lock()
-                .unwrap()
+                .lock_members()?
                 .iter()
                 .find(|m| m.team_id == team_id && m.user_id == user_id)
                 .map(|m| m.role.clone()))
         }
         async fn list_member_user_ids(&self, team_id: Uuid) -> Result<Vec<Uuid>, AppError> {
             Ok(self
-                .members
-                .lock()
-                .unwrap()
+                .lock_members()?
                 .iter()
                 .filter(|m| m.team_id == team_id)
                 .map(|m| m.user_id)
@@ -790,9 +791,7 @@ mod tests {
         }
         async fn list_team_ids_for_user(&self, user_id: Uuid) -> Result<Vec<Uuid>, AppError> {
             Ok(self
-                .members
-                .lock()
-                .unwrap()
+                .lock_members()?
                 .iter()
                 .filter(|m| m.user_id == user_id)
                 .map(|m| m.team_id)
@@ -809,32 +808,36 @@ mod tests {
         fn with_admin() -> (Self, Uuid) {
             let id = Uuid::new_v4();
             let repo = Self::default();
-            repo.users.lock().unwrap().insert(
-                id,
-                User {
+            if let Ok(mut users) = repo.users.lock() {
+                users.insert(
                     id,
-                    username: "admin".to_string(),
-                    role: UserRole::Admin,
-                    email: None,
-                    display_name: None,
-                    preferred_language: "fr".to_string(),
-                    show_passwords_in_edit: false,
-                    updated_at: None,
-                },
-            );
+                    User {
+                        id,
+                        username: "admin".to_string(),
+                        role: UserRole::Admin,
+                        email: None,
+                        display_name: None,
+                        preferred_language: "fr".to_string(),
+                        show_passwords_in_edit: false,
+                        updated_at: None,
+                    },
+                );
+            }
             (repo, id)
+        }
+
+        fn lock_users(&self) -> Result<MutexGuard<'_, HashMap<Uuid, User>>, AppError> {
+            self.users.lock().map_err(|_| AppError::Internal)
         }
     }
 
     impl UserRepository for StubUserRepo {
         async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError> {
-            Ok(self.users.lock().unwrap().get(&user_id).cloned())
+            Ok(self.lock_users()?.get(&user_id).cloned())
         }
         async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
             Ok(self
-                .users
-                .lock()
-                .unwrap()
+                .lock_users()?
                 .values()
                 .find(|u| u.username == username)
                 .cloned())
@@ -844,15 +847,13 @@ mod tests {
             identifier: &str,
         ) -> Result<Option<String>, AppError> {
             Ok(self
-                .users
-                .lock()
-                .unwrap()
+                .lock_users()?
                 .values()
                 .find(|u| u.username == identifier)
                 .map(|u| u.username.clone()))
         }
         async fn list_all(&self) -> Result<Vec<User>, AppError> {
-            Ok(self.users.lock().unwrap().values().cloned().collect())
+            Ok(self.lock_users()?.values().cloned().collect())
         }
         async fn create_user_db(
             &self,
@@ -860,7 +861,7 @@ mod tests {
             username: &str,
             role: &UserRole,
         ) -> Result<(), AppError> {
-            self.users.lock().unwrap().insert(
+            self.lock_users()?.insert(
                 user_id,
                 User {
                     id: user_id,
@@ -876,15 +877,13 @@ mod tests {
             Ok(())
         }
         async fn delete_user(&self, user_id: Uuid) -> Result<(), AppError> {
-            self.users
-                .lock()
-                .unwrap()
+            self.lock_users()?
                 .remove(&user_id)
                 .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
             Ok(())
         }
         async fn update_user_role(&self, user_id: Uuid, role: &UserRole) -> Result<(), AppError> {
-            let mut guard = self.users.lock().unwrap();
+            let mut guard = self.lock_users()?;
             if let Some(u) = guard.get_mut(&user_id) {
                 u.role = role.clone();
                 Ok(())
@@ -930,16 +929,32 @@ mod tests {
         }
     }
 
+    type TeamKeyShareMap = HashMap<(Uuid, Uuid), Vec<u8>>;
+
     #[derive(Default, Clone)]
     struct StubVaultRepo {
-        key_shares: Arc<Mutex<HashMap<(Uuid, Uuid), Vec<u8>>>>,
+        key_shares: Arc<Mutex<TeamKeyShareMap>>,
         envelopes: Arc<Mutex<HashMap<Uuid, Vec<u8>>>>,
         vaults: Arc<Mutex<HashMap<Uuid, Vault>>>,
     }
 
+    impl StubVaultRepo {
+        fn lock_vaults(&self) -> Result<MutexGuard<'_, HashMap<Uuid, Vault>>, AppError> {
+            self.vaults.lock().map_err(|_| AppError::Internal)
+        }
+
+        fn lock_envelopes(&self) -> Result<MutexGuard<'_, HashMap<Uuid, Vec<u8>>>, AppError> {
+            self.envelopes.lock().map_err(|_| AppError::Internal)
+        }
+
+        fn lock_key_shares(&self) -> Result<MutexGuard<'_, TeamKeyShareMap>, AppError> {
+            self.key_shares.lock().map_err(|_| AppError::Internal)
+        }
+    }
+
     impl VaultRepository for StubVaultRepo {
         async fn get_by_id(&self, vault_id: Uuid) -> Result<Option<Vault>, AppError> {
-            Ok(self.vaults.lock().unwrap().get(&vault_id).cloned())
+            Ok(self.lock_vaults()?.get(&vault_id).cloned())
         }
         async fn list_by_user_id(&self, _: Uuid) -> Result<Vec<Vault>, AppError> {
             Ok(vec![])
@@ -951,11 +966,11 @@ mod tests {
             Ok(vec![])
         }
         async fn create_vault(&self, vault: &Vault) -> Result<(), AppError> {
-            self.vaults.lock().unwrap().insert(vault.id, vault.clone());
+            self.lock_vaults()?.insert(vault.id, vault.clone());
             Ok(())
         }
         async fn delete_vault(&self, vault_id: Uuid) -> Result<(), AppError> {
-            self.vaults.lock().unwrap().remove(&vault_id);
+            self.lock_vaults()?.remove(&vault_id);
             Ok(())
         }
         async fn update_vault_key_envelope(
@@ -963,14 +978,12 @@ mod tests {
             vault_id: Uuid,
             envelope: SecretBox<Vec<u8>>,
         ) -> Result<(), AppError> {
-            self.envelopes
-                .lock()
-                .unwrap()
+            self.lock_envelopes()?
                 .insert(vault_id, envelope.expose_secret().clone());
             Ok(())
         }
         async fn list_all(&self) -> Result<Vec<Vault>, AppError> {
-            Ok(self.vaults.lock().unwrap().values().cloned().collect())
+            Ok(self.lock_vaults()?.values().cloned().collect())
         }
         async fn list_accessible_by_user(&self, _: Uuid) -> Result<Vec<Vault>, AppError> {
             Ok(vec![])
@@ -983,7 +996,7 @@ mod tests {
             user_id: Uuid,
             vault_id: Uuid,
         ) -> Result<Option<AccessibleVault>, AppError> {
-            let guard = self.vaults.lock().unwrap();
+            let guard = self.lock_vaults()?;
             let record = guard.get(&vault_id).cloned().and_then(|vault| {
                 if vault.owner_user_id == user_id {
                     Some(AccessibleVault {
@@ -1007,9 +1020,7 @@ mod tests {
             _: Option<Uuid>,
             _: VaultShareRole,
         ) -> Result<(), AppError> {
-            self.key_shares
-                .lock()
-                .unwrap()
+            self.lock_key_shares()?
                 .insert((vault_id, user_id), key_envelope.expose_secret().clone());
             Ok(())
         }
@@ -1019,28 +1030,21 @@ mod tests {
             user_id: Uuid,
         ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
             Ok(self
-                .key_shares
-                .lock()
-                .unwrap()
+                .lock_key_shares()?
                 .get(&(vault_id, user_id))
                 .map(|b| SecretBox::new(Box::new(b.clone()))))
         }
         async fn delete_key_share(&self, vault_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-            self.key_shares.lock().unwrap().remove(&(vault_id, user_id));
+            self.lock_key_shares()?.remove(&(vault_id, user_id));
             Ok(())
         }
         async fn delete_all_key_shares(&self, vault_id: Uuid) -> Result<(), AppError> {
-            self.key_shares
-                .lock()
-                .unwrap()
-                .retain(|(v, _), _| v != &vault_id);
+            self.lock_key_shares()?.retain(|(v, _), _| v != &vault_id);
             Ok(())
         }
         async fn list_key_share_user_ids(&self, vault_id: Uuid) -> Result<Vec<Uuid>, AppError> {
             Ok(self
-                .key_shares
-                .lock()
-                .unwrap()
+                .lock_key_shares()?
                 .keys()
                 .filter(|(v, _)| v == &vault_id)
                 .map(|(_, u)| *u)
@@ -1049,10 +1053,10 @@ mod tests {
         async fn replace_all_key_shares(
             &self,
             vault_id: Uuid,
-            new_shares: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
+            new_shares: &[VaultKeyShareEnvelope],
             _: Option<Uuid>,
         ) -> Result<(), AppError> {
-            let mut guard = self.key_shares.lock().unwrap();
+            let mut guard = self.lock_key_shares()?;
             guard.retain(|(v, _), _| v != &vault_id);
             for (user_id, env, _) in new_shares {
                 guard.insert((vault_id, *user_id), env.expose_secret().clone());
@@ -1065,7 +1069,7 @@ mod tests {
             user_id: Uuid,
             _: Uuid,
         ) -> Result<u64, AppError> {
-            let mut guard = self.key_shares.lock().unwrap();
+            let mut guard = self.lock_key_shares()?;
             let before = guard.len();
             guard.retain(|(_, u), _| *u != user_id);
             Ok((before - guard.len()) as u64)
@@ -1115,23 +1119,25 @@ mod tests {
     fn make_service(admin_id: Uuid) -> (impl TeamService, StubTeamRepo, StubVaultRepo) {
         let (user_repo, _) = StubUserRepo::with_admin();
         // Insert the real admin_id used for tests.
-        user_repo.users.lock().unwrap().insert(
-            admin_id,
-            User {
-                id: admin_id,
-                username: "admin".to_string(),
-                role: UserRole::Admin,
-                email: None,
-                display_name: None,
-                preferred_language: "fr".to_string(),
-                show_passwords_in_edit: false,
-                updated_at: None,
-            },
-        );
+        if let Ok(mut users) = user_repo.users.lock() {
+            users.insert(
+                admin_id,
+                User {
+                    id: admin_id,
+                    username: "admin".to_string(),
+                    role: UserRole::Admin,
+                    email: None,
+                    display_name: None,
+                    preferred_language: "fr".to_string(),
+                    show_passwords_in_edit: false,
+                    updated_at: None,
+                },
+            );
+        }
         let team_repo = StubTeamRepo::default();
         let vault_repo = StubVaultRepo::default();
         let crypto = CryptoServiceImpl::with_defaults();
-        let audit = Arc::new(StubAuditRepo::default());
+        let audit = Arc::new(StubAuditRepo);
 
         let svc = TeamServiceImpl::new(
             team_repo.clone(),
@@ -1147,11 +1153,19 @@ mod tests {
     async fn create_team_adds_creator_as_leader() {
         let admin_id = Uuid::new_v4();
         let (svc, team_repo, _) = make_service(admin_id);
-        let team = svc
-            .create_team(admin_id, "LabTeam")
-            .await
-            .expect("create_team");
-        let members = team_repo.list_members(team.id).await.expect("list_members");
+        let team_result = svc.create_team(admin_id, "LabTeam").await;
+        assert!(team_result.is_ok(), "create_team should succeed");
+        let team = match team_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
+
+        let members_result = team_repo.list_members(team.id).await;
+        assert!(members_result.is_ok(), "list_members should succeed");
+        let members = match members_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].user_id, admin_id);
         assert_eq!(members[0].role, TeamMemberRole::Leader);
@@ -1168,14 +1182,20 @@ mod tests {
         let vault_key = SecretBox::new(Box::new(vec![0xAA_u8; 32]));
         let master_key = SecretBox::new(Box::new(vec![0xBB_u8; 32]));
 
-        svc.grant_vault_access(admin_id, vault_id, recipient_id, vault_key, master_key)
-            .await
-            .expect("grant_vault_access");
+        let grant_result = svc
+            .grant_vault_access(admin_id, vault_id, recipient_id, vault_key, master_key)
+            .await;
+        assert!(grant_result.is_ok(), "grant_vault_access should succeed");
+        if grant_result.is_err() {
+            return;
+        }
 
-        let share = vault_repo
-            .get_key_share(vault_id, recipient_id)
-            .await
-            .expect("get_key_share");
+        let share_result = vault_repo.get_key_share(vault_id, recipient_id).await;
+        assert!(share_result.is_ok(), "get_key_share should succeed");
+        let share = match share_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert!(share.is_some(), "key share should be stored");
     }
 
@@ -1190,17 +1210,26 @@ mod tests {
         let vault_key = SecretBox::new(Box::new(vec![0xAA_u8; 32]));
         let master_key = SecretBox::new(Box::new(vec![0xBB_u8; 32]));
 
-        svc.grant_vault_access(admin_id, vault_id, user_id, vault_key, master_key)
-            .await
-            .expect("grant");
-        svc.revoke_vault_access(admin_id, vault_id, user_id)
-            .await
-            .expect("revoke");
+        let grant_result = svc
+            .grant_vault_access(admin_id, vault_id, user_id, vault_key, master_key)
+            .await;
+        assert!(grant_result.is_ok(), "grant should succeed");
+        if grant_result.is_err() {
+            return;
+        }
 
-        let share = vault_repo
-            .get_key_share(vault_id, user_id)
-            .await
-            .expect("get_key_share");
+        let revoke_result = svc.revoke_vault_access(admin_id, vault_id, user_id).await;
+        assert!(revoke_result.is_ok(), "revoke should succeed");
+        if revoke_result.is_err() {
+            return;
+        }
+
+        let share_result = vault_repo.get_key_share(vault_id, user_id).await;
+        assert!(share_result.is_ok(), "get_key_share should succeed");
+        let share = match share_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert!(
             share.is_none(),
             "key share should be deleted after revocation"

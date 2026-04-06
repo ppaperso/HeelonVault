@@ -1,3 +1,9 @@
+#![allow(
+    clippy::type_complexity,
+    clippy::too_many_arguments,
+    clippy::redundant_allocation
+)]
+
 use std::cell::{Cell, RefCell};
 use std::collections::HashMap;
 use std::path::PathBuf;
@@ -1482,7 +1488,7 @@ impl MainWindow {
                     let access = vault_for_task
                         .get_vault_access_for_user(admin_user_id, vault_id)
                         .await?
-                        .ok_or_else(|| {
+                        .ok_or({
                             crate::errors::AppError::Authorization(
                                 crate::errors::AccessDeniedReason::VaultAccessDenied,
                             )
@@ -1896,7 +1902,7 @@ impl MainWindow {
                     return;
                 }
                 if let Some(row) = row_opt {
-                    if let Some(vault_id) = Self::vault_id_from_row(&row) {
+                    if let Some(vault_id) = Self::vault_id_from_row(row) {
                         sync_for_my_list.set(true);
                         other_shared_list.unselect_all();
                         sync_for_my_list.set(false);
@@ -1914,7 +1920,7 @@ impl MainWindow {
                     return;
                 }
                 if let Some(row) = row_opt {
-                    if let Some(vault_id) = Self::vault_id_from_row(&row) {
+                    if let Some(vault_id) = Self::vault_id_from_row(row) {
                         sync_for_shared_list.set(true);
                         my_list_for_shared.unselect_all();
                         sync_for_shared_list.set(false);
@@ -2703,7 +2709,7 @@ impl MainWindow {
         let mut hasher = Sha256::new();
         hasher.update(env!("CARGO_PKG_VERSION").as_bytes());
         let digest = hasher.finalize();
-        format!("{}", hex::encode(&digest[..6]))
+        hex::encode(&digest[..6]).to_string()
     }
 
     fn set_inline_status(label: &gtk4::Label, message: &str, kind: &str) {
@@ -3667,7 +3673,7 @@ impl MainWindow {
             let is_twofa_enabled = twofa_stack_for_i18n
                 .visible_child_name()
                 .as_ref()
-                .map_or(false, |name| name == "enabled");
+                .is_some_and(|name| name == "enabled");
             Self::set_twofa_badge_state(&twofa_badge_for_i18n, is_twofa_enabled);
 
             data_frame_for_i18n.set_label(Some(crate::tr!("profile-section-data").as_str()));
@@ -5280,7 +5286,7 @@ impl MainWindow {
                 let access = vault_for_loader
                     .get_vault_access_for_user(admin_user_id, selected_vault.id)
                     .await?
-                    .ok_or_else(|| {
+                    .ok_or({
                         crate::errors::AppError::Authorization(
                             crate::errors::AccessDeniedReason::VaultAccessDenied,
                         )
@@ -5621,8 +5627,7 @@ impl MainWindow {
 							widget_key,
 							SecretFilterMeta {
 								searchable_text: Self::normalize_search_text(
-									vec![
-										item.title.clone(),
+									[item.title.clone(),
 										item.type_label.clone(),
 										item.login.clone(),
 										item.email.clone(),
@@ -5631,8 +5636,7 @@ impl MainWindow {
 										item.category.clone(),
 										item.tags.clone(),
 										item.created_at.clone(),
-										item.health.clone(),
-									]
+										item.health.clone()]
 									.join(" ")
 									.as_str(),
 								),
@@ -5644,15 +5648,13 @@ impl MainWindow {
 								category_text: Self::normalize_search_text(item.category.as_str()),
 								tags_text: Self::normalize_search_text(item.tags.as_str()),
 								type_text: Self::normalize_search_text(
-									vec![
-										item.type_label.clone(),
+									[item.type_label.clone(),
 										match kind {
 											SecretKind::Password => "password motdepasse mdp".to_string(),
 											SecretKind::ApiToken => "token api acces".to_string(),
 											SecretKind::SshKey => "ssh cle key".to_string(),
 											SecretKind::SecureDocument => "document fichier".to_string(),
-										},
-									]
+										}]
 									.join(" ")
 									.as_str(),
 								),

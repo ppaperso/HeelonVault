@@ -1,3 +1,5 @@
+#![allow(clippy::disallowed_methods, clippy::redundant_closure)]
+
 use std::sync::Arc;
 
 use heelonvault_rust::errors::{AccessDeniedReason, AppError};
@@ -18,6 +20,7 @@ use heelonvault_rust::services::team_service::{KeyShare, TeamService, TeamServic
 use heelonvault_rust::services::vault_service::{
     VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
 };
+
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
@@ -217,7 +220,9 @@ async fn create_secret_via_ui_service_flow(
     let access = vault_service
         .get_vault_access_for_user(requester_id, target_vault_id)
         .await?
-        .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
+        .ok_or(AppError::Authorization(
+            AccessDeniedReason::VaultAccessDenied,
+        ))?;
 
     let is_shared = access.vault.owner_user_id != requester_id;
     if is_shared && !access.role.can_admin() {

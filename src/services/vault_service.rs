@@ -227,7 +227,9 @@ where
             .vault_repo
             .get_vault_with_permission(requester_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
+            .ok_or(AppError::Authorization(
+                AccessDeniedReason::VaultAccessDenied,
+            ))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
         let has_direct_share = matches!(
@@ -259,7 +261,9 @@ where
             self.vault_repo
                 .get_key_share(vault_id, requester_id)
                 .await?
-                .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?
+                .ok_or(AppError::Authorization(
+                    AccessDeniedReason::VaultAccessDenied,
+                ))?
         };
 
         let payload = Self::deserialize_envelope(&envelope)?;
@@ -363,7 +367,9 @@ where
             .vault_repo
             .get_vault_with_permission(user_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
+            .ok_or(AppError::Authorization(
+                AccessDeniedReason::VaultAccessDenied,
+            ))?;
 
         if access.vault.owner_user_id != user_id {
             return Ok(false);
@@ -384,7 +390,9 @@ where
             .vault_repo
             .get_vault_with_permission(requester_id, vault_id)
             .await?
-            .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
+            .ok_or(AppError::Authorization(
+                AccessDeniedReason::VaultAccessDenied,
+            ))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
         let has_direct_share = matches!(
@@ -425,6 +433,7 @@ where
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
@@ -439,16 +448,18 @@ mod tests {
     };
     use crate::repositories::team_repository::TeamRepository;
     use crate::repositories::user_repository::UserRepository;
-    use crate::repositories::vault_repository::VaultRepository;
+    use crate::repositories::vault_repository::{VaultKeyShareEnvelope, VaultRepository};
     use crate::services::audit_log_service::AuditLogService;
     use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN};
 
     use super::{VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl, VAULT_KEY_LEN};
 
+    type VaultEnvelopeMap = HashMap<Uuid, SecretBox<Vec<u8>>>;
+
     #[derive(Default, Clone)]
     struct StubVaultRepository {
         vaults: Arc<Mutex<HashMap<Uuid, Vault>>>,
-        envelopes: Arc<Mutex<HashMap<Uuid, SecretBox<Vec<u8>>>>>,
+        envelopes: Arc<Mutex<VaultEnvelopeMap>>,
     }
 
     impl StubVaultRepository {
@@ -458,10 +469,7 @@ mod tests {
                 .map_err(|_| AppError::Storage("vault lock poisoned".to_string()))
         }
 
-        fn lock_envelopes(
-            &self,
-        ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, SecretBox<Vec<u8>>>>, AppError>
-        {
+        fn lock_envelopes(&self) -> Result<std::sync::MutexGuard<'_, VaultEnvelopeMap>, AppError> {
             self.envelopes
                 .lock()
                 .map_err(|_| AppError::Storage("envelope lock poisoned".to_string()))
@@ -593,7 +601,7 @@ mod tests {
         async fn replace_all_key_shares(
             &self,
             _: Uuid,
-            _: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
+            _: &[VaultKeyShareEnvelope],
             _: Option<Uuid>,
         ) -> Result<(), AppError> {
             Ok(())
@@ -841,19 +849,21 @@ mod tests {
         StubCryptoService,
     > {
         let user_repo = StubUserRepository::default();
-        user_repo.users.lock().unwrap().insert(
-            owner_id,
-            User {
-                id: owner_id,
-                username: "owner".to_string(),
-                role: UserRole::User,
-                email: None,
-                display_name: None,
-                preferred_language: "fr".to_string(),
-                show_passwords_in_edit: false,
-                updated_at: None,
-            },
-        );
+        if let Ok(mut users) = user_repo.users.lock() {
+            users.insert(
+                owner_id,
+                User {
+                    id: owner_id,
+                    username: "owner".to_string(),
+                    role: UserRole::User,
+                    email: None,
+                    display_name: None,
+                    preferred_language: "fr".to_string(),
+                    show_passwords_in_edit: false,
+                    updated_at: None,
+                },
+            );
+        }
 
         VaultServiceImpl::new(
             repo.clone(),

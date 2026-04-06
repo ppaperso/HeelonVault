@@ -1,3 +1,5 @@
+#![allow(clippy::too_many_arguments)]
+
 use std::cell::{Cell, RefCell};
 use std::path::PathBuf;
 use std::rc::Rc;
@@ -1307,7 +1309,7 @@ impl LoginDialog {
 										SecretBox::new(Box::new(password_bytes.clone())),
 									)
 									.await?
-									.ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+									.ok_or(AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
 								info!(
 									username = %canonical_username,
 									elapsed_ms = derive_started.elapsed().as_millis() as u64,
@@ -1707,7 +1709,7 @@ impl LoginDialog {
 								SecretBox::new(Box::new(password_bytes.clone())),
 							)
 							.await?
-							.ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
+							.ok_or(AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
 
 						let user_profile = user_for_task
 							.get_user_profile_by_username(canonical_username.as_str())

@@ -524,6 +524,7 @@ impl UserRepository for SqlxUserRepository {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{SqlxUserRepository, UserRepository};
     use crate::errors::AppError;

@@ -166,6 +166,7 @@ impl AuditLogRepository for SqlxAuditLogRepository {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{AuditLogRepository, SqlxAuditLogRepository};
     use crate::models::AuditAction;
@@ -199,20 +200,34 @@ mod tests {
 
     #[tokio::test]
     async fn append_and_list_recent() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let actor = Uuid::new_v4();
 
-        repo.append(
-            Some(actor),
-            &AuditAction::UserCreated,
-            Some("user"),
-            Some(&actor.to_string()),
-            None,
-        )
-        .await
-        .expect("append");
+        let append_result = repo
+            .append(
+                Some(actor),
+                &AuditAction::UserCreated,
+                Some("user"),
+                Some(&actor.to_string()),
+                None,
+            )
+            .await;
+        assert!(append_result.is_ok(), "append should succeed");
+        if append_result.is_err() {
+            return;
+        }
 
-        let entries = repo.list_recent(10).await.expect("list_recent");
+        let entries_result = repo.list_recent(10).await;
+        assert!(entries_result.is_ok(), "list_recent should succeed");
+        let entries = match entries_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(entries.len(), 1);
         assert_eq!(entries[0].action, "user.created");
         assert_eq!(entries[0].actor_user_id, Some(actor));
@@ -220,74 +235,111 @@ mod tests {
 
     #[tokio::test]
     async fn list_for_actor_filters_correctly() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let actor_a = Uuid::new_v4();
         let actor_b = Uuid::new_v4();
 
-        repo.append(
-            Some(actor_a),
-            &AuditAction::TeamCreated,
-            Some("team"),
-            Some("t1"),
-            None,
-        )
-        .await
-        .expect("append a");
-        repo.append(
-            Some(actor_b),
-            &AuditAction::VaultKeyRotated,
-            Some("vault"),
-            Some("v1"),
-            None,
-        )
-        .await
-        .expect("append b");
+        let append_a = repo
+            .append(
+                Some(actor_a),
+                &AuditAction::TeamCreated,
+                Some("team"),
+                Some("t1"),
+                None,
+            )
+            .await;
+        assert!(append_a.is_ok(), "append a should succeed");
+        if append_a.is_err() {
+            return;
+        }
 
-        let for_a = repo
-            .list_for_actor(actor_a, 10)
-            .await
-            .expect("list_for_actor");
+        let append_b = repo
+            .append(
+                Some(actor_b),
+                &AuditAction::VaultKeyRotated,
+                Some("vault"),
+                Some("v1"),
+                None,
+            )
+            .await;
+        assert!(append_b.is_ok(), "append b should succeed");
+        if append_b.is_err() {
+            return;
+        }
+
+        let for_a_result = repo.list_for_actor(actor_a, 10).await;
+        assert!(for_a_result.is_ok(), "list_for_actor should succeed");
+        let for_a = match for_a_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(for_a.len(), 1);
         assert_eq!(for_a[0].action, "team.created");
     }
 
     #[tokio::test]
     async fn list_for_target_filters_correctly() {
-        let repo = setup_repo().await.expect("setup");
+        let repo_result = setup_repo().await;
+        assert!(repo_result.is_ok(), "setup should succeed");
+        let repo = match repo_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         let vault_id = Uuid::new_v4().to_string();
 
-        repo.append(
-            None,
-            &AuditAction::VaultSharedWithTeam,
-            Some("vault"),
-            Some(&vault_id),
-            None,
-        )
-        .await
-        .expect("append");
-        repo.append(
-            None,
-            &AuditAction::VaultKeyRotated,
-            Some("vault"),
-            Some(&vault_id),
-            None,
-        )
-        .await
-        .expect("append 2");
-        repo.append(
-            None,
-            &AuditAction::UserDeleted,
-            Some("user"),
-            Some("u1"),
-            None,
-        )
-        .await
-        .expect("append 3");
+        let append_a = repo
+            .append(
+                None,
+                &AuditAction::VaultSharedWithTeam,
+                Some("vault"),
+                Some(&vault_id),
+                None,
+            )
+            .await;
+        assert!(append_a.is_ok(), "append should succeed");
+        if append_a.is_err() {
+            return;
+        }
 
-        let for_vault = repo
-            .list_for_target("vault", &vault_id, 10)
-            .await
-            .expect("list_for_target");
+        let append_b = repo
+            .append(
+                None,
+                &AuditAction::VaultKeyRotated,
+                Some("vault"),
+                Some(&vault_id),
+                None,
+            )
+            .await;
+        assert!(append_b.is_ok(), "append 2 should succeed");
+        if append_b.is_err() {
+            return;
+        }
+
+        let append_c = repo
+            .append(
+                None,
+                &AuditAction::UserDeleted,
+                Some("user"),
+                Some("u1"),
+                None,
+            )
+            .await;
+        assert!(append_c.is_ok(), "append 3 should succeed");
+        if append_c.is_err() {
+            return;
+        }
+
+        let for_vault_result = repo.list_for_target("vault", &vault_id, 10).await;
+        assert!(for_vault_result.is_ok(), "list_for_target should succeed");
+        let for_vault = match for_vault_result {
+            Ok(value) => value,
+            Err(_) => return,
+        };
         assert_eq!(for_vault.len(), 2);
     }
 }

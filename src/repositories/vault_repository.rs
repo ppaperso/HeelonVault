@@ -5,6 +5,8 @@ use secrecy::SecretBox;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
+pub type VaultKeyShareEnvelope = (Uuid, SecretBox<Vec<u8>>, Option<Uuid>);
+
 #[allow(async_fn_in_trait)]
 pub trait VaultRepository {
     async fn get_by_id(&self, vault_id: Uuid) -> Result<Option<Vault>, AppError>;
@@ -53,7 +55,7 @@ pub trait VaultRepository {
     async fn replace_all_key_shares(
         &self,
         vault_id: Uuid,
-        new_shares: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
+        new_shares: &[VaultKeyShareEnvelope],
         rotation_actor_id: Option<Uuid>,
     ) -> Result<(), AppError>;
     async fn delete_key_shares_for_user_via_team(
@@ -459,7 +461,7 @@ impl VaultRepository for SqlxVaultRepository {
     async fn replace_all_key_shares(
         &self,
         vault_id: Uuid,
-        new_shares: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
+        new_shares: &[VaultKeyShareEnvelope],
         rotation_actor_id: Option<Uuid>,
     ) -> Result<(), AppError> {
         let mut tx = self
@@ -515,6 +517,7 @@ impl VaultRepository for SqlxVaultRepository {
 }
 
 #[cfg(test)]
+#[allow(clippy::disallowed_methods)]
 mod tests {
     use super::{SqlxVaultRepository, VaultRepository};
     use crate::errors::AppError;

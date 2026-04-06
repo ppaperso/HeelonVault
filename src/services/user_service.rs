@@ -129,7 +129,7 @@ where
 
         let email_changed = next_email != current_user.email;
         if email_changed {
-            let current_password = update.current_password.ok_or_else(|| {
+            let current_password = update.current_password.ok_or({
                 AppError::Authorization(AccessDeniedReason::PasswordRequiredForChange)
             })?;
 
