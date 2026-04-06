@@ -8,8 +8,8 @@ use crate::errors::AppError;
 use crate::models::{AuditAction, User, UserRole};
 use crate::repositories::user_repository::UserRepository;
 use crate::services::access_control::{check_permission, Action, Resource};
-use crate::services::auth_service::AuthService;
 use crate::services::audit_log_service::AuditLogService;
+use crate::services::auth_service::AuthService;
 
 /// Result of a successful user creation, exposing the derived master key so
 /// the caller can immediately create the user's personal vault.
@@ -94,8 +94,16 @@ where
     TAuth: AuthService + Send + Sync,
     TAuditSvc: AuditLogService + Send + Sync,
 {
-    pub fn new(user_repo: TUserRepo, auth_service: Arc<TAuth>, audit_service: Arc<TAuditSvc>) -> Self {
-        Self { user_repo, auth_service, audit_service }
+    pub fn new(
+        user_repo: TUserRepo,
+        auth_service: Arc<TAuth>,
+        audit_service: Arc<TAuditSvc>,
+    ) -> Self {
+        Self {
+            user_repo,
+            auth_service,
+            audit_service,
+        }
     }
 
     async fn require_admin(&self, actor_id: Uuid) -> Result<User, AppError> {
@@ -111,7 +119,10 @@ where
     /// Returns the number of admin accounts in the DB.
     async fn admin_count(&self) -> Result<usize, AppError> {
         let all = self.user_repo.list_all().await?;
-        Ok(all.iter().filter(|u| matches!(u.role, UserRole::Admin)).count())
+        Ok(all
+            .iter()
+            .filter(|u| matches!(u.role, UserRole::Admin))
+            .count())
     }
 }
 
@@ -133,7 +144,9 @@ where
         // Validate username format early.
         let trimmed = username.trim();
         if trimmed.is_empty() {
-            return Err(AppError::Validation("username must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "username must not be empty".to_string(),
+            ));
         }
 
         // Register in the in-memory auth service (computes salt + hash).
@@ -152,7 +165,9 @@ where
         // Retrieve the serialised envelope and persist the user row.
         let envelope = self.auth_service.get_password_envelope(trimmed).await?;
         let user_id = Uuid::new_v4();
-        self.user_repo.create_user_db(user_id, trimmed, &role).await?;
+        self.user_repo
+            .create_user_db(user_id, trimmed, &role)
+            .await?;
         self.user_repo
             .update_password_envelope(user_id, envelope)
             .await?;
@@ -163,14 +178,17 @@ where
             .await?
             .ok_or(AppError::Internal)?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::UserCreated,
                 Some("user"),
                 Some(&user_id.to_string()),
-                Some(&format!(r#"{{"username":"{}","role":"{}"}}"#, trimmed, role.to_db_str())),
+                Some(&format!(
+                    r#"{{"username":"{}","role":"{}"}}"#,
+                    trimmed,
+                    role.to_db_str()
+                )),
             )
             .await?;
 
@@ -196,8 +214,7 @@ where
 
         self.user_repo.delete_user(target_user_id).await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::UserDeleted,
@@ -235,10 +252,11 @@ where
             ));
         }
 
-        self.user_repo.update_user_role(target_user_id, &new_role).await?;
+        self.user_repo
+            .update_user_role(target_user_id, &new_role)
+            .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::UserRoleChanged,
@@ -307,7 +325,10 @@ where
             .await?;
 
         // Flush to DB.
-        let new_envelope = self.auth_service.get_password_envelope(&target.username).await?;
+        let new_envelope = self
+            .auth_service
+            .get_password_envelope(&target.username)
+            .await?;
         self.user_repo
             .update_password_envelope(target_user_id, new_envelope)
             .await?;
@@ -315,15 +336,11 @@ where
         // Derive the new master key so the caller can re-wrap vault key envelopes.
         let master_key = self
             .auth_service
-            .derive_key_if_valid(
-                &target.username,
-                SecretBox::new(Box::new(password_bytes)),
-            )
+            .derive_key_if_valid(&target.username, SecretBox::new(Box::new(password_bytes)))
             .await?
             .ok_or(AppError::Internal)?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::UserPasswordReset,
@@ -351,7 +368,9 @@ where
 
         let trimmed = username.trim();
         if trimmed.is_empty() {
-            return Err(AppError::Validation("username must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "username must not be empty".to_string(),
+            ));
         }
 
         let password_bytes = password.expose_secret().clone();
@@ -367,8 +386,12 @@ where
 
         let envelope = self.auth_service.get_password_envelope(trimmed).await?;
         let user_id = Uuid::new_v4();
-        self.user_repo.create_user_db(user_id, trimmed, &UserRole::Admin).await?;
-        self.user_repo.update_password_envelope(user_id, envelope).await?;
+        self.user_repo
+            .create_user_db(user_id, trimmed, &UserRole::Admin)
+            .await?;
+        self.user_repo
+            .update_password_envelope(user_id, envelope)
+            .await?;
 
         info!(user_id = %user_id, username = trimmed, "bootstrap: first admin account created");
         Ok(BootstrapResult {
@@ -385,7 +408,7 @@ impl UserRole {
     pub fn to_db_str(&self) -> &'static str {
         match self {
             UserRole::Admin => "admin",
-            UserRole::User  => "user",
+            UserRole::User => "user",
         }
     }
 }

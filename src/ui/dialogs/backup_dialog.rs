@@ -42,7 +42,7 @@ impl BackupDialog {
             .cancel_label(crate::tr!("common-cancel").as_str())
             .action(gtk4::FileChooserAction::Save)
             .build();
-        
+
         chooser.set_current_name("heelonvault_backup.hvb");
 
         chooser.connect_response(move |dialog, response| {
@@ -53,7 +53,7 @@ impl BackupDialog {
 
             let selected = dialog.file();
             dialog.destroy();
-            
+
             let Some(file) = selected else {
                 (deps.on_feedback)(
                     crate::tr!("backup-dialog-accept").as_str(),
@@ -61,7 +61,7 @@ impl BackupDialog {
                 );
                 return;
             };
-            
+
             let Some(_backup_path) = file.path() else {
                 (deps.on_feedback)(
                     crate::tr!("backup-dialog-accept").as_str(),

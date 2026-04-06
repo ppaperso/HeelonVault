@@ -16,7 +16,10 @@ pub const VAULT_KEY_LEN: usize = 32;
 
 #[allow(async_fn_in_trait)]
 pub trait VaultKeyEnvelopeRepository {
-    async fn get_vault_key_envelope(&self, vault_id: Uuid) -> Result<Option<SecretBox<Vec<u8>>>, AppError>;
+    async fn get_vault_key_envelope(
+        &self,
+        vault_id: Uuid,
+    ) -> Result<Option<SecretBox<Vec<u8>>>, AppError>;
 }
 
 #[allow(async_fn_in_trait)]
@@ -46,7 +49,10 @@ pub trait VaultService {
     ) -> Result<Option<AccessibleVault>, AppError>;
     async fn list_owned_vaults(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError>;
     async fn list_shared_vaults(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError>;
-    async fn list_shared_vault_access(&self, user_id: Uuid) -> Result<Vec<AccessibleVault>, AppError>;
+    async fn list_shared_vault_access(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<AccessibleVault>, AppError>;
     async fn is_vault_shared_with_others(
         &self,
         user_id: Uuid,
@@ -102,8 +108,7 @@ where
     }
 
     fn serialize_envelope(payload: &EncryptedPayload) -> SecretBox<Vec<u8>> {
-        let mut bytes =
-            Vec::with_capacity(NONCE_LEN + payload.ciphertext.expose_secret().len());
+        let mut bytes = Vec::with_capacity(NONCE_LEN + payload.ciphertext.expose_secret().len());
         bytes.extend_from_slice(&payload.nonce);
         bytes.extend_from_slice(payload.ciphertext.expose_secret().as_slice());
         SecretBox::new(Box::new(bytes))
@@ -111,7 +116,9 @@ where
 
     fn deserialize_envelope(bytes: &SecretBox<Vec<u8>>) -> Result<EncryptedPayload, AppError> {
         if bytes.expose_secret().len() < NONCE_LEN {
-            return Err(AppError::Storage("vault key envelope is invalid".to_string()));
+            return Err(AppError::Storage(
+                "vault key envelope is invalid".to_string(),
+            ));
         }
 
         let mut nonce = [0_u8; NONCE_LEN];
@@ -149,7 +156,9 @@ where
         master_key: SecretBox<Vec<u8>>,
     ) -> Result<Vault, AppError> {
         if name.trim().is_empty() {
-            return Err(AppError::Validation("vault name must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "vault name must not be empty".to_string(),
+            ));
         }
 
         let owner = self
@@ -174,8 +183,7 @@ where
             .update_vault_key_envelope(vault.id, serialized)
             .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(owner_user_id),
                 AuditAction::VaultCreated,
@@ -199,8 +207,7 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("vault not found".to_string()))?;
 
-        self
-            .open_vault_for_user(vault.owner_user_id, vault_id, master_key)
+        self.open_vault_for_user(vault.owner_user_id, vault_id, master_key)
             .await
     }
 
@@ -223,8 +230,14 @@ where
             .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
-        let has_direct_share = matches!(permission.access_kind, crate::models::VaultAccessKind::DirectShare);
-        let has_team_share = matches!(permission.access_kind, crate::models::VaultAccessKind::TeamShare);
+        let has_direct_share = matches!(
+            permission.access_kind,
+            crate::models::VaultAccessKind::DirectShare
+        );
+        let has_team_share = matches!(
+            permission.access_kind,
+            crate::models::VaultAccessKind::TeamShare
+        );
 
         check_permission(
             &requester,
@@ -252,8 +265,7 @@ where
         let payload = Self::deserialize_envelope(&envelope)?;
         let vault_key = self.crypto_service.decrypt(&payload, &master_key).await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(requester_id),
                 AuditAction::VaultOpened,
@@ -290,7 +302,9 @@ where
             .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
         check_permission(&user, Action::VaultList, &Resource::Global)?;
 
-        self.vault_repo.get_vault_with_permission(user_id, vault_id).await
+        self.vault_repo
+            .get_vault_with_permission(user_id, vault_id)
+            .await
     }
 
     async fn list_owned_vaults(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError> {
@@ -315,7 +329,10 @@ where
         self.vault_repo.list_shared_vaults(user_id).await
     }
 
-    async fn list_shared_vault_access(&self, user_id: Uuid) -> Result<Vec<AccessibleVault>, AppError> {
+    async fn list_shared_vault_access(
+        &self,
+        user_id: Uuid,
+    ) -> Result<Vec<AccessibleVault>, AppError> {
         let user = self
             .user_repo
             .get_by_id(user_id)
@@ -370,8 +387,14 @@ where
             .ok_or_else(|| AppError::Authorization(AccessDeniedReason::VaultAccessDenied))?;
 
         let is_owner = permission.vault.owner_user_id == requester_id;
-        let has_direct_share = matches!(permission.access_kind, crate::models::VaultAccessKind::DirectShare);
-        let has_team_share = matches!(permission.access_kind, crate::models::VaultAccessKind::TeamShare);
+        let has_direct_share = matches!(
+            permission.access_kind,
+            crate::models::VaultAccessKind::DirectShare
+        );
+        let has_team_share = matches!(
+            permission.access_kind,
+            crate::models::VaultAccessKind::TeamShare
+        );
 
         check_permission(
             &requester,
@@ -410,7 +433,10 @@ mod tests {
     use uuid::Uuid;
 
     use crate::errors::AppError;
-    use crate::models::{AccessibleVault, AuditAction, AuditLogEntry, Team, TeamMember, TeamMemberRole, User, UserRole, Vault, VaultAccessKind, VaultShareRole};
+    use crate::models::{
+        AccessibleVault, AuditAction, AuditLogEntry, Team, TeamMember, TeamMemberRole, User,
+        UserRole, Vault, VaultAccessKind, VaultShareRole,
+    };
     use crate::repositories::team_repository::TeamRepository;
     use crate::repositories::user_repository::UserRepository;
     use crate::repositories::vault_repository::VaultRepository;
@@ -434,7 +460,8 @@ mod tests {
 
         fn lock_envelopes(
             &self,
-        ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, SecretBox<Vec<u8>>>>, AppError> {
+        ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, SecretBox<Vec<u8>>>>, AppError>
+        {
             self.envelopes
                 .lock()
                 .map_err(|_| AppError::Storage("envelope lock poisoned".to_string()))
@@ -494,7 +521,10 @@ mod tests {
             self.list_by_user_id(user_id).await
         }
 
-        async fn get_accessible_vaults(&self, user_id: Uuid) -> Result<Vec<AccessibleVault>, AppError> {
+        async fn get_accessible_vaults(
+            &self,
+            user_id: Uuid,
+        ) -> Result<Vec<AccessibleVault>, AppError> {
             let owned = self.list_by_user_id(user_id).await?;
             Ok(owned
                 .into_iter()
@@ -529,13 +559,21 @@ mod tests {
         }
 
         async fn insert_key_share(
-            &self, _: Uuid, _: Uuid, _: SecretBox<Vec<u8>>, _: Option<Uuid>, _: Option<Uuid>, _: VaultShareRole,
+            &self,
+            _: Uuid,
+            _: Uuid,
+            _: SecretBox<Vec<u8>>,
+            _: Option<Uuid>,
+            _: Option<Uuid>,
+            _: VaultShareRole,
         ) -> Result<(), AppError> {
             Ok(())
         }
 
         async fn get_key_share(
-            &self, _: Uuid, _: Uuid,
+            &self,
+            _: Uuid,
+            _: Uuid,
         ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
             Ok(None)
         }
@@ -553,7 +591,10 @@ mod tests {
         }
 
         async fn replace_all_key_shares(
-            &self, _: Uuid, _: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)], _: Option<Uuid>,
+            &self,
+            _: Uuid,
+            _: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
+            _: Option<Uuid>,
         ) -> Result<(), AppError> {
             Ok(())
         }
@@ -630,7 +671,12 @@ mod tests {
 
     impl UserRepository for StubUserRepository {
         async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError> {
-            Ok(self.users.lock().map_err(|_| AppError::Internal)?.get(&user_id).cloned())
+            Ok(self
+                .users
+                .lock()
+                .map_err(|_| AppError::Internal)?
+                .get(&user_id)
+                .cloned())
         }
         async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError> {
             Ok(self
@@ -641,7 +687,10 @@ mod tests {
                 .find(|u| u.username == username)
                 .cloned())
         }
-        async fn resolve_username_for_login_identifier(&self, identifier: &str) -> Result<Option<String>, AppError> {
+        async fn resolve_username_for_login_identifier(
+            &self,
+            identifier: &str,
+        ) -> Result<Option<String>, AppError> {
             Ok(self
                 .users
                 .lock()
@@ -650,33 +699,97 @@ mod tests {
                 .find(|u| u.username == identifier)
                 .map(|u| u.username.clone()))
         }
-        async fn list_all(&self) -> Result<Vec<User>, AppError> { Ok(vec![]) }
-        async fn create_user_db(&self, _: Uuid, _: &str, _: &UserRole) -> Result<(), AppError> { Ok(()) }
-        async fn delete_user(&self, _: Uuid) -> Result<(), AppError> { Ok(()) }
-        async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> { Ok(()) }
-        async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> { Ok(vec![]) }
-        async fn get_password_envelope_by_user_id(&self, _: Uuid) -> Result<Option<SecretBox<Vec<u8>>>, AppError> { Ok(None) }
-        async fn update_user_profile(&self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>) -> Result<(), AppError> { Ok(()) }
-        async fn update_password_envelope(&self, _: Uuid, _: SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
-        async fn update_totp_secret_envelope(&self, _: Uuid, _: SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
-        async fn update_show_passwords_in_edit(&self, _: Uuid, _: bool) -> Result<(), AppError> { Ok(()) }
+        async fn list_all(&self) -> Result<Vec<User>, AppError> {
+            Ok(vec![])
+        }
+        async fn create_user_db(&self, _: Uuid, _: &str, _: &UserRole) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn delete_user(&self, _: Uuid) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> {
+            Ok(vec![])
+        }
+        async fn get_password_envelope_by_user_id(
+            &self,
+            _: Uuid,
+        ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
+            Ok(None)
+        }
+        async fn update_user_profile(
+            &self,
+            _: Uuid,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<bool>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_password_envelope(
+            &self,
+            _: Uuid,
+            _: SecretBox<Vec<u8>>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_totp_secret_envelope(
+            &self,
+            _: Uuid,
+            _: SecretBox<Vec<u8>>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_show_passwords_in_edit(&self, _: Uuid, _: bool) -> Result<(), AppError> {
+            Ok(())
+        }
     }
 
     #[derive(Default, Clone)]
     struct StubTeamRepository;
 
     impl TeamRepository for StubTeamRepository {
-        async fn create_team(&self, _: Uuid, _: &str, _: Option<Uuid>) -> Result<Team, AppError> { Err(AppError::Internal) }
-        async fn get_by_id(&self, _: Uuid) -> Result<Option<Team>, AppError> { Ok(None) }
-        async fn list_all(&self) -> Result<Vec<Team>, AppError> { Ok(vec![]) }
-        async fn list_for_user(&self, _: Uuid) -> Result<Vec<Team>, AppError> { Ok(vec![]) }
-        async fn delete_team(&self, _: Uuid) -> Result<(), AppError> { Ok(()) }
-        async fn add_member(&self, _: Uuid, _: Uuid, _: &TeamMemberRole) -> Result<(), AppError> { Ok(()) }
-        async fn remove_member(&self, _: Uuid, _: Uuid) -> Result<(), AppError> { Ok(()) }
-        async fn list_members(&self, _: Uuid) -> Result<Vec<TeamMember>, AppError> { Ok(vec![]) }
-        async fn get_member_role(&self, _: Uuid, _: Uuid) -> Result<Option<TeamMemberRole>, AppError> { Ok(None) }
-        async fn list_member_user_ids(&self, _: Uuid) -> Result<Vec<Uuid>, AppError> { Ok(vec![]) }
-        async fn list_team_ids_for_user(&self, _: Uuid) -> Result<Vec<Uuid>, AppError> { Ok(vec![]) }
+        async fn create_team(&self, _: Uuid, _: &str, _: Option<Uuid>) -> Result<Team, AppError> {
+            Err(AppError::Internal)
+        }
+        async fn get_by_id(&self, _: Uuid) -> Result<Option<Team>, AppError> {
+            Ok(None)
+        }
+        async fn list_all(&self) -> Result<Vec<Team>, AppError> {
+            Ok(vec![])
+        }
+        async fn list_for_user(&self, _: Uuid) -> Result<Vec<Team>, AppError> {
+            Ok(vec![])
+        }
+        async fn delete_team(&self, _: Uuid) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn add_member(&self, _: Uuid, _: Uuid, _: &TeamMemberRole) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn remove_member(&self, _: Uuid, _: Uuid) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn list_members(&self, _: Uuid) -> Result<Vec<TeamMember>, AppError> {
+            Ok(vec![])
+        }
+        async fn get_member_role(
+            &self,
+            _: Uuid,
+            _: Uuid,
+        ) -> Result<Option<TeamMemberRole>, AppError> {
+            Ok(None)
+        }
+        async fn list_member_user_ids(&self, _: Uuid) -> Result<Vec<Uuid>, AppError> {
+            Ok(vec![])
+        }
+        async fn list_team_ids_for_user(&self, _: Uuid) -> Result<Vec<Uuid>, AppError> {
+            Ok(vec![])
+        }
     }
 
     #[derive(Default)]
@@ -694,12 +807,32 @@ mod tests {
             Ok(())
         }
 
-        async fn list_recent(&self, _: Uuid, _: u32) -> Result<Vec<AuditLogEntry>, AppError> { Ok(vec![]) }
-        async fn list_for_user(&self, _: Uuid, _: Uuid, _: u32) -> Result<Vec<AuditLogEntry>, AppError> { Ok(vec![]) }
-        async fn list_for_target(&self, _: Uuid, _: &str, _: &str, _: u32) -> Result<Vec<AuditLogEntry>, AppError> { Ok(vec![]) }
+        async fn list_recent(&self, _: Uuid, _: u32) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
+        async fn list_for_user(
+            &self,
+            _: Uuid,
+            _: Uuid,
+            _: u32,
+        ) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
+        async fn list_for_target(
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &str,
+            _: u32,
+        ) -> Result<Vec<AuditLogEntry>, AppError> {
+            Ok(vec![])
+        }
     }
 
-    fn make_service_with_owner(owner_id: Uuid, repo: StubVaultRepository) -> VaultServiceImpl<
+    fn make_service_with_owner(
+        owner_id: Uuid,
+        repo: StubVaultRepository,
+    ) -> VaultServiceImpl<
         StubVaultRepository,
         StubVaultRepository,
         StubUserRepository,
@@ -779,7 +912,11 @@ mod tests {
         let master_key = SecretBox::new(Box::new(vec![9_u8; 32]));
 
         let created_result = service
-            .create_vault(owner_user_id, "Personal", SecretBox::new(Box::new(vec![9_u8; 32])))
+            .create_vault(
+                owner_user_id,
+                "Personal",
+                SecretBox::new(Box::new(vec![9_u8; 32])),
+            )
             .await;
         assert!(created_result.is_ok(), "create should succeed");
         let created = match created_result {

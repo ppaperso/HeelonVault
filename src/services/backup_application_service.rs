@@ -54,7 +54,8 @@ where
     }
 }
 
-impl<TUserRepo, TBackupSvc> BackupApplicationService for BackupApplicationServiceImpl<TUserRepo, TBackupSvc>
+impl<TUserRepo, TBackupSvc> BackupApplicationService
+    for BackupApplicationServiceImpl<TUserRepo, TBackupSvc>
 where
     TUserRepo: UserRepository + Send + Sync,
     TBackupSvc: BackupService + Send + Sync,
@@ -72,11 +73,10 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("actor user not found".to_string()))?;
 
-        check_permission(&actor, Action::BackupExport, &Resource::Global)
-            .map_err(|err| {
-                warn!(actor_id = %actor_id, "backup export permission denied");
-                err
-            })?;
+        check_permission(&actor, Action::BackupExport, &Resource::Global).map_err(|err| {
+            warn!(actor_id = %actor_id, "backup export permission denied");
+            err
+        })?;
 
         self.backup_service.export_hvb_with_recovery_key(
             sqlite_db_path,
@@ -98,11 +98,10 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("actor user not found".to_string()))?;
 
-        check_permission(&actor, Action::BackupRestore, &Resource::Global)
-            .map_err(|err| {
-                warn!(actor_id = %actor_id, "backup restore permission denied");
-                err
-            })?;
+        check_permission(&actor, Action::BackupRestore, &Resource::Global).map_err(|err| {
+            warn!(actor_id = %actor_id, "backup restore permission denied");
+            err
+        })?;
 
         self.backup_service.import_hvb_with_recovery_key(
             backup_file_path,
@@ -131,16 +130,19 @@ mod tests {
 
     impl StubUserRepo {
         fn insert_user(&self, id: Uuid, role: UserRole) {
-            self.users.lock().unwrap().insert(id, User {
+            self.users.lock().unwrap().insert(
                 id,
-                username: format!("user_{}", id),
-                role,
-                email: None,
-                display_name: None,
-                preferred_language: "fr".to_string(),
-                show_passwords_in_edit: false,
-                updated_at: None,
-            });
+                User {
+                    id,
+                    username: format!("user_{}", id),
+                    role,
+                    email: None,
+                    display_name: None,
+                    preferred_language: "fr".to_string(),
+                    show_passwords_in_edit: false,
+                    updated_at: None,
+                },
+            );
         }
     }
 
@@ -148,27 +150,76 @@ mod tests {
         async fn get_by_id(&self, id: Uuid) -> Result<Option<User>, AppError> {
             Ok(self.users.lock().unwrap().get(&id).cloned())
         }
-        async fn get_by_username(&self, _: &str) -> Result<Option<User>, AppError> { Ok(None) }
-        async fn resolve_username_for_login_identifier(&self, _: &str) -> Result<Option<String>, AppError> { Ok(None) }
-        async fn list_all(&self) -> Result<Vec<User>, AppError> { Ok(vec![]) }
-        async fn create_user_db(&self, _: Uuid, _: &str, _: &UserRole) -> Result<(), AppError> { Ok(()) }
-        async fn delete_user(&self, _: Uuid) -> Result<(), AppError> { Ok(()) }
-        async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> { Ok(()) }
-        async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> { Ok(vec![]) }
-        async fn get_password_envelope_by_user_id(&self, _: Uuid) -> Result<Option<secrecy::SecretBox<Vec<u8>>>, AppError> { Ok(None) }
-        async fn update_user_profile(&self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>) -> Result<(), AppError> { Ok(()) }
-        async fn update_password_envelope(&self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
-        async fn update_totp_secret_envelope(&self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>) -> Result<(), AppError> { Ok(()) }
-        async fn update_show_passwords_in_edit(&self, _: Uuid, _: bool) -> Result<(), AppError> { Ok(()) }
+        async fn get_by_username(&self, _: &str) -> Result<Option<User>, AppError> {
+            Ok(None)
+        }
+        async fn resolve_username_for_login_identifier(
+            &self,
+            _: &str,
+        ) -> Result<Option<String>, AppError> {
+            Ok(None)
+        }
+        async fn list_all(&self) -> Result<Vec<User>, AppError> {
+            Ok(vec![])
+        }
+        async fn create_user_db(&self, _: Uuid, _: &str, _: &UserRole) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn delete_user(&self, _: Uuid) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_user_role(&self, _: Uuid, _: &UserRole) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> {
+            Ok(vec![])
+        }
+        async fn get_password_envelope_by_user_id(
+            &self,
+            _: Uuid,
+        ) -> Result<Option<secrecy::SecretBox<Vec<u8>>>, AppError> {
+            Ok(None)
+        }
+        async fn update_user_profile(
+            &self,
+            _: Uuid,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<bool>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_password_envelope(
+            &self,
+            _: Uuid,
+            _: secrecy::SecretBox<Vec<u8>>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_totp_secret_envelope(
+            &self,
+            _: Uuid,
+            _: secrecy::SecretBox<Vec<u8>>,
+        ) -> Result<(), AppError> {
+            Ok(())
+        }
+        async fn update_show_passwords_in_edit(&self, _: Uuid, _: bool) -> Result<(), AppError> {
+            Ok(())
+        }
     }
 
     #[derive(Default, Clone)]
     struct StubBackupService;
 
     impl BackupService for StubBackupService {
-        fn generate_recovery_key(&self) -> Result<crate::services::backup_service::RecoveryKeyBundle, AppError> {
+        fn generate_recovery_key(
+            &self,
+        ) -> Result<crate::services::backup_service::RecoveryKeyBundle, AppError> {
             Ok(crate::services::backup_service::RecoveryKeyBundle {
-                recovery_phrase: secrecy::SecretString::new("test recovery phrase".to_string().into()),
+                recovery_phrase: secrecy::SecretString::new(
+                    "test recovery phrase".to_string().into(),
+                ),
             })
         }
         fn export_hvb_with_recovery_key(

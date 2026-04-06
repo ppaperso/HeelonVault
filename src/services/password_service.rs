@@ -196,8 +196,9 @@ impl PasswordService for PasswordServiceImpl {
             }
         }
 
-        let password_len_u16 = u16::try_from(length)
-            .map_err(|_| AppError::Validation("password length exceeds supported size".to_string()))?;
+        let password_len_u16 = u16::try_from(length).map_err(|_| {
+            AppError::Validation("password length exceeds supported size".to_string())
+        })?;
         if unique_count.saturating_mul(2) >= password_len_u16 {
             score += 10;
         }
@@ -291,7 +292,10 @@ mod tests {
         let weak_score_result = service.score_password_strength(&weak_password);
         let strong_score_result = service.score_password_strength(&strong_password);
 
-        assert!(weak_score_result.is_ok(), "weak password score should still compute");
+        assert!(
+            weak_score_result.is_ok(),
+            "weak password score should still compute"
+        );
         assert!(
             strong_score_result.is_ok(),
             "strong password score should compute"
@@ -314,7 +318,10 @@ mod tests {
         let service = PasswordServiceImpl::new();
 
         let generated_result = service.generate_password(24);
-        assert!(generated_result.is_ok(), "password generation should succeed");
+        assert!(
+            generated_result.is_ok(),
+            "password generation should succeed"
+        );
         let generated = match generated_result {
             Ok(value) => value,
             Err(_) => return,
@@ -334,7 +341,10 @@ mod tests {
         let service = PasswordServiceImpl::new();
 
         let generated_result = service.generate_password(0);
-        assert!(generated_result.is_ok(), "default password generation should succeed");
+        assert!(
+            generated_result.is_ok(),
+            "default password generation should succeed"
+        );
         let generated = match generated_result {
             Ok(value) => value,
             Err(_) => return,

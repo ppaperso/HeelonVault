@@ -9,8 +9,8 @@ use genpdf::style::{Color, Style};
 use genpdf::{Alignment, Context, Element as _, Position};
 use sha2::{Digest, Sha256};
 use sqlx::{Row, SqlitePool};
-use tokio::runtime::Handle;
 use thiserror::Error;
+use tokio::runtime::Handle;
 
 use crate::models::LicenseTier;
 use crate::services::license_service::{AuditSigningError, LicenseService};
@@ -71,7 +71,11 @@ const BRAND_GOLD_DARK: Color = Color::Rgb(143, 112, 51);
 const HEADER_PANEL: Color = Color::Rgb(26, 37, 47);
 
 impl AuditReportService {
-    pub fn new(license_service: Arc<LicenseService>, runtime_handle: Handle, db_pool: SqlitePool) -> Self {
+    pub fn new(
+        license_service: Arc<LicenseService>,
+        runtime_handle: Handle,
+        db_pool: SqlitePool,
+    ) -> Self {
         Self {
             license_service,
             runtime_handle,
@@ -79,15 +83,21 @@ impl AuditReportService {
         }
     }
 
-    pub fn generate_audit_report(&self, customer_name: &str, days: i64) -> Result<GeneratedAuditReport, ReportError> {
+    pub fn generate_audit_report(
+        &self,
+        customer_name: &str,
+        days: i64,
+    ) -> Result<GeneratedAuditReport, ReportError> {
         // A professional cached license has already passed Ed25519 verification during load.
         let is_premium = self
             .license_service
             .get_cached()
             .map(|license| {
                 let tier_label = license.tier.to_string().to_ascii_uppercase();
-                matches!(tier_label.as_str(), "PROFESSIONAL" | "PRO" | "ENTERPRISE" | "ENT")
-                    || matches!(license.tier, LicenseTier::Professional)
+                matches!(
+                    tier_label.as_str(),
+                    "PROFESSIONAL" | "PRO" | "ENTERPRISE" | "ENT"
+                ) || matches!(license.tier, LicenseTier::Professional)
             })
             .unwrap_or(false);
 
@@ -96,7 +106,9 @@ impl AuditReportService {
         }
 
         let report_period_days = days.max(1);
-        let report_data = self.runtime_handle.block_on(self.collect_report_data(customer_name, report_period_days))?;
+        let report_data = self
+            .runtime_handle
+            .block_on(self.collect_report_data(customer_name, report_period_days))?;
 
         let fonts = initialize_pdf_fonts()?;
 
@@ -111,10 +123,8 @@ impl AuditReportService {
 
         let mut content = elements::LinearLayout::vertical();
 
-        let mut date_line = elements::Paragraph::new(format!(
-            "Date: {}",
-            Local::now().format("%d/%m/%Y")
-        ));
+        let mut date_line =
+            elements::Paragraph::new(format!("Date: {}", Local::now().format("%d/%m/%Y")));
         date_line.set_alignment(Alignment::Right);
         content.push(date_line);
         content.push(
@@ -122,31 +132,53 @@ impl AuditReportService {
                 "Periode analysee: {}",
                 period_label(report_period_days)
             ))
-            .styled(Style::new().with_font_size(10).with_color(Color::Rgb(90, 90, 90))),
+            .styled(
+                Style::new()
+                    .with_font_size(10)
+                    .with_color(Color::Rgb(90, 90, 90)),
+            ),
         );
         content.push(
             elements::Paragraph::new(format!(
                 "Evenements exportes: {}",
                 report_data.audit_entries.len()
             ))
-            .styled(Style::new().with_font_size(10).with_color(Color::Rgb(90, 90, 90))),
+            .styled(
+                Style::new()
+                    .with_font_size(10)
+                    .with_color(Color::Rgb(90, 90, 90)),
+            ),
         );
         content.push(elements::Break::new(1));
 
         content.push(
             elements::Paragraph::new("REGISTRE DE TRAÇABILITÉ DES ACCÈS")
                 .aligned(Alignment::Center)
-                .styled(Style::new().with_font_size(18).with_color(Color::Rgb(0, 0, 0)).bold()),
+                .styled(
+                    Style::new()
+                        .with_font_size(18)
+                        .with_color(Color::Rgb(0, 0, 0))
+                        .bold(),
+                ),
         );
         content.push(
             elements::Paragraph::new(format!("Etabli pour : {customer_name}"))
                 .aligned(Alignment::Center)
-                .styled(Style::new().with_font_size(11).with_color(Color::Rgb(0, 0, 0)).italic()),
+                .styled(
+                    Style::new()
+                        .with_font_size(11)
+                        .with_color(Color::Rgb(0, 0, 0))
+                        .italic(),
+                ),
         );
         content.push(elements::Break::new(0.8));
         content.push(
-            elements::Paragraph::new("JOURNAL D'AUDIT SIGNE")
-                .styled(Style::new().with_font_size(14).with_color(HEADER_PANEL).bold()),
+            elements::Paragraph::new("JOURNAL D'AUDIT SIGNE").styled(
+                Style::new()
+                    .with_font_size(14)
+                    .with_color(HEADER_PANEL)
+                    .bold(),
+            ),
         );
         content.push(elements::Break::new(0.35));
 
@@ -226,7 +258,8 @@ impl AuditReportService {
 
         document.push(content);
 
-        let mut output_path = dirs::download_dir().ok_or(ReportError::DownloadsDirectoryNotFound)?;
+        let mut output_path =
+            dirs::download_dir().ok_or(ReportError::DownloadsDirectoryNotFound)?;
         output_path.push(format!(
             "HeelonVault_Audit_{}j_{}.pdf",
             report_period_days,
@@ -319,7 +352,10 @@ impl AuditReportService {
         let mut signed_lines = vec![
             format!("Rapport d'audit HeelonVault pour {customer_name}"),
             format!("Periode analysee: {}", period_label(days)),
-            format!("Date de generation: {}", Local::now().format("%d/%m/%Y %H:%M:%S")),
+            format!(
+                "Date de generation: {}",
+                Local::now().format("%d/%m/%Y %H:%M:%S")
+            ),
             format!("Evenements exportes: {}", audit_entries.len()),
         ];
         signed_lines.extend(audit_entries.iter().map(|entry| {
@@ -363,7 +399,7 @@ fn initialize_pdf_fonts() -> Result<FontFamily<FontData>, ReportError> {
         italic: FontData::new(LIBERATION_SANS_ITALIC.to_vec(), None)
             .map_err(|error| ReportError::FontInitialization(error.to_string()))?,
         bold_italic: FontData::new(LIBERATION_SANS_BOLD_ITALIC.to_vec(), None)
-        .map_err(|error| ReportError::FontInitialization(error.to_string()))?,
+            .map_err(|error| ReportError::FontInitialization(error.to_string()))?,
     })
 }
 
@@ -392,7 +428,10 @@ fn format_target_with_names(
 ) -> String {
     match target_type {
         Some("vault") => {
-            if let Some(name) = target_vault_name.map(str::trim).filter(|name| !name.is_empty()) {
+            if let Some(name) = target_vault_name
+                .map(str::trim)
+                .filter(|name| !name.is_empty())
+            {
                 format!("vault:{}", name)
             } else {
                 format_target(target_type, target_id)
@@ -412,7 +451,11 @@ fn format_target_with_names(
     }
 }
 
-fn format_audit_detail(action: &str, raw_detail: Option<&str>, target_secret_title: Option<&str>) -> String {
+fn format_audit_detail(
+    action: &str,
+    raw_detail: Option<&str>,
+    target_secret_title: Option<&str>,
+) -> String {
     let normalized = normalize_optional_text(raw_detail);
     if normalized != "-" {
         return normalized;
@@ -515,7 +558,10 @@ impl genpdf::PageDecorator for SignedReportDecorator {
         let footer_style = style.with_font_size(5).with_color(Color::Rgb(95, 95, 95));
 
         area.draw_line(
-            vec![Position::new(0, line_y), Position::new(area.size().width, line_y)],
+            vec![
+                Position::new(0, line_y),
+                Position::new(area.size().width, line_y),
+            ],
             Style::new().with_color(BRAND_GOLD_DARK),
         );
 
@@ -657,7 +703,8 @@ mod tests {
 
         let mut license_service = LicenseService::new();
         license_service.set_cached_license_for_tests(test_license(tier));
-        let service = AuditReportService::new(Arc::new(license_service), runtime.handle().clone(), pool);
+        let service =
+            AuditReportService::new(Arc::new(license_service), runtime.handle().clone(), pool);
         (runtime, service)
     }
 
@@ -685,7 +732,10 @@ mod tests {
         let result = service.generate_audit_report("LABO TEST", 7);
 
         assert!(!matches!(result, Err(ReportError::SigningKeyMissing)));
-        assert!(key_path.exists(), "auto-generated signing key should be persisted");
+        assert!(
+            key_path.exists(),
+            "auto-generated signing key should be persisted"
+        );
 
         std::env::remove_var("HEELONVAULT_AUDIT_SIGNING_KEY_PATH");
     }

@@ -285,9 +285,8 @@ impl RecoveryKeyExportDialog {
                     cr.set_font_size(11.0);
                     let printed_at = Local::now().format("%d/%m/%Y %H:%M").to_string();
                     cr.move_to(36.0, y);
-                    let _ = cr.show_text(
-                        format!("{}: {}", date_label.as_str(), printed_at).as_str(),
-                    );
+                    let _ =
+                        cr.show_text(format!("{}: {}", date_label.as_str(), printed_at).as_str());
 
                     y += 28.0;
                     cr.set_font_size(12.0);
@@ -417,7 +416,8 @@ impl RecoveryKeyExportDialog {
 
                 let run_export_for_task = Rc::clone(&run_export_for_confirm);
                 glib::MainContext::default().spawn_local(async move {
-                    let result = (run_export_for_task)(backup_path_for_task, recovery_for_task).await;
+                    let result =
+                        (run_export_for_task)(backup_path_for_task, recovery_for_task).await;
 
                     if let Some(end) = end_critical_for_result.as_ref() {
                         end();

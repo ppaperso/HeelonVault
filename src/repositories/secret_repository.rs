@@ -10,7 +10,10 @@ pub trait SecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError>;
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
-    async fn list_all_trash_by_owner_id(&self, owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
+    async fn list_all_trash_by_owner_id(
+        &self,
+        owner_user_id: Uuid,
+    ) -> Result<Vec<SecretItem>, AppError>;
     async fn insert_secret_blob(
         &self,
         item: &SecretItem,
@@ -64,7 +67,9 @@ impl SqlxSecretRepository {
             "api_token" => Ok(SecretType::ApiToken),
             "ssh_key" => Ok(SecretType::SshKey),
             "secure_document" => Ok(SecretType::SecureDocument),
-            _ => Err(AppError::Storage("invalid secret_type in storage".to_string())),
+            _ => Err(AppError::Storage(
+                "invalid secret_type in storage".to_string(),
+            )),
         }
     }
 
@@ -79,7 +84,9 @@ impl SqlxSecretRepository {
         match raw {
             "inline" => Ok(BlobStorage::Inline),
             "file" => Ok(BlobStorage::File),
-            _ => Err(AppError::Storage("invalid blob_storage in storage".to_string())),
+            _ => Err(AppError::Storage(
+                "invalid blob_storage in storage".to_string(),
+            )),
         }
     }
 
@@ -143,9 +150,7 @@ impl SqlxSecretRepository {
             }
         };
 
-        let deleted_at: Option<String> = row
-            .try_get("deleted_at")
-            .unwrap_or(None);
+        let deleted_at: Option<String> = row.try_get("deleted_at").unwrap_or(None);
 
         Ok(SecretItem {
             id,
@@ -223,7 +228,10 @@ impl SecretRepository for SqlxSecretRepository {
         Ok(items)
     }
 
-    async fn list_all_trash_by_owner_id(&self, owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+    async fn list_all_trash_by_owner_id(
+        &self,
+        owner_user_id: Uuid,
+    ) -> Result<Vec<SecretItem>, AppError> {
         let rows = sqlx::query(
             "SELECT s.id, s.vault_id, s.secret_type, s.title, s.metadata_json, s.tags, s.expires_at, s.created_at, s.modified_at, s.usage_count, s.blob_storage, s.secret_blob, s.file_blob_ref, s.deleted_at
              FROM secret_items s
@@ -627,7 +635,10 @@ mod tests {
         };
 
         assert!(matches!(found.blob_storage, BlobStorage::Inline));
-        assert_eq!(found.secret_blob.expose_secret().as_slice(), &[1_u8, 2_u8, 3_u8]);
+        assert_eq!(
+            found.secret_blob.expose_secret().as_slice(),
+            &[1_u8, 2_u8, 3_u8]
+        );
     }
 
     #[tokio::test]
@@ -752,12 +763,11 @@ mod tests {
             return;
         }
 
-        let inline_row_result = sqlx::query(
-            "SELECT secret_blob, file_blob_ref FROM secret_items WHERE id = ?1",
-        )
-        .bind(inline_item.id.to_string())
-        .fetch_one(&repo.pool)
-        .await;
+        let inline_row_result =
+            sqlx::query("SELECT secret_blob, file_blob_ref FROM secret_items WHERE id = ?1")
+                .bind(inline_item.id.to_string())
+                .fetch_one(&repo.pool)
+                .await;
         assert!(inline_row_result.is_ok(), "inline readback should succeed");
         let inline_row = match inline_row_result {
             Ok(value) => value,
@@ -778,12 +788,11 @@ mod tests {
         assert_eq!(inline_blob, Some(vec![9_u8, 9_u8]));
         assert!(inline_ref.is_none());
 
-        let file_row_result = sqlx::query(
-            "SELECT secret_blob, file_blob_ref FROM secret_items WHERE id = ?1",
-        )
-        .bind(file_item.id.to_string())
-        .fetch_one(&repo.pool)
-        .await;
+        let file_row_result =
+            sqlx::query("SELECT secret_blob, file_blob_ref FROM secret_items WHERE id = ?1")
+                .bind(file_item.id.to_string())
+                .fetch_one(&repo.pool)
+                .await;
         assert!(file_row_result.is_ok(), "file readback should succeed");
         let file_row = match file_row_result {
             Ok(value) => value,
@@ -846,7 +855,10 @@ mod tests {
         };
 
         assert_eq!(found.title.as_deref(), Some("Titre modifie"));
-        assert_eq!(found.metadata_json.as_deref(), Some("{\"category\":\"Infra\"}"));
+        assert_eq!(
+            found.metadata_json.as_deref(),
+            Some("{\"category\":\"Infra\"}")
+        );
         assert_eq!(found.tags.as_deref(), Some("prod,urgent"));
         assert_eq!(found.expires_at.as_deref(), Some("2026-12-24T00:00:00Z"));
     }
@@ -948,7 +960,10 @@ mod tests {
         assert_eq!(active_items.len(), 1);
 
         let second_delete_result = repo.soft_delete(item.id).await;
-        assert!(second_delete_result.is_ok(), "second soft delete should succeed");
+        assert!(
+            second_delete_result.is_ok(),
+            "second soft delete should succeed"
+        );
         if second_delete_result.is_err() {
             return;
         }
@@ -1075,7 +1090,10 @@ mod tests {
         assert_eq!(emptied, 1);
 
         let remaining_a_result = repo.list_trash_by_vault_id(vault_a).await;
-        assert!(remaining_a_result.is_ok(), "vault a trash list should succeed");
+        assert!(
+            remaining_a_result.is_ok(),
+            "vault a trash list should succeed"
+        );
         let remaining_a = match remaining_a_result {
             Ok(value) => value,
             Err(_) => return,
@@ -1083,7 +1101,10 @@ mod tests {
         assert!(remaining_a.is_empty());
 
         let remaining_b_result = repo.list_trash_by_vault_id(vault_b).await;
-        assert!(remaining_b_result.is_ok(), "vault b trash list should succeed");
+        assert!(
+            remaining_b_result.is_ok(),
+            "vault b trash list should succeed"
+        );
         let remaining_b = match remaining_b_result {
             Ok(value) => value,
             Err(_) => return,
@@ -1105,13 +1126,19 @@ mod tests {
         let update_result = repo
             .update_secret_blob(missing_id, SecretBox::new(Box::new(vec![1_u8])))
             .await;
-        assert!(update_result.is_err(), "update should fail for missing item");
+        assert!(
+            update_result.is_err(),
+            "update should fail for missing item"
+        );
         if let Err(err) = update_result {
             assert!(matches!(err, AppError::Storage(_)));
         }
 
         let delete_result = repo.soft_delete(missing_id).await;
-        assert!(delete_result.is_err(), "delete should fail for missing item");
+        assert!(
+            delete_result.is_err(),
+            "delete should fail for missing item"
+        );
         if let Err(err) = delete_result {
             assert!(matches!(err, AppError::Storage(_)));
         }

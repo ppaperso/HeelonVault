@@ -1,6 +1,7 @@
 use std::fs;
 use std::path::Path;
 
+use crate::errors::AppError;
 use aes_gcm::aead::consts::U12;
 use aes_gcm::aead::Aead;
 use aes_gcm::{Aes256Gcm, KeyInit, Nonce};
@@ -12,7 +13,6 @@ use secrecy::{ExposeSecret, SecretBox, SecretString};
 use serde::{Deserialize, Serialize};
 use tracing::info;
 use zeroize::Zeroizing;
-use crate::errors::AppError;
 
 const BACKUP_MAGIC: &[u8; 5] = b"HVBK1";
 const SHA256_HEX_LEN: usize = 64;
@@ -128,7 +128,9 @@ impl BackupServiceImpl {
         salt: &[u8],
     ) -> Result<SecretBox<Vec<u8>>, AppError> {
         if salt.is_empty() {
-            return Err(AppError::Validation("recovery salt must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "recovery salt must not be empty".to_string(),
+            ));
         }
 
         let params = Params::new(64 * 1024, 3, 1, Some(AES_256_KEY_LEN))
@@ -141,7 +143,9 @@ impl BackupServiceImpl {
                 salt,
                 output.as_mut_slice(),
             )
-            .map_err(|err| AppError::Crypto(format!("argon2id recovery derivation failed: {err}")))?;
+            .map_err(|err| {
+                AppError::Crypto(format!("argon2id recovery derivation failed: {err}"))
+            })?;
 
         Ok(SecretBox::new(Box::new(output.to_vec())))
     }
@@ -246,9 +250,7 @@ impl BackupServiceImpl {
     fn parse_backup(bytes: &[u8]) -> Result<(String, [u8; BACKUP_NONCE_LEN], Vec<u8>), AppError> {
         let minimum_len = BACKUP_MAGIC.len() + SHA256_HEX_LEN + BACKUP_NONCE_LEN + 1;
         if bytes.len() < minimum_len {
-            return Err(AppError::Validation(
-                "backup file is too short".to_string(),
-            ));
+            return Err(AppError::Validation("backup file is too short".to_string()));
         }
 
         if &bytes[0..BACKUP_MAGIC.len()] != BACKUP_MAGIC {
@@ -361,7 +363,9 @@ impl BackupService for BackupServiceImpl {
             .map_err(|err| AppError::Validation(format!("written .hvb nonce is invalid: {err}")))?;
         let written_ciphertext = base64::engine::general_purpose::STANDARD
             .decode(written_payload.ciphertext_b64.as_bytes())
-            .map_err(|err| AppError::Validation(format!("written .hvb ciphertext is invalid: {err}")))?;
+            .map_err(|err| {
+                AppError::Validation(format!("written .hvb ciphertext is invalid: {err}"))
+            })?;
 
         if written_nonce_vec.len() != BACKUP_NONCE_LEN {
             return Err(AppError::Validation(
@@ -479,9 +483,8 @@ impl BackupService for BackupServiceImpl {
         let backup_bytes = Self::serialize_backup(&sha256_hex, nonce, ciphertext.as_slice())?;
 
         Self::ensure_parent_exists(backup_file_path)?;
-        fs::write(backup_file_path, backup_bytes).map_err(|err| {
-            AppError::Storage(format!("failed to write backup file: {err}"))
-        })?;
+        fs::write(backup_file_path, backup_bytes)
+            .map_err(|err| AppError::Storage(format!("failed to write backup file: {err}")))?;
 
         let exported_sha256 = Self::sha256_hex(sqlite_bytes.as_slice())?;
         if exported_sha256 != sha256_hex {
@@ -548,7 +551,8 @@ mod tests {
 
     impl TestTempDir {
         fn new() -> Result<Self, AppError> {
-            let path = std::env::temp_dir().join(format!("heelonvault-backup-test-{}", Uuid::new_v4()));
+            let path =
+                std::env::temp_dir().join(format!("heelonvault-backup-test-{}", Uuid::new_v4()));
             fs::create_dir_all(&path)
                 .map_err(|err| AppError::Storage(format!("failed to create temp dir: {err}")))?;
             Ok(Self { path })
@@ -621,7 +625,10 @@ mod tests {
 
         let restored_bytes_result = fs::read(&restored_db_path)
             .map_err(|err| AppError::Storage(format!("failed to read restored db: {err}")));
-        assert!(restored_bytes_result.is_ok(), "restored file should be readable");
+        assert!(
+            restored_bytes_result.is_ok(),
+            "restored file should be readable"
+        );
         let restored_bytes = match restored_bytes_result {
             Ok(value) => value,
             Err(_) => return,
@@ -650,8 +657,11 @@ mod tests {
         }
 
         let service = BackupServiceImpl::new();
-        let export_result =
-            service.export_backup(&source_db_path, &backup_path, SecretBox::new(Box::new(vec![3_u8; 32])));
+        let export_result = service.export_backup(
+            &source_db_path,
+            &backup_path,
+            SecretBox::new(Box::new(vec![3_u8; 32])),
+        );
 
         assert!(matches!(export_result, Err(AppError::Validation(_))));
     }
@@ -695,7 +705,11 @@ mod tests {
         };
 
         let digest_index = BACKUP_MAGIC.len();
-        backup_bytes[digest_index] = if backup_bytes[digest_index] == b'a' { b'b' } else { b'a' };
+        backup_bytes[digest_index] = if backup_bytes[digest_index] == b'a' {
+            b'b'
+        } else {
+            b'a'
+        };
 
         let rewrite_result = fs::write(&backup_path, backup_bytes);
         assert!(rewrite_result.is_ok(), "tampered backup should be writable");

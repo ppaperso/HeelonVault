@@ -20,7 +20,9 @@ use crate::services::import_service::ImportService;
 use crate::services::secret_service::SecretService;
 use crate::services::user_service::{UserProfileUpdate, UserService};
 use crate::services::vault_service::VaultService;
-use crate::ui::dialogs::recovery_key_export_dialog::{ExportRunner, RecoveryKeyExportDialog, RecoveryKeyExportDialogDeps};
+use crate::ui::dialogs::recovery_key_export_dialog::{
+    ExportRunner, RecoveryKeyExportDialog, RecoveryKeyExportDialogDeps,
+};
 use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
 
 pub struct ProfileDialog;
@@ -112,7 +114,8 @@ impl ProfileDialog {
         auto_lock_delay_row.set_model(Some(&auto_lock_options));
 
         let current_master_password_row = adw::PasswordEntryRow::new();
-        current_master_password_row.set_title(crate::tr!("profile-field-current-password").as_str());
+        current_master_password_row
+            .set_title(crate::tr!("profile-field-current-password").as_str());
         current_master_password_row.add_css_class("profile-entry-row");
 
         let new_master_password_row = adw::PasswordEntryRow::new();
@@ -253,7 +256,8 @@ impl ProfileDialog {
             match load_receiver.await {
                 Ok(Ok((user, delay_mins))) => {
                     username_row_for_load.set_text(user.username.as_str());
-                    display_name_row_for_load.set_text(user.display_name.as_deref().unwrap_or_default());
+                    display_name_row_for_load
+                        .set_text(user.display_name.as_deref().unwrap_or_default());
                     email_row_for_load.set_text(user.email.as_deref().unwrap_or_default());
                     let selected = match delay_mins {
                         1 => 0,
@@ -528,8 +532,9 @@ impl ProfileDialog {
                             .filter(|value| !value.trim().is_empty())
                             .unwrap_or(user.username);
                         callback_for_result(label);
-                        window_for_result
-                            .add_toast(adw::Toast::new(crate::tr!("profile-status-saved").as_str()));
+                        window_for_result.add_toast(adw::Toast::new(
+                            crate::tr!("profile-status-saved").as_str(),
+                        ));
                     }
                     Ok(Err(AppError::Authorization(_))) => {
                         window_for_result.add_toast(adw::Toast::new(
@@ -625,23 +630,20 @@ impl ProfileDialog {
                 let s1_ic = step1_icon_for_btn.clone();
                 let s2_sp = step2_spinner_for_btn.clone();
                 let s2_ic = step2_icon_for_btn.clone();
-                glib::timeout_add_local_once(
-                    std::time::Duration::from_millis(1500),
-                    move || {
-                        if op_done_t.get() {
-                            return;
-                        }
-                        s1_sp.stop();
-                        s1_sp.set_visible(false);
-                        s1_ic.set_icon_name(Some("object-select-symbolic"));
-                        s1_ic.remove_css_class("mkchange-step-icon-pending");
-                        s1_ic.add_css_class("mkchange-step-icon-done");
-                        s1_ic.set_visible(true);
-                        s2_ic.set_visible(false);
-                        s2_sp.set_visible(true);
-                        s2_sp.start();
-                    },
-                );
+                glib::timeout_add_local_once(std::time::Duration::from_millis(1500), move || {
+                    if op_done_t.get() {
+                        return;
+                    }
+                    s1_sp.stop();
+                    s1_sp.set_visible(false);
+                    s1_ic.set_icon_name(Some("object-select-symbolic"));
+                    s1_ic.remove_css_class("mkchange-step-icon-pending");
+                    s1_ic.add_css_class("mkchange-step-icon-done");
+                    s1_ic.set_visible(true);
+                    s2_ic.set_visible(false);
+                    s2_sp.set_visible(true);
+                    s2_sp.start();
+                });
             }
 
             let (password_sender, password_receiver) = tokio::sync::oneshot::channel();

@@ -105,8 +105,16 @@ impl TrashDialog {
         empty_state.append(&empty_title);
         empty_state.append(&empty_copy);
 
-        stack.add_titled(&list_scroll, Some("list"), crate::tr!("trash-list-title").as_str());
-        stack.add_titled(&empty_state, Some("empty"), crate::tr!("trash-list-empty").as_str());
+        stack.add_titled(
+            &list_scroll,
+            Some("list"),
+            crate::tr!("trash-list-title").as_str(),
+        );
+        stack.add_titled(
+            &empty_state,
+            Some("empty"),
+            crate::tr!("trash-list-empty").as_str(),
+        );
         stack.set_visible_child_name("empty");
 
         root.append(&header);
@@ -216,10 +224,7 @@ impl TrashDialog {
             .ok_or_else(|| crate::errors::AppError::NotFound("vault not found".to_string()))?;
 
         let _vault_key = vault_service
-            .open_vault(
-                current.id,
-                SecretBox::new(Box::new(admin_master_key)),
-            )
+            .open_vault(current.id, SecretBox::new(Box::new(admin_master_key)))
             .await?;
         Ok(current.id)
     }
@@ -251,9 +256,11 @@ impl TrashDialog {
 
         let (sender, receiver) = tokio::sync::oneshot::channel();
         std::thread::spawn(move || {
-            let result: Result<Vec<TrashRowView>, crate::errors::AppError> =
-                runtime_for_loader.block_on(async move {
-                    let items = secret_for_loader.list_all_trash_by_user(admin_user_id).await?;
+            let result: Result<Vec<TrashRowView>, crate::errors::AppError> = runtime_for_loader
+                .block_on(async move {
+                    let items = secret_for_loader
+                        .list_all_trash_by_user(admin_user_id)
+                        .await?;
                     let mut rows = Vec::with_capacity(items.len());
                     for item in items {
                         let login = item
@@ -275,10 +282,18 @@ impl TrashDialog {
                                 .title
                                 .unwrap_or_else(|| crate::tr!("trash-secret-fallback-title")),
                             type_label: match item.secret_type {
-                                crate::models::SecretType::Password => crate::tr!("secret-type-password"),
-                                crate::models::SecretType::ApiToken => crate::tr!("secret-type-api-token"),
-                                crate::models::SecretType::SshKey => crate::tr!("secret-type-ssh-key"),
-                                crate::models::SecretType::SecureDocument => crate::tr!("secret-type-secure-document"),
+                                crate::models::SecretType::Password => {
+                                    crate::tr!("secret-type-password")
+                                }
+                                crate::models::SecretType::ApiToken => {
+                                    crate::tr!("secret-type-api-token")
+                                }
+                                crate::models::SecretType::SshKey => {
+                                    crate::tr!("secret-type-ssh-key")
+                                }
+                                crate::models::SecretType::SecureDocument => {
+                                    crate::tr!("secret-type-secure-document")
+                                }
                             },
                             login,
                             deleted_at: item.deleted_at.clone(),
@@ -333,7 +348,9 @@ impl TrashDialog {
                         meta_label.add_css_class("login-support-copy");
 
                         // Ligne de date de suppression
-                        let deleted_text = item.deleted_at.as_deref()
+                        let deleted_text = item
+                            .deleted_at
+                            .as_deref()
                             .map(|raw| {
                                 if raw.len() >= 16 {
                                     let date = &raw[..10];
@@ -364,7 +381,8 @@ impl TrashDialog {
                             .valign(Align::Center)
                             .build();
 
-                        let restore_btn = gtk4::Button::with_label(crate::tr!("trash-restore-button").as_str());
+                        let restore_btn =
+                            gtk4::Button::with_label(crate::tr!("trash-restore-button").as_str());
                         restore_btn.add_css_class("suggested-action");
                         let app_for_restore = application.clone();
                         let parent_for_restore = parent_window.clone();
@@ -424,7 +442,8 @@ impl TrashDialog {
                             });
                         });
 
-                        let delete_btn = gtk4::Button::with_label(crate::tr!("trash-delete-button").as_str());
+                        let delete_btn =
+                            gtk4::Button::with_label(crate::tr!("trash-delete-button").as_str());
                         delete_btn.add_css_class("destructive-action");
                         let app_for_delete = application.clone();
                         let parent_for_delete = parent_window.clone();
@@ -527,19 +546,21 @@ impl TrashDialog {
         });
     }
 
-    fn confirm_destructive(
-        parent: &gtk4::Window,
-        message: &str,
-        on_confirm: impl Fn() + 'static,
-    ) {
+    fn confirm_destructive(parent: &gtk4::Window, message: &str, on_confirm: impl Fn() + 'static) {
         let dialog = gtk4::MessageDialog::builder()
             .transient_for(parent)
             .modal(true)
             .text(crate::tr!("trash-dialog-title").as_str())
             .secondary_text(message)
             .build();
-        dialog.add_button(crate::tr!("trash-dialog-cancel").as_str(), gtk4::ResponseType::Cancel);
-        dialog.add_button(crate::tr!("trash-dialog-confirm").as_str(), gtk4::ResponseType::Accept);
+        dialog.add_button(
+            crate::tr!("trash-dialog-cancel").as_str(),
+            gtk4::ResponseType::Cancel,
+        );
+        dialog.add_button(
+            crate::tr!("trash-dialog-confirm").as_str(),
+            gtk4::ResponseType::Accept,
+        );
         dialog.connect_response(move |d, response| {
             if response == gtk4::ResponseType::Accept {
                 on_confirm();

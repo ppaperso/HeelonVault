@@ -74,9 +74,7 @@ where
         Ok(())
     }
 
-    fn password_to_secret_string(
-        password: &SecretBox<Vec<u8>>,
-    ) -> Result<SecretString, AppError> {
+    fn password_to_secret_string(password: &SecretBox<Vec<u8>>) -> Result<SecretString, AppError> {
         let password_text = std::str::from_utf8(password.expose_secret().as_slice())
             .map_err(|_| AppError::Validation("password must be valid utf-8".to_string()))?;
         Ok(SecretString::new(password_text.to_owned().into_boxed_str()))
@@ -116,12 +114,16 @@ where
     ) -> Result<UserCredentialRecord, AppError> {
         let bytes = password_envelope.expose_secret().as_slice();
         if bytes.len() < 5 {
-            return Err(AppError::Validation("invalid password envelope: too short".to_string()));
+            return Err(AppError::Validation(
+                "invalid password envelope: too short".to_string(),
+            ));
         }
 
         let version = bytes[0];
         if version != PASSWORD_ENVELOPE_VERSION {
-            return Err(AppError::Validation("invalid password envelope: unsupported version".to_string()));
+            return Err(AppError::Validation(
+                "invalid password envelope: unsupported version".to_string(),
+            ));
         }
 
         let salt_len = u16::from_be_bytes([bytes[1], bytes[2]]) as usize;
@@ -129,7 +131,9 @@ where
         let expected_len = 5 + salt_len + hash_len;
 
         if salt_len == 0 || hash_len == 0 || bytes.len() != expected_len {
-            return Err(AppError::Validation("invalid password envelope: malformed payload".to_string()));
+            return Err(AppError::Validation(
+                "invalid password envelope: malformed payload".to_string(),
+            ));
         }
 
         let salt_start = 5;
@@ -157,14 +161,13 @@ where
         self.ensure_not_shutting_down()?;
 
         if username.trim().is_empty() {
-            return Err(AppError::Validation("username must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "username must not be empty".to_string(),
+            ));
         }
 
         {
-            let credentials = self
-                .credentials
-                .lock()
-                .map_err(|_| AppError::Internal)?;
+            let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
             if credentials.contains_key(username) {
                 return Err(AppError::Conflict("username already exists".to_string()));
             }
@@ -177,10 +180,7 @@ where
             .derive_key(&secret_password, &password_salt)
             .await?;
 
-        let mut credentials = self
-            .credentials
-            .lock()
-            .map_err(|_| AppError::Internal)?;
+        let mut credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
         credentials.insert(
             username.to_string(),
             UserCredentialRecord {
@@ -202,10 +202,7 @@ where
         let secret_password = Self::password_to_secret_string(&password)?;
 
         let (password_salt, expected_password_hash) = {
-            let credentials = self
-                .credentials
-                .lock()
-                .map_err(|_| AppError::Internal)?;
+            let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
                 .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
@@ -244,10 +241,7 @@ where
         let new_secret = Self::password_to_secret_string(&new_password)?;
 
         let current_salt = {
-            let credentials = self
-                .credentials
-                .lock()
-                .map_err(|_| AppError::Internal)?;
+            let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
                 .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
@@ -256,10 +250,7 @@ where
         };
 
         let expected_hash = {
-            let credentials = self
-                .credentials
-                .lock()
-                .map_err(|_| AppError::Internal)?;
+            let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
             let record = credentials
                 .get(username)
                 .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
@@ -274,16 +265,18 @@ where
             derived_current.expose_secret().as_slice(),
             expected_hash.as_slice(),
         ) {
-            return Err(AppError::Authorization(AccessDeniedReason::InvalidCredentials));
+            return Err(AppError::Authorization(
+                AccessDeniedReason::InvalidCredentials,
+            ));
         }
 
         let new_salt = self.crypto_service.generate_kdf_salt().await?;
-        let new_hash = self.crypto_service.derive_key(&new_secret, &new_salt).await?;
+        let new_hash = self
+            .crypto_service
+            .derive_key(&new_secret, &new_salt)
+            .await?;
 
-        let mut credentials = self
-            .credentials
-            .lock()
-            .map_err(|_| AppError::Internal)?;
+        let mut credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
         let record = credentials
             .get_mut(username)
             .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
@@ -303,10 +296,7 @@ where
         let secret_password = Self::password_to_secret_string(&password)?;
 
         let (password_salt, expected_password_hash) = {
-            let credentials = self
-                .credentials
-                .lock()
-                .map_err(|_| AppError::Internal)?;
+            let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
             match credentials.get(username) {
                 Some(record) => (
                     SecretBox::new(Box::new(record.password_salt.expose_secret().clone())),
@@ -339,15 +329,14 @@ where
         self.ensure_not_shutting_down()?;
 
         if username.trim().is_empty() {
-            return Err(AppError::Validation("username must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "username must not be empty".to_string(),
+            ));
         }
 
         let record = Self::decode_password_envelope(&password_envelope)?;
 
-        let mut credentials = self
-            .credentials
-            .lock()
-            .map_err(|_| AppError::Internal)?;
+        let mut credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
         credentials.insert(username.to_string(), record);
         Ok(())
     }
@@ -355,10 +344,7 @@ where
     async fn get_password_envelope(&self, username: &str) -> Result<SecretBox<Vec<u8>>, AppError> {
         self.ensure_not_shutting_down()?;
 
-        let credentials = self
-            .credentials
-            .lock()
-            .map_err(|_| AppError::Internal)?;
+        let credentials = self.credentials.lock().map_err(|_| AppError::Internal)?;
         let record = credentials
             .get(username)
             .ok_or_else(|| AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
@@ -389,7 +375,10 @@ mod tests {
         }
 
         let envelope_result = source.get_password_envelope("alice").await;
-        assert!(envelope_result.is_ok(), "export password envelope should succeed");
+        assert!(
+            envelope_result.is_ok(),
+            "export password envelope should succeed"
+        );
         let envelope = match envelope_result {
             Ok(value) => value,
             Err(_) => return,
@@ -397,25 +386,31 @@ mod tests {
 
         let restored = AuthServiceImpl::new(CryptoServiceImpl::with_defaults());
         let import_result = restored.upsert_password_envelope("alice", envelope).await;
-        assert!(import_result.is_ok(), "import password envelope should succeed");
+        assert!(
+            import_result.is_ok(),
+            "import password envelope should succeed"
+        );
         if import_result.is_err() {
             return;
         }
 
         let verify_ok = restored
-            .verify_password(
-                "alice",
-                SecretBox::new(Box::new(b"ChangeMe#2026".to_vec())),
-            )
+            .verify_password("alice", SecretBox::new(Box::new(b"ChangeMe#2026".to_vec())))
             .await;
-        assert!(matches!(verify_ok, Ok(true)), "restored credentials should validate");
+        assert!(
+            matches!(verify_ok, Ok(true)),
+            "restored credentials should validate"
+        );
     }
 
     #[tokio::test]
     async fn change_password_persisted_envelope_works_after_reload() {
         let source = AuthServiceImpl::new(CryptoServiceImpl::with_defaults());
         let create_result = source
-            .create_user("bob", SecretBox::new(Box::new(b"OldPassword#2026".to_vec())))
+            .create_user(
+                "bob",
+                SecretBox::new(Box::new(b"OldPassword#2026".to_vec())),
+            )
             .await;
         assert!(create_result.is_ok(), "create_user should succeed");
         if create_result.is_err() {
@@ -435,7 +430,10 @@ mod tests {
         }
 
         let envelope_result = source.get_password_envelope("bob").await;
-        assert!(envelope_result.is_ok(), "export password envelope should succeed");
+        assert!(
+            envelope_result.is_ok(),
+            "export password envelope should succeed"
+        );
         let envelope = match envelope_result {
             Ok(value) => value,
             Err(_) => return,
@@ -443,7 +441,10 @@ mod tests {
 
         let restored = AuthServiceImpl::new(CryptoServiceImpl::with_defaults());
         let import_result = restored.upsert_password_envelope("bob", envelope).await;
-        assert!(import_result.is_ok(), "import password envelope should succeed");
+        assert!(
+            import_result.is_ok(),
+            "import password envelope should succeed"
+        );
         if import_result.is_err() {
             return;
         }
@@ -454,7 +455,10 @@ mod tests {
                 SecretBox::new(Box::new(b"OldPassword#2026".to_vec())),
             )
             .await;
-        assert!(matches!(old_password_check, Ok(false)), "old password should be rejected");
+        assert!(
+            matches!(old_password_check, Ok(false)),
+            "old password should be rejected"
+        );
 
         let new_password_check = restored
             .verify_password(
@@ -462,6 +466,9 @@ mod tests {
                 SecretBox::new(Box::new(b"NewPassword#2026".to_vec())),
             )
             .await;
-        assert!(matches!(new_password_check, Ok(true)), "new password should be accepted");
+        assert!(
+            matches!(new_password_check, Ok(true)),
+            "new password should be accepted"
+        );
     }
 }

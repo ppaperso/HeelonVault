@@ -31,11 +31,7 @@ pub struct KeyRotationResult {
 
 #[allow(async_fn_in_trait)]
 pub trait TeamService {
-    async fn create_team(
-        &self,
-        creator_id: Uuid,
-        name: &str,
-    ) -> Result<Team, AppError>;
+    async fn create_team(&self, creator_id: Uuid, name: &str) -> Result<Team, AppError>;
 
     async fn delete_team(&self, requester_id: Uuid, team_id: Uuid) -> Result<(), AppError>;
 
@@ -61,10 +57,14 @@ pub trait TeamService {
 
     async fn list_visible_teams(&self, requester_id: Uuid) -> Result<Vec<Team>, AppError>;
 
-    async fn list_users_for_member_picker(&self, requester_id: Uuid) -> Result<Vec<User>, AppError>;
+    async fn list_users_for_member_picker(&self, requester_id: Uuid)
+        -> Result<Vec<User>, AppError>;
 
-    async fn list_team_members(&self, requester_id: Uuid, team_id: Uuid)
-        -> Result<Vec<TeamMember>, AppError>;
+    async fn list_team_members(
+        &self,
+        requester_id: Uuid,
+        team_id: Uuid,
+    ) -> Result<Vec<TeamMember>, AppError>;
 
     /// Grant access to a vault for a specific user (direct share, not via team).
     /// `vault_key` is the plaintext vault key (obtained via VaultService::open_vault).
@@ -161,7 +161,13 @@ where
         crypto_service: TCrypto,
         audit_service: Arc<TAuditSvc>,
     ) -> Self {
-        Self { team_repo, user_repo, vault_repo, crypto_service, audit_service }
+        Self {
+            team_repo,
+            user_repo,
+            vault_repo,
+            crypto_service,
+            audit_service,
+        }
     }
 
     async fn require_team_permission(
@@ -176,12 +182,11 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("requester not found".to_string()))?;
 
-        let requester_role = self.team_repo.get_member_role(team_id, requester_id).await?;
-        check_permission(
-            &user,
-            action,
-            &Resource::Team { requester_role },
-        )
+        let requester_role = self
+            .team_repo
+            .get_member_role(team_id, requester_id)
+            .await?;
+        check_permission(&user, action, &Resource::Team { requester_role })
     }
 
     fn serialize_vault_key_envelope(
@@ -226,7 +231,9 @@ where
             ));
         }
 
-        Ok(SecretBox::new(Box::new(bytes[hash_start..expected_len].to_vec())))
+        Ok(SecretBox::new(Box::new(
+            bytes[hash_start..expected_len].to_vec(),
+        )))
     }
 }
 
@@ -257,8 +264,7 @@ where
             .add_member(team_id, creator_id, &TeamMemberRole::Leader)
             .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(creator_id),
                 AuditAction::TeamCreated,
@@ -273,8 +279,7 @@ where
     }
 
     async fn delete_team(&self, requester_id: Uuid, team_id: Uuid) -> Result<(), AppError> {
-        self
-            .require_team_permission(requester_id, team_id, Action::TeamManageMembers)
+        self.require_team_permission(requester_id, team_id, Action::TeamManageMembers)
             .await?;
 
         let team = self
@@ -285,8 +290,7 @@ where
 
         self.team_repo.delete_team(team_id).await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(requester_id),
                 AuditAction::TeamDeleted,
@@ -307,8 +311,7 @@ where
         user_id: Uuid,
         role: TeamMemberRole,
     ) -> Result<(), AppError> {
-        self
-            .require_team_permission(requester_id, team_id, Action::TeamManageMembers)
+        self.require_team_permission(requester_id, team_id, Action::TeamManageMembers)
             .await?;
 
         // Target user must exist.
@@ -320,8 +323,7 @@ where
 
         self.team_repo.add_member(team_id, user_id, &role).await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(requester_id),
                 AuditAction::TeamMemberAdded,
@@ -345,8 +347,7 @@ where
         team_id: Uuid,
         user_id: Uuid,
     ) -> Result<(), AppError> {
-        self
-            .require_team_permission(requester_id, team_id, Action::TeamManageMembers)
+        self.require_team_permission(requester_id, team_id, Action::TeamManageMembers)
             .await?;
 
         self.team_repo.remove_member(team_id, user_id).await?;
@@ -356,8 +357,7 @@ where
             .delete_key_shares_for_user_via_team(user_id, team_id)
             .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(requester_id),
                 AuditAction::TeamMemberRemoved,
@@ -365,8 +365,7 @@ where
                 Some(&team_id.to_string()),
                 Some(&format!(
                     r#"{{"user_id":"{}","purged_shares":{}}}"#,
-                    user_id,
-                    purged_share_count
+                    user_id, purged_share_count
                 )),
             )
             .await?;
@@ -399,7 +398,10 @@ where
         }
     }
 
-    async fn list_users_for_member_picker(&self, requester_id: Uuid) -> Result<Vec<User>, AppError> {
+    async fn list_users_for_member_picker(
+        &self,
+        requester_id: Uuid,
+    ) -> Result<Vec<User>, AppError> {
         let _ = self
             .user_repo
             .get_by_id(requester_id)
@@ -413,8 +415,7 @@ where
         requester_id: Uuid,
         team_id: Uuid,
     ) -> Result<Vec<TeamMember>, AppError> {
-        self
-            .require_team_permission(requester_id, team_id, Action::TeamReadMembers)
+        self.require_team_permission(requester_id, team_id, Action::TeamReadMembers)
             .await?;
 
         self.team_repo.list_members(team_id).await
@@ -446,8 +447,7 @@ where
             )
             .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(granter_id),
                 AuditAction::VaultSharedWithUser,
@@ -550,8 +550,7 @@ where
             ));
         }
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(granter_id),
                 AuditAction::VaultSharedWithTeam,
@@ -559,9 +558,7 @@ where
                 Some(&vault_id.to_string()),
                 Some(&format!(
                     r#"{{"team_id":"{}","members_granted":{},"members_skipped":{}}}"#,
-                    team_id,
-                    granted,
-                    skipped
+                    team_id, granted, skipped
                 )),
             )
             .await?;
@@ -585,8 +582,7 @@ where
     ) -> Result<(), AppError> {
         self.vault_repo.delete_key_share(vault_id, user_id).await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::VaultAccessRevoked,
@@ -627,8 +623,7 @@ where
             .update_vault_key_envelope(vault_id, new_owner_key_envelope)
             .await?;
 
-        self
-            .audit_service
+        self.audit_service
             .record_event(
                 Some(actor_id),
                 AuditAction::VaultKeyRotated,
@@ -667,11 +662,14 @@ mod tests {
     use uuid::Uuid;
 
     use crate::errors::AppError;
-    use crate::models::{AccessibleVault, AuditAction, Team, TeamMember, TeamMemberRole, User, UserRole, Vault, VaultAccessKind, VaultShareRole};
-    use crate::services::audit_log_service::AuditLogService;
+    use crate::models::{
+        AccessibleVault, AuditAction, Team, TeamMember, TeamMemberRole, User, UserRole, Vault,
+        VaultAccessKind, VaultShareRole,
+    };
     use crate::repositories::team_repository::TeamRepository;
     use crate::repositories::user_repository::UserRepository;
     use crate::repositories::vault_repository::VaultRepository;
+    use crate::services::audit_log_service::AuditLogService;
     use crate::services::crypto_service::CryptoServiceImpl;
 
     use super::{TeamService, TeamServiceImpl};
@@ -686,7 +684,10 @@ mod tests {
 
     impl TeamRepository for StubTeamRepo {
         async fn create_team(
-            &self, id: Uuid, name: &str, created_by: Option<Uuid>,
+            &self,
+            id: Uuid,
+            name: &str,
+            created_by: Option<Uuid>,
         ) -> Result<Team, AppError> {
             let team = Team {
                 id,
@@ -723,11 +724,17 @@ mod tests {
                 .unwrap()
                 .remove(&team_id)
                 .ok_or_else(|| AppError::NotFound("team not found".to_string()))?;
-            self.members.lock().unwrap().retain(|m| m.team_id != team_id);
+            self.members
+                .lock()
+                .unwrap()
+                .retain(|m| m.team_id != team_id);
             Ok(())
         }
         async fn add_member(
-            &self, team_id: Uuid, user_id: Uuid, role: &TeamMemberRole,
+            &self,
+            team_id: Uuid,
+            user_id: Uuid,
+            role: &TeamMemberRole,
         ) -> Result<(), AppError> {
             let mut guard = self.members.lock().unwrap();
             guard.retain(|m| !(m.team_id == team_id && m.user_id == user_id));
@@ -759,7 +766,9 @@ mod tests {
                 .collect())
         }
         async fn get_member_role(
-            &self, team_id: Uuid, user_id: Uuid,
+            &self,
+            team_id: Uuid,
+            user_id: Uuid,
         ) -> Result<Option<TeamMemberRole>, AppError> {
             Ok(self
                 .members
@@ -831,7 +840,8 @@ mod tests {
                 .cloned())
         }
         async fn resolve_username_for_login_identifier(
-            &self, identifier: &str,
+            &self,
+            identifier: &str,
         ) -> Result<Option<String>, AppError> {
             Ok(self
                 .users
@@ -845,7 +855,10 @@ mod tests {
             Ok(self.users.lock().unwrap().values().cloned().collect())
         }
         async fn create_user_db(
-            &self, user_id: Uuid, username: &str, role: &UserRole,
+            &self,
+            user_id: Uuid,
+            username: &str,
+            role: &UserRole,
         ) -> Result<(), AppError> {
             self.users.lock().unwrap().insert(
                 user_id,
@@ -870,9 +883,7 @@ mod tests {
                 .ok_or_else(|| AppError::NotFound("user not found".to_string()))?;
             Ok(())
         }
-        async fn update_user_role(
-            &self, user_id: Uuid, role: &UserRole,
-        ) -> Result<(), AppError> {
+        async fn update_user_role(&self, user_id: Uuid, role: &UserRole) -> Result<(), AppError> {
             let mut guard = self.users.lock().unwrap();
             if let Some(u) = guard.get_mut(&user_id) {
                 u.role = role.clone();
@@ -881,9 +892,7 @@ mod tests {
                 Err(AppError::NotFound("user not found".to_string()))
             }
         }
-        async fn list_all_password_envelopes(
-            &self,
-        ) -> Result<Vec<(String, Vec<u8>)>, AppError> {
+        async fn list_all_password_envelopes(&self) -> Result<Vec<(String, Vec<u8>)>, AppError> {
             Ok(vec![])
         }
         async fn get_password_envelope_by_user_id(
@@ -893,23 +902,30 @@ mod tests {
             Ok(None)
         }
         async fn update_user_profile(
-            &self, _: Uuid, _: Option<&str>, _: Option<&str>, _: Option<&str>, _: Option<bool>,
+            &self,
+            _: Uuid,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<&str>,
+            _: Option<bool>,
         ) -> Result<(), AppError> {
             Ok(())
         }
         async fn update_password_envelope(
-            &self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>,
+            &self,
+            _: Uuid,
+            _: secrecy::SecretBox<Vec<u8>>,
         ) -> Result<(), AppError> {
             Ok(())
         }
         async fn update_totp_secret_envelope(
-            &self, _: Uuid, _: secrecy::SecretBox<Vec<u8>>,
+            &self,
+            _: Uuid,
+            _: secrecy::SecretBox<Vec<u8>>,
         ) -> Result<(), AppError> {
             Ok(())
         }
-        async fn update_show_passwords_in_edit(
-            &self, _: Uuid, _: bool,
-        ) -> Result<(), AppError> {
+        async fn update_show_passwords_in_edit(&self, _: Uuid, _: bool) -> Result<(), AppError> {
             Ok(())
         }
     }
@@ -943,7 +959,9 @@ mod tests {
             Ok(())
         }
         async fn update_vault_key_envelope(
-            &self, vault_id: Uuid, envelope: SecretBox<Vec<u8>>,
+            &self,
+            vault_id: Uuid,
+            envelope: SecretBox<Vec<u8>>,
         ) -> Result<(), AppError> {
             self.envelopes
                 .lock()
@@ -981,8 +999,13 @@ mod tests {
             Ok(record)
         }
         async fn insert_key_share(
-            &self, vault_id: Uuid, user_id: Uuid, key_envelope: SecretBox<Vec<u8>>,
-            _: Option<Uuid>, _: Option<Uuid>, _: VaultShareRole,
+            &self,
+            vault_id: Uuid,
+            user_id: Uuid,
+            key_envelope: SecretBox<Vec<u8>>,
+            _: Option<Uuid>,
+            _: Option<Uuid>,
+            _: VaultShareRole,
         ) -> Result<(), AppError> {
             self.key_shares
                 .lock()
@@ -991,7 +1014,9 @@ mod tests {
             Ok(())
         }
         async fn get_key_share(
-            &self, vault_id: Uuid, user_id: Uuid,
+            &self,
+            vault_id: Uuid,
+            user_id: Uuid,
         ) -> Result<Option<SecretBox<Vec<u8>>>, AppError> {
             Ok(self
                 .key_shares
@@ -1005,7 +1030,10 @@ mod tests {
             Ok(())
         }
         async fn delete_all_key_shares(&self, vault_id: Uuid) -> Result<(), AppError> {
-            self.key_shares.lock().unwrap().retain(|(v, _), _| v != &vault_id);
+            self.key_shares
+                .lock()
+                .unwrap()
+                .retain(|(v, _), _| v != &vault_id);
             Ok(())
         }
         async fn list_key_share_user_ids(&self, vault_id: Uuid) -> Result<Vec<Uuid>, AppError> {
@@ -1058,28 +1086,33 @@ mod tests {
             Ok(())
         }
 
-        async fn list_recent(&self, _: Uuid, _: u32) -> Result<Vec<crate::models::AuditLogEntry>, AppError> {
+        async fn list_recent(
+            &self,
+            _: Uuid,
+            _: u32,
+        ) -> Result<Vec<crate::models::AuditLogEntry>, AppError> {
             Ok(vec![])
         }
         async fn list_for_user(
-            &self, _: Uuid, _: Uuid, _: u32,
+            &self,
+            _: Uuid,
+            _: Uuid,
+            _: u32,
         ) -> Result<Vec<crate::models::AuditLogEntry>, AppError> {
             Ok(vec![])
         }
         async fn list_for_target(
-            &self, _: Uuid, _: &str, _: &str, _: u32,
+            &self,
+            _: Uuid,
+            _: &str,
+            _: &str,
+            _: u32,
         ) -> Result<Vec<crate::models::AuditLogEntry>, AppError> {
             Ok(vec![])
         }
     }
 
-    fn make_service(
-        admin_id: Uuid,
-    ) -> (
-        impl TeamService,
-        StubTeamRepo,
-        StubVaultRepo,
-    ) {
+    fn make_service(admin_id: Uuid) -> (impl TeamService, StubTeamRepo, StubVaultRepo) {
         let (user_repo, _) = StubUserRepo::with_admin();
         // Insert the real admin_id used for tests.
         user_repo.users.lock().unwrap().insert(
@@ -1114,7 +1147,10 @@ mod tests {
     async fn create_team_adds_creator_as_leader() {
         let admin_id = Uuid::new_v4();
         let (svc, team_repo, _) = make_service(admin_id);
-        let team = svc.create_team(admin_id, "LabTeam").await.expect("create_team");
+        let team = svc
+            .create_team(admin_id, "LabTeam")
+            .await
+            .expect("create_team");
         let members = team_repo.list_members(team.id).await.expect("list_members");
         assert_eq!(members.len(), 1);
         assert_eq!(members[0].user_id, admin_id);
@@ -1136,7 +1172,10 @@ mod tests {
             .await
             .expect("grant_vault_access");
 
-        let share = vault_repo.get_key_share(vault_id, recipient_id).await.expect("get_key_share");
+        let share = vault_repo
+            .get_key_share(vault_id, recipient_id)
+            .await
+            .expect("get_key_share");
         assert!(share.is_some(), "key share should be stored");
     }
 
@@ -1158,7 +1197,13 @@ mod tests {
             .await
             .expect("revoke");
 
-        let share = vault_repo.get_key_share(vault_id, user_id).await.expect("get_key_share");
-        assert!(share.is_none(), "key share should be deleted after revocation");
+        let share = vault_repo
+            .get_key_share(vault_id, user_id)
+            .await
+            .expect("get_key_share");
+        assert!(
+            share.is_none(),
+            "key share should be deleted after revocation"
+        );
     }
 }

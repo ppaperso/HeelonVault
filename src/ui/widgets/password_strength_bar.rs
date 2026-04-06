@@ -8,38 +8,53 @@ use zxcvbn::zxcvbn;
 
 /// App-specific terms that zxcvbn must penalise.
 const APP_BLOCKLIST: &[&str] = &[
-    "heelon", "vault", "heelonvault", "test",
-    "azerty", "qwerty", "qwertz", "123456", "password", "motdepasse",
+    "heelon",
+    "vault",
+    "heelonvault",
+    "test",
+    "azerty",
+    "qwerty",
+    "qwertz",
+    "123456",
+    "password",
+    "motdepasse",
 ];
 
 // ─── ANSSI complexity criteria ──────────────────────────────────────────────
 
 struct Criteria {
-    has_upper:   bool,
-    has_lower:   bool,
-    has_digit:   bool,
+    has_upper: bool,
+    has_lower: bool,
+    has_digit: bool,
     has_special: bool,
 }
 
 impl Criteria {
     fn check(password: &str) -> Self {
         Self {
-            has_upper:   password.chars().any(|c| c.is_uppercase()),
-            has_lower:   password.chars().any(|c| c.is_lowercase()),
-            has_digit:   password.chars().any(|c| c.is_ascii_digit()),
+            has_upper: password.chars().any(|c| c.is_uppercase()),
+            has_lower: password.chars().any(|c| c.is_lowercase()),
+            has_digit: password.chars().any(|c| c.is_ascii_digit()),
             has_special: password.chars().any(|c| !c.is_alphanumeric()),
         }
     }
 
     fn category_count(&self) -> usize {
-        [self.has_upper, self.has_lower, self.has_digit, self.has_special]
-            .iter()
-            .filter(|&&v| v)
-            .count()
+        [
+            self.has_upper,
+            self.has_lower,
+            self.has_digit,
+            self.has_special,
+        ]
+        .iter()
+        .filter(|&&v| v)
+        .count()
     }
 
     #[allow(dead_code)]
-    fn all_met(&self) -> bool { self.category_count() == 4 }
+    fn all_met(&self) -> bool {
+        self.category_count() == 4
+    }
 }
 
 /// ANSSI-aligned policy cap on the score (0–4).
@@ -54,7 +69,9 @@ impl Criteria {
 /// | 14     | 4          | 3     |
 /// | ≥ 15   | ≥ 3        | 4 (limited by zxcvbn) |
 fn anssi_cap(len: usize, categories: usize) -> i32 {
-    if len < 12 { return 1; }
+    if len < 12 {
+        return 1;
+    }
     if len < 14 {
         // 12–13 chars
         return if categories >= 4 { 3 } else { 2 };
@@ -63,7 +80,11 @@ fn anssi_cap(len: usize, categories: usize) -> i32 {
         return if categories >= 3 { 3 } else { 2 };
     }
     // len >= 15
-    if categories >= 3 { 4 } else { 2 }
+    if categories >= 3 {
+        4
+    } else {
+        2
+    }
 }
 
 /// Human-readable label for the ANSSI policy score.
@@ -89,25 +110,25 @@ fn anssi_hint(len: usize, categories: usize, zxcvbn_score: i32) -> String {
     // All ANSSI requirements met — relay zxcvbn signal
     match zxcvbn_score {
         0 | 1 => "Bien — évitez les suites prévisibles".to_string(),
-        2     => "Moyen — diversifiez davantage".to_string(),
-        3     => "Solide".to_string(),
-        _     => "Robuste — conforme ANSSI".to_string(),
+        2 => "Moyen — diversifiez davantage".to_string(),
+        3 => "Solide".to_string(),
+        _ => "Robuste — conforme ANSSI".to_string(),
     }
 }
 
 // ─── Shared widget state ────────────────────────────────────────────────────
 
 struct StrengthState {
-    root:        gtk4::Box,
-    level:       gtk4::LevelBar,
-    hint:        gtk4::Label,
+    root: gtk4::Box,
+    level: gtk4::LevelBar,
+    hint: gtk4::Label,
     badge_upper: gtk4::Label,
     badge_lower: gtk4::Label,
     badge_digit: gtk4::Label,
-    badge_spec:  gtk4::Label,
-    username:    RefCell<String>,
+    badge_spec: gtk4::Label,
+    username: RefCell<String>,
     /// Score observed at the last update — written by update_view, read by gate_button.
-    last_score:  RefCell<i32>,
+    last_score: RefCell<i32>,
 }
 
 // ─── Public widget ──────────────────────────────────────────────────────────
@@ -133,9 +154,9 @@ impl PasswordStrengthBar {
         level.set_hexpand(true);
         level.add_css_class("password-strength-bar");
         // Override default offsets so that 1=low, 2–3=medium, 4=high
-        level.add_offset_value("low",    1.0);
+        level.add_offset_value("low", 1.0);
         level.add_offset_value("medium", 3.0);
-        level.add_offset_value("high",   4.0);
+        level.add_offset_value("high", 4.0);
 
         // — Badge row (abc / ABC / 123 / #?!) ──────────────────────────
         let badge_row = gtk4::Box::builder()
@@ -156,7 +177,7 @@ impl PasswordStrengthBar {
         let badge_lower = make_badge("abc");
         let badge_upper = make_badge("ABC");
         let badge_digit = make_badge("123");
-        let badge_spec  = make_badge("#?!");
+        let badge_spec = make_badge("#?!");
 
         badge_row.append(&badge_lower);
         badge_row.append(&badge_upper);
@@ -183,7 +204,7 @@ impl PasswordStrengthBar {
                 badge_lower,
                 badge_digit,
                 badge_spec,
-                username:   RefCell::new(String::new()),
+                username: RefCell::new(String::new()),
                 last_score: RefCell::new(0),
             }),
         }
@@ -213,17 +234,13 @@ impl PasswordStrengthBar {
 
     /// Bind to an entry **and** gate `button`: the button stays insensitive
     /// until the policy score is ≥ `min_score` (3 = Solide).
-    pub fn connect_and_gate_button<E>(
-        &self,
-        entry: &E,
-        button: &gtk4::Button,
-        min_score: i32,
-    ) where
+    pub fn connect_and_gate_button<E>(&self, entry: &E, button: &gtk4::Button, min_score: i32)
+    where
         E: IsA<gtk4::Editable> + Clone + 'static,
     {
         self.bind_editable(entry);
         // Connect button sensitivity to score changes.
-        let state   = Rc::clone(&self.state);
+        let state = Rc::clone(&self.state);
         let btn_ref = button.clone();
         entry.connect_text_notify(move |_| {
             let ok = *state.last_score.borrow() >= min_score;
@@ -288,7 +305,7 @@ impl PasswordStrengthBar {
         Self::set_badge(&state.badge_lower, crit.has_lower);
         Self::set_badge(&state.badge_upper, crit.has_upper);
         Self::set_badge(&state.badge_digit, crit.has_digit);
-        Self::set_badge(&state.badge_spec,  crit.has_special);
+        Self::set_badge(&state.badge_spec, crit.has_special);
         let cats = crit.category_count();
 
         // 2 — zxcvbn with full blocklist
@@ -296,11 +313,11 @@ impl PasswordStrengthBar {
         if !username.is_empty() {
             user_inputs.push(username);
         }
-        let entropy      = zxcvbn(trimmed, &user_inputs).ok();
+        let entropy = zxcvbn(trimmed, &user_inputs).ok();
         let zxcvbn_score = entropy.as_ref().map(|e| e.score() as i32).unwrap_or(0);
 
         // 3 — Final score: min(ANSSI cap, zxcvbn)
-        let cap   = anssi_cap(len, cats);
+        let cap = anssi_cap(len, cats);
         let score = zxcvbn_score.min(cap);
         state.level.set_value(f64::from(score));
         *state.last_score.borrow_mut() = score;
@@ -311,9 +328,14 @@ impl PasswordStrengthBar {
         let hint = if cap >= 4 {
             if let Some(e) = &entropy {
                 if let Some(fb) = e.feedback().as_ref() {
-                    let extra = fb.warning()
+                    let extra = fb
+                        .warning()
                         .map(|w| Self::localize(&w.to_string()))
-                        .or_else(|| fb.suggestions().first().map(|s| Self::localize(&s.to_string())));
+                        .or_else(|| {
+                            fb.suggestions()
+                                .first()
+                                .map(|s| Self::localize(&s.to_string()))
+                        });
                     if let Some(extra) = extra {
                         format!("{hint} — {extra}")
                     } else {
@@ -333,12 +355,24 @@ impl PasswordStrengthBar {
 
     fn localize(message: &str) -> String {
         let n = message.to_ascii_lowercase();
-        if n.contains("too short")  { return "Trop court".into(); }
-        if n.contains("similar")    { return "Trop proche d'un mot connu".into(); }
-        if n.contains("repeat")     { return "Évitez les répétitions".into(); }
-        if n.contains("sequence")   { return "Évitez les suites prévisibles".into(); }
-        if n.contains("common")     { return "Mot de passe trop commun".into(); }
-        if n.contains("word")       { return "Ajoutez des symboles et chiffres".into(); }
+        if n.contains("too short") {
+            return "Trop court".into();
+        }
+        if n.contains("similar") {
+            return "Trop proche d'un mot connu".into();
+        }
+        if n.contains("repeat") {
+            return "Évitez les répétitions".into();
+        }
+        if n.contains("sequence") {
+            return "Évitez les suites prévisibles".into();
+        }
+        if n.contains("common") {
+            return "Mot de passe trop commun".into();
+        }
+        if n.contains("word") {
+            return "Ajoutez des symboles et chiffres".into();
+        }
         message.to_string()
     }
 
@@ -347,9 +381,9 @@ impl PasswordStrengthBar {
     fn score_label(score: i32) -> &'static str {
         match score {
             0 | 1 => "Faible",
-            2     => "Moyen",
-            3     => "Solide",
-            _     => "Robuste",
+            2 => "Moyen",
+            3 => "Solide",
+            _ => "Robuste",
         }
     }
 }

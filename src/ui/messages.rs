@@ -57,15 +57,9 @@ pub fn login_totp_error_message(code: &str) -> String {
 }
 
 pub fn toast_secret_saved(name: &str) -> String {
-    tr_args(
-        "toast-secret-saved",
-        &[("name", I18nArg::Str(name))],
-    )
+    tr_args("toast-secret-saved", &[("name", I18nArg::Str(name))])
 }
 
 pub fn toast_secret_deleted(name: &str) -> String {
-    tr_args(
-        "toast-secret-deleted",
-        &[("name", I18nArg::Str(name))],
-    )
+    tr_args("toast-secret-deleted", &[("name", I18nArg::Str(name))])
 }

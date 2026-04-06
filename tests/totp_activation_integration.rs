@@ -33,8 +33,9 @@ fn build_current_totp_code(username: &str, base32_secret: &str) -> Result<String
     )
     .map_err(|error| AppError::Validation(format!("invalid TOTP config in test: {error}")))?;
 
-    totp.generate_current()
-        .map_err(|error| AppError::Validation(format!("failed to generate TOTP code in test: {error}")))
+    totp.generate_current().map_err(|error| {
+        AppError::Validation(format!("failed to generate TOTP code in test: {error}"))
+    })
 }
 
 #[tokio::test]
@@ -100,8 +101,12 @@ async fn enable_totp_requires_valid_code_without_password_prompt() {
         .fetch_one(&pool)
         .await
         .expect("user row should exist");
-    let stored_after_wrong: Option<Vec<u8>> = row.try_get("totp_secret").expect("column should exist");
-    assert!(stored_after_wrong.is_none(), "totp_secret must stay NULL on invalid code");
+    let stored_after_wrong: Option<Vec<u8>> =
+        row.try_get("totp_secret").expect("column should exist");
+    assert!(
+        stored_after_wrong.is_none(),
+        "totp_secret must stay NULL on invalid code"
+    );
 
     let ok_result = totp_service
         .enable_totp(

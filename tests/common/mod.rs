@@ -2,7 +2,6 @@
 ///
 /// Usage: add `#[path = "../common/mod.rs"] mod common;` at the top of a test file,
 /// or use `mod common;` when the test file lives adjacent to this directory.
-
 use heelonvault_rust::errors::AppError;
 use heelonvault_rust::models::{User, UserRole};
 use std::sync::Arc;

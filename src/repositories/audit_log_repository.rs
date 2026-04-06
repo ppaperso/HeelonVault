@@ -224,14 +224,29 @@ mod tests {
         let actor_a = Uuid::new_v4();
         let actor_b = Uuid::new_v4();
 
-        repo.append(Some(actor_a), &AuditAction::TeamCreated, Some("team"), Some("t1"), None)
-            .await
-            .expect("append a");
-        repo.append(Some(actor_b), &AuditAction::VaultKeyRotated, Some("vault"), Some("v1"), None)
-            .await
-            .expect("append b");
+        repo.append(
+            Some(actor_a),
+            &AuditAction::TeamCreated,
+            Some("team"),
+            Some("t1"),
+            None,
+        )
+        .await
+        .expect("append a");
+        repo.append(
+            Some(actor_b),
+            &AuditAction::VaultKeyRotated,
+            Some("vault"),
+            Some("v1"),
+            None,
+        )
+        .await
+        .expect("append b");
 
-        let for_a = repo.list_for_actor(actor_a, 10).await.expect("list_for_actor");
+        let for_a = repo
+            .list_for_actor(actor_a, 10)
+            .await
+            .expect("list_for_actor");
         assert_eq!(for_a.len(), 1);
         assert_eq!(for_a[0].action, "team.created");
     }
@@ -241,15 +256,33 @@ mod tests {
         let repo = setup_repo().await.expect("setup");
         let vault_id = Uuid::new_v4().to_string();
 
-        repo.append(None, &AuditAction::VaultSharedWithTeam, Some("vault"), Some(&vault_id), None)
-            .await
-            .expect("append");
-        repo.append(None, &AuditAction::VaultKeyRotated, Some("vault"), Some(&vault_id), None)
-            .await
-            .expect("append 2");
-        repo.append(None, &AuditAction::UserDeleted, Some("user"), Some("u1"), None)
-            .await
-            .expect("append 3");
+        repo.append(
+            None,
+            &AuditAction::VaultSharedWithTeam,
+            Some("vault"),
+            Some(&vault_id),
+            None,
+        )
+        .await
+        .expect("append");
+        repo.append(
+            None,
+            &AuditAction::VaultKeyRotated,
+            Some("vault"),
+            Some(&vault_id),
+            None,
+        )
+        .await
+        .expect("append 2");
+        repo.append(
+            None,
+            &AuditAction::UserDeleted,
+            Some("user"),
+            Some("u1"),
+            None,
+        )
+        .await
+        .expect("append 3");
 
         let for_vault = repo
             .list_for_target("vault", &vault_id, 10)

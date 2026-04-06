@@ -84,7 +84,10 @@ async fn preferred_language_persists_across_service_restart() {
 
     let first_session = build_service(pool.clone());
     let initial_profile_result = first_session.get_user_profile(user_id).await;
-    assert!(initial_profile_result.is_ok(), "initial profile read should succeed");
+    assert!(
+        initial_profile_result.is_ok(),
+        "initial profile read should succeed"
+    );
     let initial_profile = match initial_profile_result {
         Ok(value) => value,
         Err(_) => return,
@@ -112,7 +115,10 @@ async fn preferred_language_persists_across_service_restart() {
 
     let restarted_session = build_service(pool.clone());
     let reloaded_profile_result = restarted_session.get_user_profile(user_id).await;
-    assert!(reloaded_profile_result.is_ok(), "reloaded profile read should succeed");
+    assert!(
+        reloaded_profile_result.is_ok(),
+        "reloaded profile read should succeed"
+    );
     let reloaded_profile = match reloaded_profile_result {
         Ok(value) => value,
         Err(_) => return,

@@ -1,6 +1,6 @@
 use std::sync::Arc;
-use uuid::Uuid;
 use tracing::warn;
+use uuid::Uuid;
 
 use sqlx::SqlitePool;
 
@@ -35,23 +35,23 @@ impl AuditSeverity {
 /// - `license.*` — license validation
 #[derive(Clone, Debug)]
 pub enum AuditAction {
-    BootstrapInit,          // First admin account creation
-    BootstrapInitSuccess,   // Bootstrap succeeded
-    BootstrapInitFailure,   // Bootstrap failed
-    AuthLogin,              // Login attempt
-    AuthLoginSuccess,       // Login succeeded
-    AuthLoginFailure,       // Login failed (WARN severity)
-    AuthLogout,             // Logout
-    RbacPermissionChange,   // RBAC permission modified (CRITICAL severity)
-    RbacRoleAssignment,     // Role assigned to user (CRITICAL severity)
-    RbacRoleRevocation,     // Role revoked from user (CRITICAL severity)
-    SecretView,             // Secret viewed (INFO severity)
-    SecretCreate,           // Secret created
-    SecretUpdate,           // Secret updated
-    SecretDelete,           // Secret deleted (WARN severity)
-    LicenseCheck,           // License validation at startup
-    LicenseCheckSuccess,    // License valid
-    LicenseCheckFailure,    // License invalid
+    BootstrapInit,        // First admin account creation
+    BootstrapInitSuccess, // Bootstrap succeeded
+    BootstrapInitFailure, // Bootstrap failed
+    AuthLogin,            // Login attempt
+    AuthLoginSuccess,     // Login succeeded
+    AuthLoginFailure,     // Login failed (WARN severity)
+    AuthLogout,           // Logout
+    RbacPermissionChange, // RBAC permission modified (CRITICAL severity)
+    RbacRoleAssignment,   // Role assigned to user (CRITICAL severity)
+    RbacRoleRevocation,   // Role revoked from user (CRITICAL severity)
+    SecretView,           // Secret viewed (INFO severity)
+    SecretCreate,         // Secret created
+    SecretUpdate,         // Secret updated
+    SecretDelete,         // Secret deleted (WARN severity)
+    LicenseCheck,         // License validation at startup
+    LicenseCheckSuccess,  // License valid
+    LicenseCheckFailure,  // License invalid
 }
 
 impl AuditAction {
@@ -82,12 +82,15 @@ impl AuditAction {
     pub fn severity(&self) -> AuditSeverity {
         match self {
             // CRITICAL: Security incidents and critical permission changes
-            Self::RbacPermissionChange | Self::RbacRoleAssignment | Self::RbacRoleRevocation |
-            Self::AuthLoginFailure | Self::BootstrapInitFailure => AuditSeverity::Critical,
-            
+            Self::RbacPermissionChange
+            | Self::RbacRoleAssignment
+            | Self::RbacRoleRevocation
+            | Self::AuthLoginFailure
+            | Self::BootstrapInitFailure => AuditSeverity::Critical,
+
             // WARN: Security-relevant operations (deletions, failures)
             Self::SecretDelete | Self::AuthLogout => AuditSeverity::Warn,
-            
+
             // INFO: Standard operations
             _ => AuditSeverity::Info,
         }
@@ -270,7 +273,10 @@ mod tests {
 
     #[test]
     fn test_audit_action_strings() {
-        assert_eq!(AuditAction::BootstrapInitSuccess.as_str(), "bootstrap.init.success");
+        assert_eq!(
+            AuditAction::BootstrapInitSuccess.as_str(),
+            "bootstrap.init.success"
+        );
         assert_eq!(AuditAction::AuthLoginSuccess.as_str(), "auth.login.success");
         assert_eq!(AuditAction::SecretView.as_str(), "secret.view");
     }

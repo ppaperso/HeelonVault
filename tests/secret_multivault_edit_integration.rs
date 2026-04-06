@@ -11,7 +11,9 @@ use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
 use heelonvault_rust::services::crypto_service::CryptoServiceImpl;
 use heelonvault_rust::services::secret_service::{SecretService, SecretServiceImpl};
-use heelonvault_rust::services::vault_service::{VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl};
+use heelonvault_rust::services::vault_service::{
+    VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
+};
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
@@ -237,7 +239,9 @@ async fn scenario_edit_secret_locates_non_first_vault() {
         .await
         .expect("list first vault secrets");
     assert!(
-        first_vault_items.into_iter().all(|item| item.id != secret.id),
+        first_vault_items
+            .into_iter()
+            .all(|item| item.id != secret.id),
         "first vault should not contain the target secret"
     );
 
@@ -276,7 +280,10 @@ async fn scenario_edit_secret_locates_non_first_vault() {
             SecretBox::new(Box::new(resolved_vault_key.expose_secret().clone())),
         )
         .await;
-    assert!(update_result.is_ok(), "update must succeed for non-first vault secret");
+    assert!(
+        update_result.is_ok(),
+        "update must succeed for non-first vault secret"
+    );
 
     let decrypted_after = ctx
         .secret_service

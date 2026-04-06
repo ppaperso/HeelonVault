@@ -43,7 +43,7 @@ fn sanitize_hex_input(input: &str) -> String {
 /// Public key for verifying license signatures.
 /// This is the HEELONYS public key hardcoded at build time.
 /// Format: 32 bytes in hex (64 characters).
-const LICENSE_SIGNING_PUBLIC_KEY: &str = 
+const LICENSE_SIGNING_PUBLIC_KEY: &str =
     "0c00513e16abc701916dd3e8fbd9ae8cacd7f73f3cc09cfac12c91de2bd3177d";
 const AUDIT_SIGNING_KEY_ENV: &str = "HEELONVAULT_AUDIT_SIGNING_KEY";
 const AUDIT_SIGNING_KEY_PATH_ENV: &str = "HEELONVAULT_AUDIT_SIGNING_KEY_PATH";
@@ -114,7 +114,11 @@ impl LicenseService {
             Ok(content) => {
                 match self.verify_and_parse_license(&content).await {
                     Ok(license) => {
-                        info!(customer = license.customer_name, slots = license.slots_count, "professional license loaded and verified");
+                        info!(
+                            customer = license.customer_name,
+                            slots = license.slots_count,
+                            "professional license loaded and verified"
+                        );
                         self.cached_license = Some(license.clone());
                         if matches!(license.tier, LicenseTier::Professional) {
                             match self.ensure_audit_key_exists() {
@@ -173,9 +177,8 @@ impl LicenseService {
 
         // Decode public key from hex
         let normalized_public_key = sanitize_hex_input(LICENSE_SIGNING_PUBLIC_KEY);
-        let pubkey_bytes: [u8; 32] =
-            <[u8; 32]>::from_hex(normalized_public_key.as_str())
-                .map_err(|e| format!("invalid public key format: {}", e))?;
+        let pubkey_bytes: [u8; 32] = <[u8; 32]>::from_hex(normalized_public_key.as_str())
+            .map_err(|e| format!("invalid public key format: {}", e))?;
         let verifying_key = VerifyingKey::from_bytes(&pubkey_bytes)
             .map_err(|e| format!("failed to construct verifying key: {}", e))?;
 
@@ -183,21 +186,20 @@ impl LicenseService {
         let normalized_signature = sanitize_hex_input(&signed.signature);
         let sig_bytes: Vec<u8> = match hex::decode(normalized_signature.as_str()) {
             Ok(bytes) => bytes,
-            Err(hex_error) => STANDARD
-                .decode(&signed.signature)
-                .map_err(|b64_error| {
-                    format!(
-                        "invalid signature format (hex/base64): hex={}, base64={}",
-                        hex_error, b64_error
-                    )
-                })?,
+            Err(hex_error) => STANDARD.decode(&signed.signature).map_err(|b64_error| {
+                format!(
+                    "invalid signature format (hex/base64): hex={}, base64={}",
+                    hex_error, b64_error
+                )
+            })?,
         };
-        
+
         if sig_bytes.len() != 64 {
             return Err(format!(
                 "invalid signature length: expected 64 bytes, got {}",
                 sig_bytes.len()
-            ).into());
+            )
+            .into());
         }
 
         let signature = Signature::from_slice(&sig_bytes)
@@ -280,14 +282,17 @@ impl LicenseService {
         }
     }
 
-    pub fn ensure_audit_key_exists(&self) -> Result<AuditKeyProvisioningOutcome, AuditSigningError> {
+    pub fn ensure_audit_key_exists(
+        &self,
+    ) -> Result<AuditKeyProvisioningOutcome, AuditSigningError> {
         if !self.has_certified_license() {
             return Err(AuditSigningError::LicenseRequired);
         }
 
         if let Ok(key) = std::env::var(AUDIT_SIGNING_KEY_ENV) {
             if !key.trim().is_empty() {
-                self.audit_key_auto_generated.store(false, Ordering::Relaxed);
+                self.audit_key_auto_generated
+                    .store(false, Ordering::Relaxed);
                 return Ok(AuditKeyProvisioningOutcome::Existing);
             }
         }
@@ -330,8 +335,7 @@ impl LicenseService {
         let encoded_key = STANDARD.encode(seed);
         let serialized = format!(
             "# HeelonVault audit signing key\n{}\n{}\n",
-            AUTO_GENERATED_AUDIT_KEY_MARKER,
-            encoded_key
+            AUTO_GENERATED_AUDIT_KEY_MARKER, encoded_key
         );
 
         match OpenOptions::new()
@@ -401,13 +405,12 @@ impl LicenseService {
         let key_bytes = decode_key_material(raw_key_material.as_str())
             .map_err(AuditSigningError::InvalidKey)?;
         let secret_key: [u8; 32] = match key_bytes.len() {
-            32 => key_bytes
-                .as_slice()
-                .try_into()
-                .map_err(|_| AuditSigningError::InvalidKey("invalid 32-byte signing key".to_string()))?,
-            64 => key_bytes[..32]
-                .try_into()
-                .map_err(|_| AuditSigningError::InvalidKey("invalid 64-byte signing key".to_string()))?,
+            32 => key_bytes.as_slice().try_into().map_err(|_| {
+                AuditSigningError::InvalidKey("invalid 32-byte signing key".to_string())
+            })?,
+            64 => key_bytes[..32].try_into().map_err(|_| {
+                AuditSigningError::InvalidKey("invalid 64-byte signing key".to_string())
+            })?,
             other => {
                 return Err(AuditSigningError::InvalidKey(format!(
                     "invalid signing key length: expected 32 or 64 bytes, got {}",
@@ -528,7 +531,9 @@ impl LicenseService {
         }
 
         if let Some(config_dir) = dirs::config_dir() {
-            return config_dir.join("heelonvault").join(AUDIT_SIGNING_KEY_FILENAME);
+            return config_dir
+                .join("heelonvault")
+                .join(AUDIT_SIGNING_KEY_FILENAME);
         }
 
         if let Ok(home) = std::env::var("HOME") {

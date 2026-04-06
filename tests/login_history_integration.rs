@@ -71,8 +71,13 @@ async fn login_history_recorded_on_success_and_listed() {
         return;
     }
 
-    let record_result =
-        record_successful_login(&pool, user_id, Some("127.0.0.1"), Some("Linux / GTK4 Desktop")).await;
+    let record_result = record_successful_login(
+        &pool,
+        user_id,
+        Some("127.0.0.1"),
+        Some("Linux / GTK4 Desktop"),
+    )
+    .await;
     assert!(record_result.is_ok(), "login history insert should succeed");
     if record_result.is_err() {
         return;
@@ -87,7 +92,10 @@ async fn login_history_recorded_on_success_and_listed() {
 
     assert_eq!(items.len(), 1, "one login should be available in history");
     assert_eq!(items[0].ip_address.as_deref(), Some("127.0.0.1"));
-    assert_eq!(items[0].device_info.as_deref(), Some("Linux / GTK4 Desktop"));
+    assert_eq!(
+        items[0].device_info.as_deref(),
+        Some("Linux / GTK4 Desktop")
+    );
     assert!(
         !items[0].login_at.trim().is_empty(),
         "login_at should be present for UI popover display"

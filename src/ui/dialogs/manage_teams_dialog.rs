@@ -69,7 +69,8 @@ impl ManageTeamsDialog {
         title.add_css_class("title-3");
         title.set_hexpand(true);
         title.set_halign(gtk4::Align::Start);
-        let create_btn = gtk4::Button::with_label(crate::tr!("manage-teams-create-button").as_str());
+        let create_btn =
+            gtk4::Button::with_label(crate::tr!("manage-teams-create-button").as_str());
         create_btn.add_css_class("suggested-action");
         header.append(&title);
         header.append(&create_btn);
@@ -668,7 +669,9 @@ impl ManageTeamsDialog {
                     .margin_end(12)
                     .build();
                 let name_entry = gtk4::Entry::new();
-                name_entry.set_placeholder_text(Some(crate::tr!("manage-teams-name-placeholder").as_str()));
+                name_entry.set_placeholder_text(Some(
+                    crate::tr!("manage-teams-name-placeholder").as_str(),
+                ));
                 let actions = gtk4::Box::builder()
                     .orientation(gtk4::Orientation::Horizontal)
                     .spacing(8)
@@ -698,7 +701,9 @@ impl ManageTeamsDialog {
                     let team_for_task = Arc::clone(&team_for_apply);
                     std::thread::spawn(move || {
                         let result = runtime_for_task.block_on(async move {
-                            team_for_task.create_team(actor_user_id, team_name.as_str()).await
+                            team_for_task
+                                .create_team(actor_user_id, team_name.as_str())
+                                .await
                         });
                         let _ = sender.send(result);
                     });
@@ -737,11 +742,14 @@ impl ManageTeamsDialog {
 
     fn show_error(window: &gtk4::Window, err: AppError) {
         let title = match err {
-            AppError::Authorization(_) => crate::tr!("manage-teams-error-authorization").to_string(),
+            AppError::Authorization(_) => {
+                crate::tr!("manage-teams-error-authorization").to_string()
+            }
             _ => crate::tr!("manage-teams-error-generic").to_string(),
         };
         let body = err.to_string();
-        let dialog = adw::MessageDialog::new(Some(window), Some(title.as_str()), Some(body.as_str()));
+        let dialog =
+            adw::MessageDialog::new(Some(window), Some(title.as_str()), Some(body.as_str()));
         dialog.add_response("ok", crate::tr!("common-ok").as_str());
         dialog.set_default_response(Some("ok"));
         dialog.set_close_response("ok");

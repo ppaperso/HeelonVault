@@ -10,10 +10,14 @@ use heelonvault_rust::repositories::vault_repository::{SqlxVaultRepository, Vaul
 use heelonvault_rust::services::admin_service::{AdminService, AdminServiceImpl};
 use heelonvault_rust::services::audit_log_service::AuditLogServiceImpl;
 use heelonvault_rust::services::auth_service::{AuthService, AuthServiceImpl};
-use heelonvault_rust::services::crypto_service::{CryptoService, CryptoServiceImpl, EncryptedPayload, NONCE_LEN};
+use heelonvault_rust::services::crypto_service::{
+    CryptoService, CryptoServiceImpl, EncryptedPayload, NONCE_LEN,
+};
 use heelonvault_rust::services::secret_service::{SecretService, SecretServiceImpl};
 use heelonvault_rust::services::team_service::{KeyShare, TeamService, TeamServiceImpl};
-use heelonvault_rust::services::vault_service::{VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl};
+use heelonvault_rust::services::vault_service::{
+    VaultKeyEnvelopeRepository, VaultService, VaultServiceImpl,
+};
 use secrecy::{ExposeSecret, SecretBox};
 use sqlx::sqlite::SqlitePoolOptions;
 use sqlx::{Row, SqlitePool};
@@ -50,7 +54,13 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
 
 type AuditSvc = AuditLogServiceImpl<SqlxUserRepository, SqlxAuditLogRepository>;
 type AdminSvc = AdminServiceImpl<SqlxUserRepository, AuthServiceImpl<CryptoServiceImpl>, AuditSvc>;
-type TeamSvc = TeamServiceImpl<SqlxTeamRepository, SqlxUserRepository, SqlxVaultRepository, CryptoServiceImpl, AuditSvc>;
+type TeamSvc = TeamServiceImpl<
+    SqlxTeamRepository,
+    SqlxUserRepository,
+    SqlxVaultRepository,
+    CryptoServiceImpl,
+    AuditSvc,
+>;
 type SecretSvc = SecretServiceImpl<SqlxSecretRepository, CryptoServiceImpl, AuditSvc>;
 type VaultSvc = VaultServiceImpl<
     SqlxVaultRepository,
@@ -260,13 +270,22 @@ async fn scenario_member_removal_purges_shares_and_blocks_open() {
         .await
         .expect("create team");
     ctx.team_service
-        .add_member(ctx.admin.id, team.id, member.id, heelonvault_rust::models::TeamMemberRole::Member)
+        .add_member(
+            ctx.admin.id,
+            team.id,
+            member.id,
+            heelonvault_rust::models::TeamMemberRole::Member,
+        )
         .await
         .expect("add member");
 
     let vault = ctx
         .vault_service
-        .create_vault(ctx.admin.id, "Clinical Vault", SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())))
+        .create_vault(
+            ctx.admin.id,
+            "Clinical Vault",
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
         .await
         .expect("create vault");
 
@@ -302,7 +321,10 @@ async fn scenario_member_removal_purges_shares_and_blocks_open() {
             SecretBox::new(Box::new(member.master_key.expose_secret().clone())),
         )
         .await;
-    assert!(member_open_before.is_ok(), "member should open before removal");
+    assert!(
+        member_open_before.is_ok(),
+        "member should open before removal"
+    );
 
     ctx.team_service
         .remove_member(ctx.admin.id, team.id, member.id)
@@ -377,21 +399,40 @@ async fn scenario_key_rotation_keeps_remaining_members_and_blocks_excluded() {
         .await
         .expect("create team");
     ctx.team_service
-        .add_member(ctx.admin.id, team.id, member_a.id, heelonvault_rust::models::TeamMemberRole::Member)
+        .add_member(
+            ctx.admin.id,
+            team.id,
+            member_a.id,
+            heelonvault_rust::models::TeamMemberRole::Member,
+        )
         .await
         .expect("add a");
     ctx.team_service
-        .add_member(ctx.admin.id, team.id, member_b.id, heelonvault_rust::models::TeamMemberRole::Member)
+        .add_member(
+            ctx.admin.id,
+            team.id,
+            member_b.id,
+            heelonvault_rust::models::TeamMemberRole::Member,
+        )
         .await
         .expect("add b");
     ctx.team_service
-        .add_member(ctx.admin.id, team.id, excluded.id, heelonvault_rust::models::TeamMemberRole::Member)
+        .add_member(
+            ctx.admin.id,
+            team.id,
+            excluded.id,
+            heelonvault_rust::models::TeamMemberRole::Member,
+        )
         .await
         .expect("add excluded");
 
     let vault = ctx
         .vault_service
-        .create_vault(ctx.admin.id, "Rotation Vault", SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())))
+        .create_vault(
+            ctx.admin.id,
+            "Rotation Vault",
+            SecretBox::new(Box::new(ctx.admin.master_key.expose_secret().clone())),
+        )
         .await
         .expect("create vault");
 
@@ -412,9 +453,18 @@ async fn scenario_key_rotation_keeps_remaining_members_and_blocks_excluded() {
             team.id,
             SecretBox::new(Box::new(current_vault_key.expose_secret().clone())),
             &[
-                (member_a.id, SecretBox::new(Box::new(member_a.master_key.expose_secret().clone()))),
-                (member_b.id, SecretBox::new(Box::new(member_b.master_key.expose_secret().clone()))),
-                (excluded.id, SecretBox::new(Box::new(excluded.master_key.expose_secret().clone()))),
+                (
+                    member_a.id,
+                    SecretBox::new(Box::new(member_a.master_key.expose_secret().clone())),
+                ),
+                (
+                    member_b.id,
+                    SecretBox::new(Box::new(member_b.master_key.expose_secret().clone())),
+                ),
+                (
+                    excluded.id,
+                    SecretBox::new(Box::new(excluded.master_key.expose_secret().clone())),
+                ),
             ],
         )
         .await
@@ -438,8 +488,14 @@ async fn scenario_key_rotation_keeps_remaining_members_and_blocks_excluded() {
 
     let mut new_shares: Vec<KeyShare> = Vec::new();
     for (user_id, user_master) in [
-        (member_a.id, SecretBox::new(Box::new(member_a.master_key.expose_secret().clone()))),
-        (member_b.id, SecretBox::new(Box::new(member_b.master_key.expose_secret().clone()))),
+        (
+            member_a.id,
+            SecretBox::new(Box::new(member_a.master_key.expose_secret().clone())),
+        ),
+        (
+            member_b.id,
+            SecretBox::new(Box::new(member_b.master_key.expose_secret().clone())),
+        ),
     ] {
         let payload = ctx
             .crypto
@@ -566,7 +622,10 @@ async fn scenario_audit_trail_admin_actions_are_complete() {
 
     for row in &rows {
         let actor_opt: Option<String> = row.try_get("actor_user_id").expect("actor field");
-        assert_eq!(actor_opt.as_deref(), Some(ctx.admin.id.to_string().as_str()));
+        assert_eq!(
+            actor_opt.as_deref(),
+            Some(ctx.admin.id.to_string().as_str())
+        );
         let target_type: String = row.try_get("target_type").expect("target_type");
         assert_eq!(target_type, "user");
     }
@@ -643,7 +702,10 @@ async fn scenario_read_role_user_can_open_but_access_kind_is_read() {
             SecretBox::new(Box::new(reader.master_key.expose_secret().clone())),
         )
         .await;
-    assert!(open_result.is_ok(), "read-role user must be able to open vault");
+    assert!(
+        open_result.is_ok(),
+        "read-role user must be able to open vault"
+    );
 
     // get_vault_access_for_user returns Read role.
     let access = ctx
@@ -729,13 +791,13 @@ async fn scenario_write_role_can_open_but_not_delete() {
         .expect("get access")
         .expect("access record");
 
-    assert!(access.role.can_write(), "write role must have write permission");
+    assert!(
+        access.role.can_write(),
+        "write role must have write permission"
+    );
 
     // Writer cannot delete vault (requires admin or owner).
-    let delete_result = ctx
-        .vault_service
-        .delete_vault(writer.id, vault.id)
-        .await;
+    let delete_result = ctx.vault_service.delete_vault(writer.id, vault.id).await;
     assert!(
         matches!(delete_result, Err(AppError::Authorization(_))),
         "write-role user must not delete vault"

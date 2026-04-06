@@ -71,14 +71,16 @@ impl SqlxUserRepository {
         match role {
             "user" => Ok(UserRole::User),
             "admin" => Ok(UserRole::Admin),
-            _ => Err(AppError::Storage("invalid user role in storage".to_string())),
+            _ => Err(AppError::Storage(
+                "invalid user role in storage".to_string(),
+            )),
         }
     }
 
     fn format_role(role: &UserRole) -> &'static str {
         match role {
             UserRole::Admin => "admin",
-            UserRole::User  => "user",
+            UserRole::User => "user",
         }
     }
 }
@@ -293,7 +295,9 @@ impl UserRepository for SqlxUserRepository {
         .map_err(|err| Self::map_storage_err("update user profile", err))?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::Storage("user not found for profile update".to_string()));
+            return Err(AppError::Storage(
+                "user not found for profile update".to_string(),
+            ));
         }
 
         Ok(())
@@ -312,7 +316,9 @@ impl UserRepository for SqlxUserRepository {
             .map_err(|err| Self::map_storage_err("update password envelope", err))?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::Storage("user not found for password update".to_string()));
+            return Err(AppError::Storage(
+                "user not found for password update".to_string(),
+            ));
         }
 
         Ok(())
@@ -331,7 +337,9 @@ impl UserRepository for SqlxUserRepository {
             .map_err(|err| Self::map_storage_err("update totp secret envelope", err))?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::Storage("user not found for totp update".to_string()));
+            return Err(AppError::Storage(
+                "user not found for totp update".to_string(),
+            ));
         }
 
         Ok(())
@@ -442,7 +450,9 @@ impl UserRepository for SqlxUserRepository {
             .await
             .map_err(|err| Self::map_storage_err("check user exists before delete", err))?;
         if exists == 0 {
-            return Err(AppError::NotFound("user not found for deletion".to_string()));
+            return Err(AppError::NotFound(
+                "user not found for deletion".to_string(),
+            ));
         }
 
         let mut tx = self
@@ -475,16 +485,17 @@ impl UserRepository for SqlxUserRepository {
     }
 
     async fn update_user_role(&self, user_id: Uuid, role: &UserRole) -> Result<(), AppError> {
-        let result = sqlx::query(
-            "UPDATE users SET role = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2",
-        )
-        .bind(Self::format_role(role))
-        .bind(user_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("update user role", err))?;
+        let result =
+            sqlx::query("UPDATE users SET role = ?1, updated_at = CURRENT_TIMESTAMP WHERE id = ?2")
+                .bind(Self::format_role(role))
+                .bind(user_id.to_string())
+                .execute(&self.pool)
+                .await
+                .map_err(|err| Self::map_storage_err("update user role", err))?;
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("user not found for role update".to_string()));
+            return Err(AppError::NotFound(
+                "user not found for role update".to_string(),
+            ));
         }
         Ok(())
     }
@@ -648,22 +659,19 @@ mod tests {
             return;
         }
 
-        let profile_result = sqlx::query(
-            "UPDATE users SET email = ?1, display_name = ?2 WHERE id = ?3",
-        )
-        .bind("alice@example.com")
-        .bind("Alice Martin")
-        .bind(user_id.to_string())
-        .execute(&repo.pool)
-        .await;
+        let profile_result =
+            sqlx::query("UPDATE users SET email = ?1, display_name = ?2 WHERE id = ?3")
+                .bind("alice@example.com")
+                .bind("Alice Martin")
+                .bind(user_id.to_string())
+                .execute(&repo.pool)
+                .await;
         assert!(profile_result.is_ok(), "profile update should succeed");
         if profile_result.is_err() {
             return;
         }
 
-        let by_username = repo
-            .resolve_username_for_login_identifier("ALICE")
-            .await;
+        let by_username = repo.resolve_username_for_login_identifier("ALICE").await;
         assert!(by_username.is_ok(), "username resolution should succeed");
         assert_eq!(by_username.ok().flatten().as_deref(), Some("alice"));
 
@@ -679,11 +687,12 @@ mod tests {
         assert!(by_display.is_ok(), "display name resolution should succeed");
         assert_eq!(by_display.ok().flatten().as_deref(), Some("alice"));
 
-        let missing = repo
-            .resolve_username_for_login_identifier("inconnu")
-            .await;
+        let missing = repo.resolve_username_for_login_identifier("inconnu").await;
         assert!(missing.is_ok(), "missing lookup should still succeed");
-        assert!(missing.ok().flatten().is_none(), "missing lookup returns none");
+        assert!(
+            missing.ok().flatten().is_none(),
+            "missing lookup returns none"
+        );
     }
 
     #[tokio::test]
@@ -745,9 +754,7 @@ mod tests {
         }
 
         let envelope = SecretBox::new(Box::new(vec![9_u8, 8_u8, 7_u8]));
-        let update_result = repo
-            .update_totp_secret_envelope(user_id, envelope)
-            .await;
+        let update_result = repo.update_totp_secret_envelope(user_id, envelope).await;
         assert!(update_result.is_ok(), "totp update should succeed");
         if update_result.is_err() {
             return;
@@ -783,10 +790,7 @@ mod tests {
 
         let missing_id = Uuid::new_v4();
         let password_result = repo
-            .update_password_envelope(
-                missing_id,
-                SecretBox::new(Box::new(vec![1_u8, 2_u8, 3_u8])),
-            )
+            .update_password_envelope(missing_id, SecretBox::new(Box::new(vec![1_u8, 2_u8, 3_u8])))
             .await;
         assert!(password_result.is_err(), "missing user should error");
 

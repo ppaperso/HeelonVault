@@ -1,5 +1,5 @@
-use thiserror::Error;
 use std::fmt;
+use thiserror::Error;
 
 /// Semantic reason for an authorization denial.
 /// Used as the payload of [`AppError::Authorization`] so the UI can
@@ -41,11 +41,18 @@ impl fmt::Display for AccessDeniedReason {
             Self::VaultAccessDenied => write!(f, "vault access denied for this user"),
             Self::VaultWriteDenied => write!(f, "vault write denied for this user"),
             Self::VaultAdminRequired => write!(f, "vault administration requires admin permission"),
-            Self::VaultSharedCreateDenied => write!(f, "creating secrets in shared vault requires admin role"),
+            Self::VaultSharedCreateDenied => {
+                write!(f, "creating secrets in shared vault requires admin role")
+            }
             Self::InvalidCredentials => write!(f, "invalid credentials"),
-            Self::PasswordRequiredForChange => write!(f, "current password required for this change"),
+            Self::PasswordRequiredForChange => {
+                write!(f, "current password required for this change")
+            }
             Self::InvalidTotpCode => write!(f, "invalid TOTP setup code"),
-            Self::AuditCrossUserDenied => write!(f, "insufficient permissions to view another user's audit log"),
+            Self::AuditCrossUserDenied => write!(
+                f,
+                "insufficient permissions to view another user's audit log"
+            ),
             Self::Unauthorized => write!(f, "unauthorized action"),
         }
     }

@@ -76,9 +76,7 @@ impl SqlxVaultRepository {
         AppError::Storage(format!("{context}: {}", error.to_string()))
     }
 
-    fn rows_to_vaults(
-        rows: Vec<sqlx::sqlite::SqliteRow>,
-    ) -> Result<Vec<Vault>, impl ToString> {
+    fn rows_to_vaults(rows: Vec<sqlx::sqlite::SqliteRow>) -> Result<Vec<Vault>, impl ToString> {
         let mut vaults = Vec::with_capacity(rows.len());
         for row in &rows {
             let id_str: String = row.try_get("id")?;
@@ -88,7 +86,11 @@ impl SqlxVaultRepository {
                 .map_err(|_| sqlx::Error::ColumnNotFound("id parse".to_string()))?;
             let owner_user_id = Uuid::parse_str(&owner_user_id_str)
                 .map_err(|_| sqlx::Error::ColumnNotFound("owner_user_id parse".to_string()))?;
-            vaults.push(Vault { id, owner_user_id, name });
+            vaults.push(Vault {
+                id,
+                owner_user_id,
+                name,
+            });
         }
         Ok::<Vec<Vault>, sqlx::Error>(vaults)
     }
@@ -123,7 +125,11 @@ impl SqlxVaultRepository {
             .ok_or_else(|| AppError::Storage("invalid vault access kind in storage".to_string()))?;
 
         Ok(AccessibleVault {
-            vault: Vault { id, owner_user_id, name },
+            vault: Vault {
+                id,
+                owner_user_id,
+                name,
+            },
             role,
             access_kind,
             vault_key_version,
@@ -136,10 +142,10 @@ impl VaultRepository for SqlxVaultRepository {
         let row_opt = sqlx::query(
             "SELECT id, owner_user_id, name FROM vaults WHERE id = ?1 AND deleted_at IS NULL",
         )
-            .bind(vault_id.to_string())
-            .fetch_optional(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("get vault by id", err))?;
+        .bind(vault_id.to_string())
+        .fetch_optional(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("get vault by id", err))?;
 
         match row_opt {
             Some(row) => {
@@ -223,8 +229,7 @@ impl VaultRepository for SqlxVaultRepository {
         .await
         .map_err(|err| Self::map_storage_err("list shared vaults", err))?;
 
-        Self::rows_to_vaults(rows)
-            .map_err(|err| Self::map_storage_err("map shared vaults", err))
+        Self::rows_to_vaults(rows).map_err(|err| Self::map_storage_err("map shared vaults", err))
     }
 
     async fn create_vault(&self, vault: &Vault) -> Result<(), AppError> {
@@ -240,11 +245,14 @@ impl VaultRepository for SqlxVaultRepository {
     }
 
     async fn delete_vault(&self, vault_id: Uuid) -> Result<(), AppError> {
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|e| Self::map_storage_err("begin transaction", e))?;
 
         let result = sqlx::query(
-            "UPDATE vaults SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL"
+            "UPDATE vaults SET deleted_at = CURRENT_TIMESTAMP WHERE id = ?1 AND deleted_at IS NULL",
         )
         .bind(vault_id.to_string())
         .execute(&mut *tx)
@@ -263,7 +271,8 @@ impl VaultRepository for SqlxVaultRepository {
         .await
         .map_err(|e| Self::map_storage_err("cascade soft delete vault secrets", e))?;
 
-        tx.commit().await
+        tx.commit()
+            .await
             .map_err(|e| Self::map_storage_err("commit transaction", e))?;
 
         Ok(())
@@ -280,11 +289,11 @@ impl VaultRepository for SqlxVaultRepository {
                  vault_key_version = vault_key_version + 1
              WHERE id = ?2 AND deleted_at IS NULL",
         )
-            .bind(encrypted_vault_key_envelope.expose_secret().as_slice())
-            .bind(vault_id.to_string())
-            .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("update vault key envelope", err))?;
+        .bind(encrypted_vault_key_envelope.expose_secret().as_slice())
+        .bind(vault_id.to_string())
+        .execute(&self.pool)
+        .await
+        .map_err(|err| Self::map_storage_err("update vault key envelope", err))?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -303,8 +312,7 @@ impl VaultRepository for SqlxVaultRepository {
         .await
         .map_err(|err| Self::map_storage_err("list all vaults", err))?;
 
-        Self::rows_to_vaults(rows)
-            .map_err(|err| Self::map_storage_err("map all vaults", err))
+        Self::rows_to_vaults(rows).map_err(|err| Self::map_storage_err("map all vaults", err))
     }
 
     async fn list_accessible_by_user(&self, user_id: Uuid) -> Result<Vec<Vault>, AppError> {
@@ -410,14 +418,12 @@ impl VaultRepository for SqlxVaultRepository {
     }
 
     async fn delete_key_share(&self, vault_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        sqlx::query(
-            "DELETE FROM vault_key_shares WHERE vault_id = ?1 AND user_id = ?2",
-        )
-        .bind(vault_id.to_string())
-        .bind(user_id.to_string())
-        .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("delete key share", err))?;
+        sqlx::query("DELETE FROM vault_key_shares WHERE vault_id = ?1 AND user_id = ?2")
+            .bind(vault_id.to_string())
+            .bind(user_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("delete key share", err))?;
         Ok(())
     }
 
@@ -431,13 +437,11 @@ impl VaultRepository for SqlxVaultRepository {
     }
 
     async fn list_key_share_user_ids(&self, vault_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        let rows = sqlx::query(
-            "SELECT user_id FROM vault_key_shares WHERE vault_id = ?1",
-        )
-        .bind(vault_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list key share user ids", err))?;
+        let rows = sqlx::query("SELECT user_id FROM vault_key_shares WHERE vault_id = ?1")
+            .bind(vault_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("list key share user ids", err))?;
 
         let mut ids = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -458,7 +462,10 @@ impl VaultRepository for SqlxVaultRepository {
         new_shares: &[(Uuid, SecretBox<Vec<u8>>, Option<Uuid>)],
         rotation_actor_id: Option<Uuid>,
     ) -> Result<(), AppError> {
-        let mut tx = self.pool.begin().await
+        let mut tx = self
+            .pool
+            .begin()
+            .await
             .map_err(|err| Self::map_storage_err("begin key rotation tx", err))?;
 
         sqlx::query("DELETE FROM vault_key_shares WHERE vault_id = ?1")

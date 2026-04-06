@@ -85,9 +85,7 @@ where
 
     fn blob_storage_for_type(secret_type: SecretType) -> BlobStorage {
         match secret_type {
-            SecretType::Password | SecretType::ApiToken | SecretType::SshKey => {
-                BlobStorage::Inline
-            }
+            SecretType::Password | SecretType::ApiToken | SecretType::SshKey => BlobStorage::Inline,
             SecretType::SecureDocument => BlobStorage::File,
         }
     }
@@ -101,7 +99,9 @@ where
 
     fn deserialize_payload(bytes: &SecretBox<Vec<u8>>) -> Result<EncryptedPayload, AppError> {
         if bytes.expose_secret().len() < NONCE_LEN {
-            return Err(AppError::Storage("secret blob envelope is invalid".to_string()));
+            return Err(AppError::Storage(
+                "secret blob envelope is invalid".to_string(),
+            ));
         }
 
         let mut nonce = [0_u8; NONCE_LEN];
@@ -272,7 +272,9 @@ where
     }
 
     async fn permanent_delete(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
-        self.secret_repo.permanent_delete(secret_id, vault_id).await?;
+        self.secret_repo
+            .permanent_delete(secret_id, vault_id)
+            .await?;
         self.audit_service
             .record_event(
                 None,
@@ -386,7 +388,8 @@ mod tests {
     impl StubSecretRepository {
         fn lock_items(
             &self,
-        ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, StoredSecretRecord>>, AppError> {
+        ) -> Result<std::sync::MutexGuard<'_, HashMap<Uuid, StoredSecretRecord>>, AppError>
+        {
             self.items
                 .lock()
                 .map_err(|_| AppError::Storage("secret repository lock poisoned".to_string()))
@@ -444,7 +447,10 @@ mod tests {
             Ok(listed)
         }
 
-        async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        async fn list_trash_by_vault_id(
+            &self,
+            vault_id: Uuid,
+        ) -> Result<Vec<SecretItem>, AppError> {
             let items = self.lock_items()?;
             let listed = items
                 .values()
@@ -575,7 +581,10 @@ mod tests {
             Ok(before.saturating_sub(items.len()))
         }
 
-        async fn list_all_trash_by_owner_id(&self, _owner_user_id: Uuid) -> Result<Vec<SecretItem>, AppError> {
+        async fn list_all_trash_by_owner_id(
+            &self,
+            _owner_user_id: Uuid,
+        ) -> Result<Vec<SecretItem>, AppError> {
             let items = self.lock_items()?;
             let listed = items
                 .values()
@@ -697,7 +706,11 @@ mod tests {
         plaintext: &[u8],
     ) -> Result<DecryptedSecret, AppError> {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo.clone(), StubCryptoService, Arc::new(StubAuditLogService));
+        let service = SecretServiceImpl::new(
+            repo.clone(),
+            StubCryptoService,
+            Arc::new(StubAuditLogService),
+        );
         let vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![7_u8; 32]));
 
@@ -762,7 +775,10 @@ mod tests {
 
         assert!(matches!(decrypted.secret_type, SecretType::ApiToken));
         assert!(matches!(decrypted.blob_storage, BlobStorage::Inline));
-        assert_eq!(decrypted.secret_value.expose_secret().as_slice(), b"token-abc-123");
+        assert_eq!(
+            decrypted.secret_value.expose_secret().as_slice(),
+            b"token-abc-123"
+        );
     }
 
     #[tokio::test]
@@ -789,7 +805,8 @@ mod tests {
     #[tokio::test]
     async fn list_by_vault_and_soft_delete_excludes_deleted_secret() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
+        let service =
+            SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_id = Uuid::new_v4();
         let other_vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![8_u8; 32]));
@@ -844,7 +861,10 @@ mod tests {
         };
 
         let listed_before_result = service.list_by_vault(vault_id).await;
-        assert!(listed_before_result.is_ok(), "list before delete should succeed");
+        assert!(
+            listed_before_result.is_ok(),
+            "list before delete should succeed"
+        );
         let listed_before = match listed_before_result {
             Ok(value) => value,
             Err(_) => return,
@@ -858,7 +878,10 @@ mod tests {
         }
 
         let listed_after_result = service.list_by_vault(vault_id).await;
-        assert!(listed_after_result.is_ok(), "list after delete should succeed");
+        assert!(
+            listed_after_result.is_ok(),
+            "list after delete should succeed"
+        );
         let listed_after = match listed_after_result {
             Ok(value) => value,
             Err(_) => return,
@@ -870,7 +893,8 @@ mod tests {
     #[tokio::test]
     async fn update_secret_without_new_payload_keeps_existing_blob() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
+        let service =
+            SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_id = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![6_u8; 32]));
 
@@ -909,14 +933,20 @@ mod tests {
         }
 
         let decrypted_result = service
-            .get_secret(created.id, SecretBox::new(Box::new(vault_key.expose_secret().clone())))
+            .get_secret(
+                created.id,
+                SecretBox::new(Box::new(vault_key.expose_secret().clone())),
+            )
             .await;
         assert!(decrypted_result.is_ok(), "get should succeed");
         let decrypted = match decrypted_result {
             Ok(value) => value,
             Err(_) => return,
         };
-        assert_eq!(decrypted.secret_value.expose_secret().as_slice(), b"unchanged-secret");
+        assert_eq!(
+            decrypted.secret_value.expose_secret().as_slice(),
+            b"unchanged-secret"
+        );
 
         let listed_result = service.list_by_vault(vault_id).await;
         assert!(listed_result.is_ok(), "list should succeed");
@@ -926,13 +956,17 @@ mod tests {
         };
         assert_eq!(listed.len(), 1);
         assert_eq!(listed[0].title.as_deref(), Some("Apres"));
-        assert_eq!(listed[0].metadata_json.as_deref(), Some("{\"category\":\"Infra\"}"));
+        assert_eq!(
+            listed[0].metadata_json.as_deref(),
+            Some("{\"category\":\"Infra\"}")
+        );
     }
 
     #[tokio::test]
     async fn trash_lifecycle_and_empty_trash_are_scoped() {
         let repo = StubSecretRepository::default();
-        let service = SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
+        let service =
+            SecretServiceImpl::new(repo, StubCryptoService, Arc::new(StubAuditLogService));
         let vault_a = Uuid::new_v4();
         let vault_b = Uuid::new_v4();
         let vault_key = SecretBox::new(Box::new(vec![5_u8; 32]));
@@ -961,7 +995,10 @@ mod tests {
                 SecretBox::new(Box::new(vault_key.expose_secret().clone())),
             )
             .await;
-        assert!(item_a_result.is_ok() && item_b_result.is_ok(), "create should succeed");
+        assert!(
+            item_a_result.is_ok() && item_b_result.is_ok(),
+            "create should succeed"
+        );
         let item_a = match item_a_result {
             Ok(value) => value,
             Err(_) => return,
@@ -1024,13 +1061,19 @@ mod tests {
         assert_eq!(trash_b.len(), 1);
 
         let hard_delete_result = service.permanent_delete(item_b.id, vault_b).await;
-        assert!(hard_delete_result.is_ok(), "permanent delete should succeed");
+        assert!(
+            hard_delete_result.is_ok(),
+            "permanent delete should succeed"
+        );
         if hard_delete_result.is_err() {
             return;
         }
 
         let trash_b_after_result = service.list_trash_by_vault(vault_b).await;
-        assert!(trash_b_after_result.is_ok(), "vault b trash should be empty");
+        assert!(
+            trash_b_after_result.is_ok(),
+            "vault b trash should be empty"
+        );
         let trash_b_after = match trash_b_after_result {
             Ok(value) => value,
             Err(_) => return,

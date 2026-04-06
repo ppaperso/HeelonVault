@@ -67,15 +67,20 @@ impl SqlxTeamRepository {
             .try_get("created_at")
             .map_err(|err| Self::map_storage_err("read team created_at", err))?;
 
-        let id = Uuid::parse_str(&id_str)
-            .map_err(|err| Self::map_storage_err("parse team id", err))?;
+        let id =
+            Uuid::parse_str(&id_str).map_err(|err| Self::map_storage_err("parse team id", err))?;
         let created_by = created_by_str
             .as_deref()
             .map(Uuid::parse_str)
             .transpose()
             .map_err(|err| Self::map_storage_err("parse team created_by", err))?;
 
-        Ok(Team { id, name, created_by, created_at })
+        Ok(Team {
+            id,
+            name,
+            created_by,
+            created_at,
+        })
     }
 }
 
@@ -87,17 +92,17 @@ impl TeamRepository for SqlxTeamRepository {
         created_by: Option<Uuid>,
     ) -> Result<Team, AppError> {
         if name.trim().is_empty() {
-            return Err(AppError::Validation("team name must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "team name must not be empty".to_string(),
+            ));
         }
-        sqlx::query(
-            "INSERT INTO teams (id, name, created_by) VALUES (?1, ?2, ?3)",
-        )
-        .bind(id.to_string())
-        .bind(name)
-        .bind(created_by.map(|u| u.to_string()))
-        .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("create team", err))?;
+        sqlx::query("INSERT INTO teams (id, name, created_by) VALUES (?1, ?2, ?3)")
+            .bind(id.to_string())
+            .bind(name)
+            .bind(created_by.map(|u| u.to_string()))
+            .execute(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("create team", err))?;
 
         let row = sqlx::query("SELECT id, name, created_by, created_at FROM teams WHERE id = ?1")
             .bind(id.to_string())
@@ -123,11 +128,10 @@ impl TeamRepository for SqlxTeamRepository {
     }
 
     async fn list_all(&self) -> Result<Vec<Team>, AppError> {
-        let rows =
-            sqlx::query("SELECT id, name, created_by, created_at FROM teams ORDER BY name")
-                .fetch_all(&self.pool)
-                .await
-                .map_err(|err| Self::map_storage_err("list all teams", err))?;
+        let rows = sqlx::query("SELECT id, name, created_by, created_at FROM teams ORDER BY name")
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("list all teams", err))?;
 
         rows.iter().map(Self::row_to_team).collect()
     }
@@ -155,7 +159,9 @@ impl TeamRepository for SqlxTeamRepository {
             .await
             .map_err(|err| Self::map_storage_err("delete team", err))?;
         if result.rows_affected() == 0 {
-            return Err(AppError::NotFound("team not found for deletion".to_string()));
+            return Err(AppError::NotFound(
+                "team not found for deletion".to_string(),
+            ));
         }
         Ok(())
     }
@@ -180,13 +186,12 @@ impl TeamRepository for SqlxTeamRepository {
     }
 
     async fn remove_member(&self, team_id: Uuid, user_id: Uuid) -> Result<(), AppError> {
-        let result =
-            sqlx::query("DELETE FROM team_members WHERE team_id = ?1 AND user_id = ?2")
-                .bind(team_id.to_string())
-                .bind(user_id.to_string())
-                .execute(&self.pool)
-                .await
-                .map_err(|err| Self::map_storage_err("remove team member", err))?;
+        let result = sqlx::query("DELETE FROM team_members WHERE team_id = ?1 AND user_id = ?2")
+            .bind(team_id.to_string())
+            .bind(user_id.to_string())
+            .execute(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("remove team member", err))?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(
                 "team membership not found for removal".to_string(),
@@ -237,14 +242,13 @@ impl TeamRepository for SqlxTeamRepository {
         team_id: Uuid,
         user_id: Uuid,
     ) -> Result<Option<TeamMemberRole>, AppError> {
-        let row_opt = sqlx::query(
-            "SELECT role FROM team_members WHERE team_id = ?1 AND user_id = ?2",
-        )
-        .bind(team_id.to_string())
-        .bind(user_id.to_string())
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("get member role", err))?;
+        let row_opt =
+            sqlx::query("SELECT role FROM team_members WHERE team_id = ?1 AND user_id = ?2")
+                .bind(team_id.to_string())
+                .bind(user_id.to_string())
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|err| Self::map_storage_err("get member role", err))?;
 
         match row_opt {
             Some(row) => {
@@ -258,13 +262,11 @@ impl TeamRepository for SqlxTeamRepository {
     }
 
     async fn list_member_user_ids(&self, team_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        let rows = sqlx::query(
-            "SELECT user_id FROM team_members WHERE team_id = ?1",
-        )
-        .bind(team_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list member user ids", err))?;
+        let rows = sqlx::query("SELECT user_id FROM team_members WHERE team_id = ?1")
+            .bind(team_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("list member user ids", err))?;
 
         let mut ids = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -280,13 +282,11 @@ impl TeamRepository for SqlxTeamRepository {
     }
 
     async fn list_team_ids_for_user(&self, user_id: Uuid) -> Result<Vec<Uuid>, AppError> {
-        let rows = sqlx::query(
-            "SELECT team_id FROM team_members WHERE user_id = ?1",
-        )
-        .bind(user_id.to_string())
-        .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list team ids for user", err))?;
+        let rows = sqlx::query("SELECT team_id FROM team_members WHERE user_id = ?1")
+            .bind(user_id.to_string())
+            .fetch_all(&self.pool)
+            .await
+            .map_err(|err| Self::map_storage_err("list team ids for user", err))?;
 
         let mut ids = Vec::with_capacity(rows.len());
         for row in &rows {
@@ -397,7 +397,9 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Alpha", None).await.expect("create_team");
+        repo.create_team(team_id, "Alpha", None)
+            .await
+            .expect("create_team");
         repo.add_member(team_id, user_id, &TeamMemberRole::Leader)
             .await
             .expect("add_member");
@@ -415,11 +417,15 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Beta", None).await.expect("create_team");
+        repo.create_team(team_id, "Beta", None)
+            .await
+            .expect("create_team");
         repo.add_member(team_id, user_id, &TeamMemberRole::Member)
             .await
             .expect("add_member");
-        repo.remove_member(team_id, user_id).await.expect("remove_member");
+        repo.remove_member(team_id, user_id)
+            .await
+            .expect("remove_member");
 
         let members = repo.list_members(team_id).await.expect("list_members");
         assert!(members.is_empty());
@@ -432,13 +438,18 @@ mod tests {
         let user_id = Uuid::new_v4();
 
         seed_user(&repo, user_id).await.expect("seed user");
-        repo.create_team(team_id, "Gamma", None).await.expect("create_team");
+        repo.create_team(team_id, "Gamma", None)
+            .await
+            .expect("create_team");
         repo.add_member(team_id, user_id, &TeamMemberRole::Member)
             .await
             .expect("add_member");
         repo.delete_team(team_id).await.expect("delete_team");
 
-        let ids = repo.list_member_user_ids(team_id).await.expect("list_member_user_ids");
+        let ids = repo
+            .list_member_user_ids(team_id)
+            .await
+            .expect("list_member_user_ids");
         assert!(ids.is_empty(), "cascade should remove members");
     }
 }

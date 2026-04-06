@@ -153,7 +153,9 @@ where
             ));
         }
 
-        Ok(SecretBox::new(Box::new(bytes[hash_start..expected_len].to_vec())))
+        Ok(SecretBox::new(Box::new(
+            bytes[hash_start..expected_len].to_vec(),
+        )))
     }
 
     async fn load_totp_secret_by_username(
@@ -233,10 +235,15 @@ where
 
         let qr_code = QrCode::new(otpauth_url.as_bytes())
             .map_err(|error| AppError::Validation(format!("failed to generate QR: {error}")))?;
-        let img = qr_code.render::<image::Luma<u8>>().min_dimensions(200, 200).build();
+        let img = qr_code
+            .render::<image::Luma<u8>>()
+            .min_dimensions(200, 200)
+            .build();
         let mut qr_png: Vec<u8> = Vec::new();
         img.write_to(&mut std::io::Cursor::new(&mut qr_png), ImageFormat::Png)
-            .map_err(|error| AppError::Validation(format!("failed to encode QR as PNG: {error}")))?;
+            .map_err(|error| {
+                AppError::Validation(format!("failed to encode QR as PNG: {error}"))
+            })?;
 
         Ok(TotpSetupPayload {
             base32_secret,
@@ -268,7 +275,9 @@ where
         code: &str,
     ) -> Result<(), AppError> {
         if username.trim().is_empty() {
-            return Err(AppError::Validation("username must not be empty".to_string()));
+            return Err(AppError::Validation(
+                "username must not be empty".to_string(),
+            ));
         }
 
         let password_envelope = self.auth_service.get_password_envelope(username).await?;
@@ -296,7 +305,9 @@ where
             .map_err(|error| Self::map_storage_err("enable totp", error))?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::Storage("user not found for TOTP activation".to_string()));
+            return Err(AppError::Storage(
+                "user not found for TOTP activation".to_string(),
+            ));
         }
 
         Ok(())
@@ -310,7 +321,9 @@ where
             .map_err(|error| Self::map_storage_err("disable totp", error))?;
 
         if result.rows_affected() == 0 {
-            return Err(AppError::Storage("user not found for TOTP deactivation".to_string()));
+            return Err(AppError::Storage(
+                "user not found for TOTP deactivation".to_string(),
+            ));
         }
 
         Ok(())
@@ -343,30 +356,29 @@ where
         let decrypted = match self.crypto_service.decrypt(&payload, &key).await {
             Ok(value) => value,
             Err(_) => {
-                let legacy_key = SecretBox::new(Box::new(
-                    vec![LEGACY_DEV_MASTER_KEY_BYTE; LEGACY_DEV_MASTER_KEY_LEN],
-                ));
-                let legacy_decrypted = match self.crypto_service.decrypt(&payload, &legacy_key).await {
-                    Ok(value) => value,
-                    Err(_) => return Ok(false),
-                };
+                let legacy_key = SecretBox::new(Box::new(vec![
+                    LEGACY_DEV_MASTER_KEY_BYTE;
+                    LEGACY_DEV_MASTER_KEY_LEN
+                ]));
+                let legacy_decrypted =
+                    match self.crypto_service.decrypt(&payload, &legacy_key).await {
+                        Ok(value) => value,
+                        Err(_) => return Ok(false),
+                    };
 
                 let legacy_secret = String::from_utf8(legacy_decrypted.expose_secret().clone())
-                    .map_err(|_| AppError::Validation("invalid decrypted TOTP secret".to_string()))?;
-                let legacy_totp = self.build_totp(username, legacy_secret.as_str())?;
-                let is_valid = legacy_totp
-                    .check_current(code)
-                    .map_err(|error| {
-                        AppError::Validation(format!("failed to verify login TOTP code: {error}"))
+                    .map_err(|_| {
+                        AppError::Validation("invalid decrypted TOTP secret".to_string())
                     })?;
+                let legacy_totp = self.build_totp(username, legacy_secret.as_str())?;
+                let is_valid = legacy_totp.check_current(code).map_err(|error| {
+                    AppError::Validation(format!("failed to verify login TOTP code: {error}"))
+                })?;
 
                 if is_valid {
                     let reencrypted = self
                         .crypto_service
-                        .encrypt(
-                            &SecretBox::new(Box::new(legacy_secret.into_bytes())),
-                            &key,
-                        )
+                        .encrypt(&SecretBox::new(Box::new(legacy_secret.into_bytes())), &key)
                         .await?;
                     let envelope = Self::serialize_envelope(&reencrypted);
                     let _ = sqlx::query("UPDATE users SET totp_secret = ?1 WHERE username = ?2")
@@ -383,7 +395,8 @@ where
             .map_err(|_| AppError::Validation("invalid decrypted TOTP secret".to_string()))?;
 
         let totp = self.build_totp(username, base32_secret.as_str())?;
-        totp.check_current(code)
-            .map_err(|error| AppError::Validation(format!("failed to verify login TOTP code: {error}")))
+        totp.check_current(code).map_err(|error| {
+            AppError::Validation(format!("failed to verify login TOTP code: {error}"))
+        })
     }
 }

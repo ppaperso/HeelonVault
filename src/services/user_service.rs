@@ -25,7 +25,11 @@ pub trait UserService {
         &self,
         identifier: &str,
     ) -> Result<Option<String>, AppError>;
-    async fn update_user_profile(&self, user_id: Uuid, update: UserProfileUpdate) -> Result<User, AppError>;
+    async fn update_user_profile(
+        &self,
+        user_id: Uuid,
+        update: UserProfileUpdate,
+    ) -> Result<User, AppError>;
     async fn update_show_passwords_in_edit(
         &self,
         user_id: Uuid,
@@ -93,7 +97,11 @@ where
             .await
     }
 
-    async fn update_user_profile(&self, user_id: Uuid, update: UserProfileUpdate) -> Result<User, AppError> {
+    async fn update_user_profile(
+        &self,
+        user_id: Uuid,
+        update: UserProfileUpdate,
+    ) -> Result<User, AppError> {
         let current_user = self
             .user_repo
             .get_by_id(user_id)
@@ -122,9 +130,7 @@ where
         let email_changed = next_email != current_user.email;
         if email_changed {
             let current_password = update.current_password.ok_or_else(|| {
-                AppError::Authorization(
-                    AccessDeniedReason::PasswordRequiredForChange,
-                )
+                AppError::Authorization(AccessDeniedReason::PasswordRequiredForChange)
             })?;
 
             let password_ok = self
@@ -133,7 +139,9 @@ where
                 .await?;
             if !password_ok {
                 warn!(user_id = %user_id, "profile update denied: wrong current password for email change");
-                return Err(AppError::Authorization(AccessDeniedReason::InvalidCredentials));
+                return Err(AppError::Authorization(
+                    AccessDeniedReason::InvalidCredentials,
+                ));
             }
         }
 
@@ -149,11 +157,10 @@ where
 
         info!(user_id = %user_id, email_changed = email_changed, "user profile updated");
 
-        let updated_user = self
-            .user_repo
-            .get_by_id(user_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("user not found after profile update".to_string()))?;
+        let updated_user =
+            self.user_repo.get_by_id(user_id).await?.ok_or_else(|| {
+                AppError::NotFound("user not found after profile update".to_string())
+            })?;
 
         Ok(updated_user)
     }
@@ -176,8 +183,7 @@ where
             ));
         }
 
-        self
-            .auth_service
+        self.auth_service
             .change_password(user.username.as_str(), current_password, new_password)
             .await?;
 
@@ -186,8 +192,7 @@ where
             .get_password_envelope(user.username.as_str())
             .await?;
 
-        self
-            .user_repo
+        self.user_repo
             .update_password_envelope(user_id, password_envelope)
             .await?;
 
@@ -204,11 +209,9 @@ where
             .update_show_passwords_in_edit(user_id, show_passwords_in_edit)
             .await?;
 
-        let updated_user = self
-            .user_repo
-            .get_by_id(user_id)
-            .await?
-            .ok_or_else(|| AppError::NotFound("user not found after preference update".to_string()))?;
+        let updated_user = self.user_repo.get_by_id(user_id).await?.ok_or_else(|| {
+            AppError::NotFound("user not found after preference update".to_string())
+        })?;
 
         Ok(updated_user)
     }

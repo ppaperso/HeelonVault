@@ -109,7 +109,11 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         let now_ts = Utc::now().timestamp();
         Ok(AuthPolicyState {
             failed_attempts,
-            remaining_lock_secs: Self::remaining_lock_secs(failed_attempts, last_attempt_at, now_ts),
+            remaining_lock_secs: Self::remaining_lock_secs(
+                failed_attempts,
+                last_attempt_at,
+                now_ts,
+            ),
         })
     }
 
@@ -156,13 +160,14 @@ impl AuthPolicyService for SqlxAuthPolicyService {
 
         self.ensure_row_exists(username).await?;
 
-        let previous_failed_attempts: i64 = sqlx::query_scalar(
-            "SELECT failed_attempts FROM auth_policy WHERE username = ?1",
-        )
-        .bind(username)
-        .fetch_one(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("read failed attempts before reset", error))?;
+        let previous_failed_attempts: i64 =
+            sqlx::query_scalar("SELECT failed_attempts FROM auth_policy WHERE username = ?1")
+                .bind(username)
+                .fetch_one(&self.pool)
+                .await
+                .map_err(|error| {
+                    Self::map_storage_err("read failed attempts before reset", error)
+                })?;
 
         sqlx::query(
             "UPDATE auth_policy
@@ -191,13 +196,12 @@ impl AuthPolicyService for SqlxAuthPolicyService {
 
         self.ensure_row_exists(username).await?;
 
-        let delay_opt: Option<i64> = sqlx::query_scalar(
-            "SELECT auto_lock_delay_mins FROM auth_policy WHERE username = ?1",
-        )
-        .bind(username)
-        .fetch_optional(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("get auto_lock_delay_mins", error))?;
+        let delay_opt: Option<i64> =
+            sqlx::query_scalar("SELECT auto_lock_delay_mins FROM auth_policy WHERE username = ?1")
+                .bind(username)
+                .fetch_optional(&self.pool)
+                .await
+                .map_err(|error| Self::map_storage_err("get auto_lock_delay_mins", error))?;
 
         let delay = delay_opt.unwrap_or(DEFAULT_AUTO_LOCK_DELAY_MINS);
         if Self::is_allowed_auto_lock_delay(delay) {

@@ -57,7 +57,9 @@ impl ImportServiceImpl {
             headers
                 .iter()
                 .position(|h| h.eq_ignore_ascii_case(name))
-                .ok_or_else(|| AppError::Validation(format!("csv is missing required column: {name}")))
+                .ok_or_else(|| {
+                    AppError::Validation(format!("csv is missing required column: {name}"))
+                })
         };
 
         let name_idx = idx("name")?;
