@@ -1,4 +1,4 @@
-# HeelonVault 1.0.0
+# HeelonVault 1.0.1
 
 Language: EN | [FR](README.md)
 
@@ -74,7 +74,12 @@ HeelonVault/
 ├── logs/                  # Runtime logs
 ├── LICENSE                # Apache 2.0 license
 ├── THIRD_PARTY_LICENSES.md# Third-party dependency licenses
-└── install.sh             # Linux installer
+├── install.sh             # Unified installer (OS detection)
+├── install-ubuntu.sh      # Ubuntu / Debian installer
+├── install-rhel.sh        # Fedora / RHEL / Rocky Linux / AlmaLinux installer
+├── remove.sh              # Unified uninstaller (OS detection)
+├── remove-ubuntu.sh       # Ubuntu / Debian uninstaller
+└── remove-rhel.sh         # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
 ```
 
 ---
@@ -98,11 +103,38 @@ cargo clippy -- -D warnings
 
 ### Packaged Linux installation
 
+The installer asks for a deployment profile:
+
+- **Personal**: SQLite DB in `~/.local/share/heelonvault/heelonvault-rust.db`, logs in `~/.local/state/heelonvault/logs`.
+- **Enterprise**: SQLite DB in `/var/lib/heelonvault/heelonvault-rust.db`, logs in `/var/log/heelonvault`.
+
 ```bash
 tar -xzf heelonvault-linux-x86_64.tar.gz
 cd heelonvault-linux-x86_64
 sudo ./install.sh
 ```
+
+Preview mode without changing the system (dry-run):
+
+```bash
+sudo env HEELONVAULT_DRY_RUN=1 ./install.sh
+```
+
+If needed, you can still run `install-ubuntu.sh` or `install-rhel.sh` explicitly.
+
+Release security: if `heelonvault.sha256` is present in the archive, installer verifies binary integrity before installation.
+
+Enterprise mode note: installer only configures shared system paths.
+Network publication (RDS/VDI/RemoteApp, reverse proxy, bastion, etc.) must be handled manually.
+For optimal performance, Enterprise mode database should be hosted on low-latency storage, ideally local to the execution server.
+
+Uninstall:
+
+```bash
+sudo ./remove.sh
+```
+
+If needed, you can still run `remove-ubuntu.sh` or `remove-rhel.sh` explicitly.
 
 See [QUICKSTART.md](QUICKSTART.md) and [QUICKSTART.fr.md](QUICKSTART.fr.md).
 
@@ -127,6 +159,7 @@ Central index: [docs/README.md](docs/README.md)
 | Security | [SECURITY.md](SECURITY.md) | [SECURITY.fr.md](SECURITY.fr.md) |
 | Code of Conduct | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
 | Architecture | [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md) | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| User Guide | [docs/USER_GUIDE.en.md](docs/USER_GUIDE.en.md) | [docs/USER_GUIDE.md](docs/USER_GUIDE.md) |
 | Update Guide | [docs/UPDATE_GUIDE.en.md](docs/UPDATE_GUIDE.en.md) | [docs/UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md) |
 | Data folder | [data/README.md](data/README.md) | [data/README.fr.md](data/README.fr.md) |
 | Scripts | [scripts/README.md](scripts/README.md) | [scripts/README.fr.md](scripts/README.fr.md) |

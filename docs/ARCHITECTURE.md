@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](ARCHITECTURE.en.md)
 
-Version cible documentée: `1.0.0`
+Version cible documentée: `1.0.1`
 
 ## Vue d'ensemble
 
@@ -40,7 +40,14 @@ HeelonVault/
 ├── Cargo.toml
 ├── run.sh                          # Launcher production
 ├── run-dev.sh                      # Launcher developpement
-├── install.sh                      # Installation Rust-only
+├── install.sh                      # Installation unifiée (détection OS)
+├── install-core.sh                 # Bibliothèque commune install Linux
+├── install-ubuntu.sh               # Installation Ubuntu / Debian
+├── install-rhel.sh                 # Installation Fedora / RHEL / Rocky / AlmaLinux
+├── remove.sh                       # Désinstallation unifiée (détection OS)
+├── remove-core.sh                  # Bibliothèque commune désinstallation Linux
+├── remove-ubuntu.sh                # Désinstallation Ubuntu / Debian
+├── remove-rhel.sh                  # Désinstallation Fedora / RHEL / Rocky / AlmaLinux
 ├── update.sh                       # Mise a jour Rust-only + backup
 └── docs/
 ```

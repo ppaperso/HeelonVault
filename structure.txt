@@ -25,6 +25,13 @@
 ├── HeelonVault.code-workspace
 ├── heelonvault.desktop
 ├── install.sh
+├── install-core.sh
+├── install-ubuntu.sh
+├── install-rhel.sh
+├── remove.sh
+├── remove-core.sh
+├── remove-ubuntu.sh
+├── remove-rhel.sh
 ├── LEGAL.md
 ├── LICENSE
 ├── locales

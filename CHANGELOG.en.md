@@ -7,6 +7,23 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.1] — 2026-04-06
+
+### Product documentation
+
+- Added a **bilingual user guide** (`docs/USER_GUIDE.md` and `docs/USER_GUIDE.en.md`) with an end-user manual tone.
+- Integrated real UI screenshots across screen-by-screen sections (bootstrap, login, dashboard, secret creation forms, profile/security, import/export, user/team administration, trash).
+- Structured the guide with a table of contents and formal screen/capture numbering.
+
+### CI/CD and Linux packaging
+
+- Added a shared smoke test (`tests/smoke-test.sh`) with `--install/--remove`, permissions checks, and desktop-entry validation.
+- Hardened CI/Release workflows: Rust cache, Fedora container job, external `.sha256` checksum asset, build provenance attestation, and core script inclusion in `dist/`.
+
+### Version
+
+- Bumped application and documentation version to **1.0.1**.
+
 ## [1.0.0] — 2026-04-02
 
 ### Stable release

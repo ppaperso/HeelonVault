@@ -7,6 +7,23 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.1] — 2026-04-06
+
+### Documentation produit
+
+- Ajout d'un **guide utilisateur bilingue** (`docs/USER_GUIDE.md` et `docs/USER_GUIDE.en.md`) avec ton orienté manuel utilisateur final.
+- Intégration des captures d'écran réelles de l'interface dans les sections écran par écran (initialisation, login, dashboard, création de secrets, profil/sécurité, import/export, administration utilisateurs/équipes, corbeille).
+- Structuration du guide avec table des matières et numérotation formelle des écrans/captures.
+
+### CI/CD et packaging Linux
+
+- Smoke test mutualisé (`tests/smoke-test.sh`) avec mode `--install/--remove`, validation des permissions et des entrées desktop.
+- Renforcement des workflows CI/Release : cache Rust, job Fedora en conteneur, checksum externe `.sha256`, attestation de provenance, inclusion des scripts core dans `dist/`.
+
+### Version
+
+- Bump de la version applicative et documentaire vers **1.0.1**.
+
 ## [1.0.0] — 2026-04-02
 
 ### Release stable

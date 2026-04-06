@@ -1,12 +1,58 @@
 #!/usr/bin/env bash
-# Unified installer entrypoint for HeelonVault.
-# Detects the Linux family and dispatches to install-ubuntu.sh or install-rhel.sh.
+# Unified uninstaller entrypoint for HeelonVault.
+# Detects the Linux family and dispatches to remove-ubuntu.sh or remove-rhel.sh.
 
 set -euo pipefail
 
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-UBUNTU_SCRIPT="$SCRIPT_DIR/install-ubuntu.sh"
-RHEL_SCRIPT="$SCRIPT_DIR/install-rhel.sh"
+UBUNTU_SCRIPT="$SCRIPT_DIR/remove-ubuntu.sh"
+RHEL_SCRIPT="$SCRIPT_DIR/remove-rhel.sh"
+
+print_usage() {
+  cat <<'EOF'
+Usage: ./remove.sh [options]
+
+Options:
+  --non-interactive         Active le mode non interactif
+  --purge                   Demande la purge des données utilisateur/entreprise
+  --confirm                 Confirme explicitement la désinstallation (requis en non interactif)
+  --purge-scope <current|all>
+                            Portée de purge en mode non interactif (défaut: current)
+  -h, --help                Affiche cette aide
+EOF
+}
+
+while [[ $# -gt 0 ]]; do
+  case "$1" in
+    --non-interactive)
+      export HEELONVAULT_NON_INTERACTIVE=1
+      ;;
+    --purge)
+      export HEELONVAULT_REMOVE_PURGE=1
+      ;;
+    --confirm)
+      export HEELONVAULT_REMOVE_CONFIRM=1
+      ;;
+    --purge-scope)
+      if [[ $# -lt 2 ]]; then
+        echo "[ERROR] --purge-scope requiert une valeur (current|all)."
+        exit 1
+      fi
+      export HEELONVAULT_PURGE_SCOPE="$2"
+      shift
+      ;;
+    -h|--help)
+      print_usage
+      exit 0
+      ;;
+    *)
+      echo "[ERROR] Option inconnue: $1"
+      print_usage
+      exit 1
+      ;;
+  esac
+  shift
+done
 
 if [[ ! -f /etc/os-release ]]; then
   echo "[ERROR] /etc/os-release introuvable. Distribution non identifiable."
@@ -31,7 +77,6 @@ for tok in ${ID:-} ${ID_LIKE:-}; do
   esac
 done
 
-# Safety net: package-manager heuristic when os-release metadata is incomplete.
 if [[ "$is_debian_family" == false && "$is_rhel_family" == false ]]; then
   if command -v apt-get >/dev/null 2>&1; then
     is_debian_family=true
@@ -45,7 +90,7 @@ if [[ "$is_debian_family" == true && "$is_rhel_family" == false ]]; then
     echo "[ERROR] Script manquant ou non exécutable: $UBUNTU_SCRIPT"
     exit 1
   fi
-  echo "[INFO] Famille Debian/Ubuntu détectée -> exécution de install-ubuntu.sh"
+  echo "[INFO] Famille Debian/Ubuntu détectée -> exécution de remove-ubuntu.sh"
   export HEELONVAULT_SUPPRESS_OS_LOG=1
   exec "$UBUNTU_SCRIPT" "$@"
 fi
@@ -55,7 +100,7 @@ if [[ "$is_rhel_family" == true && "$is_debian_family" == false ]]; then
     echo "[ERROR] Script manquant ou non exécutable: $RHEL_SCRIPT"
     exit 1
   fi
-  echo "[INFO] Famille Fedora/RHEL détectée -> exécution de install-rhel.sh"
+  echo "[INFO] Famille Fedora/RHEL détectée -> exécution de remove-rhel.sh"
   export HEELONVAULT_SUPPRESS_OS_LOG=1
   exec "$RHEL_SCRIPT" "$@"
 fi
@@ -63,8 +108,8 @@ fi
 if [[ "$is_debian_family" == true && "$is_rhel_family" == true ]]; then
   echo "[ERROR] Détection OS ambiguë (Debian et RHEL en même temps)."
   echo "[ERROR] Lancez explicitement l'un des scripts suivants :"
-  echo "        sudo ./install-ubuntu.sh"
-  echo "        sudo ./install-rhel.sh"
+  echo "        sudo ./remove-ubuntu.sh"
+  echo "        sudo ./remove-rhel.sh"
   exit 1
 fi
 

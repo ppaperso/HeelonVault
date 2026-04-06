@@ -10,6 +10,7 @@ This folder contains bilingual technical documentation for HeelonVault.
 | ----- | ------- | -------- |
 | Architecture | [ARCHITECTURE.en.md](ARCHITECTURE.en.md) | [ARCHITECTURE.md](ARCHITECTURE.md) |
 | Update guide | [UPDATE_GUIDE.en.md](UPDATE_GUIDE.en.md) | [UPDATE_GUIDE.md](UPDATE_GUIDE.md) |
+| User guide | [USER_GUIDE.en.md](USER_GUIDE.en.md) | [USER_GUIDE.md](USER_GUIDE.md) |
 | Graphic guidelines | [charte/CHARTE_GRAPHIQUE.en.md](charte/CHARTE_GRAPHIQUE.en.md) | [charte/CHARTE_GRAPHIQUE.md](charte/CHARTE_GRAPHIQUE.md) |
 
 ## Project-level Docs

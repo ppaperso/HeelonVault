@@ -2,7 +2,7 @@
 
 Language: EN | [FR](ARCHITECTURE.md)
 
-Documented target version: `1.0.0`
+Documented target version: `1.0.1`
 
 ## Overview
 
@@ -40,7 +40,14 @@ HeelonVault/
 ├── Cargo.toml
 ├── run.sh
 ├── run-dev.sh
-├── install.sh
+├── install.sh                      # Unified installer (OS detection)
+├── install-core.sh                 # Shared Linux install library
+├── install-ubuntu.sh               # Ubuntu / Debian installer
+├── install-rhel.sh                 # Fedora / RHEL / Rocky Linux / AlmaLinux installer
+├── remove.sh                       # Unified uninstaller (OS detection)
+├── remove-core.sh                  # Shared Linux uninstall library
+├── remove-ubuntu.sh                # Ubuntu / Debian uninstaller
+├── remove-rhel.sh                  # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
 └── docs/
 ```
 

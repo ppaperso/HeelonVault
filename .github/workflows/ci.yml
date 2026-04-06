@@ -34,6 +34,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Check formatting
         run: cargo fmt --all -- --check
 
@@ -57,17 +60,85 @@ jobs:
           mkdir -p dist
           cp target/release/heelonvault dist/
           cp install.sh dist/
+          cp install-core.sh dist/
+          cp install-ubuntu.sh dist/
+          cp install-rhel.sh dist/
+          cp remove.sh dist/
+          cp remove-core.sh dist/
+          cp remove-ubuntu.sh dist/
+          cp remove-rhel.sh dist/
+          cp tests/smoke-test.sh dist/
           cp heelonvault.desktop dist/
           cp README.md dist/
           cp QUICKSTART.md dist/
           cp -r resources dist/
-          chmod +x dist/install.sh dist/heelonvault
+          (cd dist && sha256sum heelonvault > heelonvault.sha256)
+          chmod +x dist/install.sh dist/install-ubuntu.sh dist/install-rhel.sh dist/remove.sh dist/remove-ubuntu.sh dist/remove-rhel.sh dist/heelonvault dist/smoke-test.sh
 
-          sudo ./dist/install.sh
+          ./dist/smoke-test.sh --install ./dist/install.sh --remove ./dist/remove.sh
 
-          test -x /opt/heelonvault/heelonvault
-          test -x /opt/heelonvault/run.sh
-          test -f /usr/share/applications/com.heelonvault.rust.desktop
-          test -f /usr/share/applications/heelonvault.desktop
-          desktop-file-validate /usr/share/applications/com.heelonvault.rust.desktop
-          desktop-file-validate /usr/share/applications/heelonvault.desktop
+  build-and-verify-fedora:
+    runs-on: ubuntu-24.04
+    container: fedora:latest
+
+    steps:
+      - name: Install container bootstrap tools
+        run: |
+          dnf install -y \
+            git \
+            tar \
+            gzip \
+            coreutils \
+            which
+
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Fedora build dependencies
+        run: |
+          dnf install -y \
+            gcc \
+            desktop-file-utils \
+            pkgconf-pkg-config \
+            gtk4-devel \
+            libadwaita-devel \
+            sqlite-devel \
+            glib2-devel \
+            glib2
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Validate desktop entry
+        run: desktop-file-validate heelonvault.desktop
+
+      - name: Smoke test installer and remover (Fedora)
+        run: |
+          set -euo pipefail
+
+          rm -rf dist
+          mkdir -p dist
+          cp target/release/heelonvault dist/
+          cp install.sh dist/
+          cp install-core.sh dist/
+          cp install-ubuntu.sh dist/
+          cp install-rhel.sh dist/
+          cp remove.sh dist/
+          cp remove-core.sh dist/
+          cp remove-ubuntu.sh dist/
+          cp remove-rhel.sh dist/
+          cp tests/smoke-test.sh dist/
+          cp heelonvault.desktop dist/
+          cp README.md dist/
+          cp QUICKSTART.md dist/
+          cp -r resources dist/
+          (cd dist && sha256sum heelonvault > heelonvault.sha256)
+          chmod +x dist/install.sh dist/install-ubuntu.sh dist/install-rhel.sh dist/remove.sh dist/remove-ubuntu.sh dist/remove-rhel.sh dist/heelonvault dist/smoke-test.sh
+
+          ./dist/smoke-test.sh --install ./dist/install-rhel.sh --remove ./dist/remove-rhel.sh

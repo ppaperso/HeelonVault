@@ -1,4 +1,4 @@
-# HeelonVault 1.0.0
+# HeelonVault 1.0.1
 
 Langue: FR | [EN](README.en.md)
 
@@ -95,8 +95,13 @@ HeelonVault/
 ├── THIRD_PARTY_LICENSES.md# Inventaire des bibliothèques tierces
 ├── SECURITY.md            # Politique de divulgation
 ├── run-dev.sh             # Lancement développement
-├── run.sh                 # Lancement production (généré par install.sh)
-└── install.sh             # Installateur Linux packagé
+├── run.sh                 # Lancement production (généré par les scripts d'installation)
+├── install.sh             # Installateur unifié (détection OS)
+├── install-ubuntu.sh      # Installateur Ubuntu / Debian
+├── install-rhel.sh        # Installateur Fedora / RHEL / Rocky / AlmaLinux
+├── remove.sh              # Désinstallateur unifié (détection OS)
+├── remove-ubuntu.sh       # Désinstallateur Ubuntu / Debian
+└── remove-rhel.sh         # Désinstallateur Fedora / RHEL / Rocky / AlmaLinux
 ```
 
 ---
@@ -125,14 +130,37 @@ Le tarball de release (`heelonvault-linux-x86_64.tar.gz`) installe :
 - le binaire dans `/opt/heelonvault/`;
 - un lanceur GNOME `com.heelonvault.rust.desktop` (App ID GTK correspondant);
 - les icônes dans le thème hicolor système;
-- la base SQLite **par utilisateur** dans `~/.local/share/heelonvault/heelonvault-rust.db`;
-- les logs **par utilisateur** dans `~/.local/state/heelonvault/logs`.
+- un profil de déploiement à choisir pendant l'installation :
+  - **Personnel** : base SQLite `~/.local/share/heelonvault/heelonvault-rust.db`, logs `~/.local/state/heelonvault/logs`;
+  - **Entreprise** : base SQLite `/var/lib/heelonvault/heelonvault-rust.db`, logs `/var/log/heelonvault`.
 
 ```bash
 tar -xzf heelonvault-linux-x86_64.tar.gz
 cd heelonvault-linux-x86_64
 sudo ./install.sh
 ```
+
+Prévisualisation sans modifier le système (dry-run) :
+
+```bash
+sudo env HEELONVAULT_DRY_RUN=1 ./install.sh
+```
+
+En cas de besoin (forçage explicite), vous pouvez lancer `install-ubuntu.sh` ou `install-rhel.sh`.
+
+Sécurité release : si le fichier `heelonvault.sha256` est présent dans l'archive, l'installateur vérifie automatiquement l'intégrité du binaire avant installation.
+
+Note mode Entreprise : l'installateur configure uniquement les chemins système partagés.
+La publication réseau (RDS/VDI/RemoteApp, reverse proxy, bastion, etc.) reste à réaliser manuellement.
+Pour des performances optimales, la base de données du mode Entreprise doit résider sur un stockage à faible latence, idéalement local au serveur d'exécution.
+
+Désinstallation :
+
+```bash
+sudo ./remove.sh
+```
+
+En cas de besoin, vous pouvez lancer `remove-ubuntu.sh` ou `remove-rhel.sh` explicitement.
 
 Consulter [QUICKSTART.md](QUICKSTART.md) pour les détails post-installation.
 
@@ -155,6 +183,8 @@ cargo test
 | [docs/README.md](docs/README.md) | Index central de la documentation bilingue |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique détaillée |
 | [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md) | Technical architecture (EN) |
+| [docs/USER_GUIDE.md](docs/USER_GUIDE.md) | Guide utilisateur détaillé |
+| [docs/USER_GUIDE.en.md](docs/USER_GUIDE.en.md) | User guide (EN) |
 | [docs/UPDATE_GUIDE.md](docs/UPDATE_GUIDE.md) | Procédure de mise à jour |
 | [docs/UPDATE_GUIDE.en.md](docs/UPDATE_GUIDE.en.md) | Production update guide (EN) |
 | [SECURITY.md](SECURITY.md) | Politique de sécurité et divulgation |

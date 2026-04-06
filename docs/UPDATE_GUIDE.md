@@ -2,20 +2,22 @@
 
 Langue : FR | [EN](UPDATE_GUIDE.en.md)
 
-Version documentée: `1.0.0`
+Version documentée: `1.0.1`
 
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
 ## Portee
 
 - Application: `/opt/heelonvault`
-- Racine des donnees utilisateur packagees: `~/.local/share/heelonvault`
+- Profil Personnel: base `~/.local/share/heelonvault/heelonvault-rust.db`, logs `~/.local/state/heelonvault/logs`
+- Profil Entreprise: base `/var/lib/heelonvault/heelonvault-rust.db`, logs `/var/log/heelonvault`
+- Recommandation performance Entreprise: héberger la base sur un stockage à faible latence, idéalement local au serveur d'exécution.
 - Backups: `/var/backups/heelonvault`
 - Legacy Python a ne jamais modifier: `/var/lib/heelonvault-shared`
 
 ## Prerequis
 
-1. L'application est deja installee via `install.sh`.
+1. L'application est deja installee via `install.sh` (auto-détection OS), ou explicitement via `install-ubuntu.sh` / `install-rhel.sh`.
 2. Vous avez les droits `sudo`.
 3. Le toolchain Rust est disponible (`cargo`).
 4. Vous etes dans le dossier source qui contient `update.sh`.

@@ -7,6 +7,8 @@ on:
 
 permissions:
   contents: write
+  id-token: write
+  attestations: write
 
 jobs:
   build-and-release:
@@ -32,6 +34,9 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
       - name: Build release binary
         run: cargo build --release --locked
 
@@ -45,36 +50,37 @@ jobs:
 
           cp target/release/heelonvault dist/
           cp install.sh dist/
+          cp install-core.sh dist/
+          cp install-ubuntu.sh dist/
+          cp install-rhel.sh dist/
+          cp remove.sh dist/
+          cp remove-core.sh dist/
+          cp remove-ubuntu.sh dist/
+          cp remove-rhel.sh dist/
+          cp tests/smoke-test.sh dist/
           cp heelonvault.desktop dist/
           cp README.md dist/
           cp QUICKSTART.md dist/
           cp -r resources dist/
+          (cd dist && sha256sum heelonvault > heelonvault.sha256)
 
-          chmod +x dist/install.sh
-          chmod +x dist/heelonvault
+          chmod +x dist/install.sh dist/install-ubuntu.sh dist/install-rhel.sh dist/remove.sh dist/remove-ubuntu.sh dist/remove-rhel.sh dist/heelonvault dist/smoke-test.sh
 
       - name: Smoke test packaged installer
         run: |
           set -euo pipefail
+          ./dist/smoke-test.sh --install ./dist/install.sh
 
-          sudo ./dist/install.sh
-
-          test -x /opt/heelonvault/heelonvault
-          test -x /opt/heelonvault/run.sh
-          test -f /usr/share/applications/com.heelonvault.rust.desktop
-          test -f /usr/share/applications/heelonvault.desktop
-
-          desktop-file-validate /usr/share/applications/com.heelonvault.rust.desktop
-          desktop-file-validate /usr/share/applications/heelonvault.desktop
-
-          grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
-          grep -q '^TryExec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
-          grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/heelonvault.desktop
-
-      - name: Pack release archive
+      - name: Pack and Checksum
         run: |
           set -euo pipefail
           tar -C dist -czf heelonvault-linux-x86_64.tar.gz .
+          sha256sum heelonvault-linux-x86_64.tar.gz > heelonvault-linux-x86_64.tar.gz.sha256
+
+      - name: Generate Artifact Attestation
+        uses: actions/attest-build-provenance@v1
+        with:
+          subject-path: heelonvault-linux-x86_64.tar.gz
 
       - name: Publish GitHub prerelease
         env:
@@ -82,9 +88,10 @@ jobs:
         run: |
           TAG="${GITHUB_REF_NAME}"
           ASSET="heelonvault-linux-x86_64.tar.gz"
+          CHECKSUM="${ASSET}.sha256"
 
           if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" --clobber
+            gh release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
           else
-            gh release create "$TAG" "$ASSET" --prerelease --generate-notes
+            gh release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
           fi
