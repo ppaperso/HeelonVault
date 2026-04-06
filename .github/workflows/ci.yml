@@ -4,6 +4,7 @@ on:
   pull_request:
   push:
     branches:
+      - main
       - develop
 
 permissions:
@@ -51,7 +52,7 @@ jobs:
       - name: Validate desktop entry
         run: desktop-file-validate heelonvault.desktop
 
-      - name: Smoke test installer
+      - name: Package dist
         run: |
           set -euo pipefail
 
@@ -74,7 +75,11 @@ jobs:
           (cd dist && sha256sum heelonvault > heelonvault.sha256)
           chmod +x dist/install.sh dist/install-ubuntu.sh dist/install-rhel.sh dist/remove.sh dist/remove-ubuntu.sh dist/remove-rhel.sh dist/heelonvault dist/smoke-test.sh
 
-          ./dist/smoke-test.sh --install ./dist/install.sh --remove ./dist/remove.sh
+      - name: Smoke test – install
+        run: ./dist/smoke-test.sh --install ./dist/install.sh
+
+      - name: Smoke test – uninstall
+        run: ./dist/smoke-test.sh --remove ./dist/remove.sh
 
   build-and-verify-fedora:
     runs-on: ubuntu-24.04
@@ -117,7 +122,7 @@ jobs:
       - name: Validate desktop entry
         run: desktop-file-validate heelonvault.desktop
 
-      - name: Smoke test installer and remover (Fedora)
+      - name: Package dist
         run: |
           set -euo pipefail
 
@@ -140,4 +145,8 @@ jobs:
           (cd dist && sha256sum heelonvault > heelonvault.sha256)
           chmod +x dist/install.sh dist/install-ubuntu.sh dist/install-rhel.sh dist/remove.sh dist/remove-ubuntu.sh dist/remove-rhel.sh dist/heelonvault dist/smoke-test.sh
 
-          ./dist/smoke-test.sh --install ./dist/install-rhel.sh --remove ./dist/remove-rhel.sh
+      - name: Smoke test – install (Fedora)
+        run: ./dist/smoke-test.sh --install ./dist/install.sh
+
+      - name: Smoke test – uninstall (Fedora)
+        run: ./dist/smoke-test.sh --remove ./dist/remove.sh
