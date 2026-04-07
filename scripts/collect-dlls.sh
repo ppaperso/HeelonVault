@@ -109,6 +109,18 @@ fi
 echo "[collect-dlls] Generating $OUT_WXS..."
 mkdir -p "$(dirname "$OUT_WXS")"
 
+# WiX identifiers allow only: letters, digits, underscore, period.
+# They must start with a letter or underscore.
+sanitize_wix_id() {
+  local raw="$1"
+  local sanitized
+  sanitized="$(echo "$raw" | sed -E 's/[^A-Za-z0-9_.]/_/g')"
+  if [[ ! "$sanitized" =~ ^[A-Za-z_] ]]; then
+    sanitized="_$sanitized"
+  fi
+  echo "$sanitized"
+}
+
 cat > "$OUT_WXS" << 'WXSHEADER'
 <?xml version="1.0" encoding="UTF-8"?>
 <!--
@@ -125,7 +137,8 @@ INDEX=0
 echo "$DLL_PATHS" | while IFS= read -r dll_path; do
   [[ -z "$dll_path" ]] && continue
   dll_name=$(basename "$dll_path")
-  safe_id="Dll_$(echo "$dll_name" | tr '.-' '__')_$INDEX"
+  safe_name="$(sanitize_wix_id "$dll_name")"
+  safe_id="Dll_${safe_name}_$INDEX"
   guid=$(python3 -c "import uuid; print(str(uuid.uuid5(uuid.NAMESPACE_DNS, '${dll_name}')).upper())" 2>/dev/null || uuidgen | tr '[:lower:]' '[:upper:]')
   cat >> "$OUT_WXS" << DLLCOMP
       <Component Id="${safe_id}" Guid="${guid}">
@@ -148,7 +161,8 @@ PINDEX=0
 for loader_dll in "$PIXBUF_STAGING"/*.dll; do
   [[ -f "$loader_dll" ]] || continue
   pname=$(basename "$loader_dll")
-  safe_pid="Pixbuf_$(echo "$pname" | tr '.-' '__')_$PINDEX"
+  safe_pname="$(sanitize_wix_id "$pname")"
+  safe_pid="Pixbuf_${safe_pname}_$PINDEX"
   pguid=$(python3 -c "import uuid; print(str(uuid.uuid5(uuid.NAMESPACE_DNS, 'pixbuf_${pname}')).upper())" 2>/dev/null || uuidgen | tr '[:lower:]' '[:upper:]')
   cat >> "$OUT_WXS" << PIXBUFCOMP
       <Component Id="${safe_pid}" Guid="${pguid}">
