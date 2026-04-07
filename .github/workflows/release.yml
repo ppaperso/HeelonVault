@@ -23,6 +23,11 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
+      - name: Setup .NET SDK
+        uses: actions/setup-dotnet@v5
+        with:
+          dotnet-version: 8.0.x
+
       - name: Setup MSYS2 and Windows build dependencies
         uses: msys2/setup-msys2@v2
         with:
@@ -49,17 +54,16 @@ jobs:
       - name: Install WiX toolset
         run: |
           dotnet tool install --global wix
-          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          cygpath -w "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
 
       - name: Build MSI
         run: wix build wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
 
       - name: Smoke test – install MSI and verify binary
         run: |
-          msiexec.exe //i heelonvault-windows-x86_64.msi //qn //norestart 2>&1
-          'C:\Program Files\HeelonVault\heelonvault.exe' --version
-
-        shell: pwsh
+          MSI_PATH="$(cygpath -w "$PWD/heelonvault-windows-x86_64.msi")"
+          "/c/Windows/System32/msiexec.exe" //i "$MSI_PATH" //qn //norestart
+          "/c/Program Files/HeelonVault/heelonvault.exe" --version
 
       - name: Compute MSI checksum
         run: sha256sum heelonvault-windows-x86_64.msi > heelonvault-windows-x86_64.msi.sha256
