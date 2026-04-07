@@ -108,6 +108,19 @@ jobs:
             exit 1
           fi
 
+          GIT_DIR=""
+          if [[ -x "/c/Program Files/Git/cmd/git.exe" ]]; then
+            GIT_DIR="/c/Program Files/Git/cmd"
+          elif [[ -x "/usr/bin/git" ]]; then
+            GIT_DIR="/usr/bin"
+          fi
+
+          if [[ -n "$GIT_DIR" ]]; then
+            export PATH="$GIT_DIR:$PATH"
+          fi
+
+          export GH_REPO="${GITHUB_REPOSITORY}"
+
           TAG="${GITHUB_REF_NAME}"
           ASSET="heelonvault-windows-x86_64.msi"
           CHECKSUM="${ASSET}.sha256"
