@@ -150,3 +150,46 @@ jobs:
 
       - name: Smoke test – uninstall (Fedora)
         run: ./dist/smoke-test.sh --remove ./dist/remove.sh
+
+  build-and-verify-windows:
+    runs-on: windows-2025
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup MSYS2 and Windows build dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-rust
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-libadwaita
+            mingw-w64-x86_64-sqlite3
+            mingw-w64-x86_64-glib2
+
+      - name: Verify MSYS2 toolchain
+        run: |
+          rustc --version
+          cargo --version
+          pkg-config --modversion gtk4
+          pkg-config --modversion libadwaita-1
+
+      - name: Build Windows release binary
+        run: cargo build --release --locked
+
+      - name: Verify Windows release binary exists
+        run: test -f target/release/heelonvault.exe
+
+      - name: Upload Windows binary artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: heelonvault-windows-x86_64-exe
+          path: target/release/heelonvault.exe
