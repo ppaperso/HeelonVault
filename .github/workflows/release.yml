@@ -78,7 +78,7 @@ jobs:
           sha256sum heelonvault-linux-x86_64.tar.gz > heelonvault-linux-x86_64.tar.gz.sha256
 
       - name: Generate Artifact Attestation
-        uses: actions/attest-build-provenance@v1
+        uses: actions/attest-build-provenance@v4
         with:
           subject-path: heelonvault-linux-x86_64.tar.gz
 
