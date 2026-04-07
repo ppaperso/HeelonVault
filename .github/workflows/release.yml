@@ -53,11 +53,15 @@ jobs:
 
       - name: Install WiX toolset
         run: |
-          dotnet tool install --global wix
-          cygpath -w "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+          DOTNET_EXE="/c/Program Files/dotnet/dotnet.exe"
+          WIX_DIR="$(cygpath -u "$USERPROFILE")/.dotnet/tools"
+          "$DOTNET_EXE" tool install --global wix
+          cygpath -w "$WIX_DIR" >> "$GITHUB_PATH"
 
       - name: Build MSI
-        run: wix build wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
+        run: |
+          WIX_EXE="$(cygpath -u "$USERPROFILE")/.dotnet/tools/wix.exe"
+          "$WIX_EXE" build wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
 
       - name: Smoke test – install MSI and verify binary
         run: |
