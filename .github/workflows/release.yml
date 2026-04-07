@@ -61,7 +61,7 @@ jobs:
       - name: Build MSI
         run: |
           WIX_EXE="$(cygpath -u "$USERPROFILE")/.dotnet/tools/wix.exe"
-          "$WIX_EXE" build wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
+          "$WIX_EXE" build -acceptEula wix7 wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
 
       - name: Smoke test – install MSI and verify binary
         run: |
