@@ -11,6 +11,78 @@ permissions:
   attestations: write
 
 jobs:
+  build-and-release-windows:
+    runs-on: windows-2025
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+    defaults:
+      run:
+        shell: msys2 {0}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Setup MSYS2 and Windows build dependencies
+        uses: msys2/setup-msys2@v2
+        with:
+          msystem: MINGW64
+          update: true
+          install: >-
+            mingw-w64-x86_64-toolchain
+            mingw-w64-x86_64-rust
+            mingw-w64-x86_64-pkgconf
+            mingw-w64-x86_64-gtk4
+            mingw-w64-x86_64-libadwaita
+            mingw-w64-x86_64-sqlite3
+            mingw-w64-x86_64-glib2
+            mingw-w64-x86_64-ntldd
+            mingw-w64-x86_64-imagemagick
+            python3
+
+      - name: Build Windows release binary
+        run: cargo build --release --locked
+
+      - name: Collect DLLs, stage GLib resources and generate wix/dlls.wxs
+        run: bash scripts/collect-dlls.sh --binary target/release/heelonvault.exe --msys2 /mingw64 --staging wix/staging --out wix/dlls.wxs
+
+      - name: Install WiX toolset
+        run: |
+          dotnet tool install --global wix
+          echo "$HOME/.dotnet/tools" >> "$GITHUB_PATH"
+
+      - name: Build MSI
+        run: wix build wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
+
+      - name: Smoke test – install MSI and verify binary
+        run: |
+          msiexec.exe //i heelonvault-windows-x86_64.msi //qn //norestart 2>&1
+          'C:\Program Files\HeelonVault\heelonvault.exe' --version
+
+        shell: pwsh
+
+      - name: Compute MSI checksum
+        run: sha256sum heelonvault-windows-x86_64.msi > heelonvault-windows-x86_64.msi.sha256
+
+      - name: Generate MSI Artifact Attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: heelonvault-windows-x86_64.msi
+
+      - name: Publish Windows MSI to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ASSET="heelonvault-windows-x86_64.msi"
+          CHECKSUM="${ASSET}.sha256"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
+          else
+            gh release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
+          fi
+
   build-and-release:
     runs-on: ubuntu-24.04
 

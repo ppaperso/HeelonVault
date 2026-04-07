@@ -216,6 +216,13 @@ impl Write for DailyLogFileWriter {
 }
 
 fn main() -> Result<()> {
+    // Lightweight --version flag for installer smoke tests and scripting.
+    // Must run before GTK/GLib initialisation (which requires a display).
+    if std::env::args().any(|a| a == "--version") {
+        println!("{}", env!("CARGO_PKG_VERSION"));
+        return Ok(());
+    }
+
     let _logging_guard = init_logging()?;
     register_resources()?;
 
