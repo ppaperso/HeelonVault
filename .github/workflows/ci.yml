@@ -190,8 +190,7 @@ jobs:
       - name: Verify Windows release binary exists
         run: test -f target/release/heelonvault.exe
 
-      - name: Upload Windows binary artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: heelonvault-windows-x86_64-exe
-          path: target/release/heelonvault.exe
+      - name: Report Windows release binary details
+        run: |
+          ls -lh target/release/heelonvault.exe
+          sha256sum target/release/heelonvault.exe
