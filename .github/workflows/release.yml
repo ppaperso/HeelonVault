@@ -96,14 +96,26 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
+          GH_EXE=""
+          if [[ -x "/c/Program Files/GitHub CLI/gh.exe" ]]; then
+            GH_EXE="/c/Program Files/GitHub CLI/gh.exe"
+          elif [[ -x "/c/hostedtoolcache/windows/gh/current/x64/bin/gh.exe" ]]; then
+            GH_EXE="/c/hostedtoolcache/windows/gh/current/x64/bin/gh.exe"
+          fi
+
+          if [[ -z "$GH_EXE" ]]; then
+            echo "[ERROR] GitHub CLI introuvable sur le runner Windows"
+            exit 1
+          fi
+
           TAG="${GITHUB_REF_NAME}"
           ASSET="heelonvault-windows-x86_64.msi"
           CHECKSUM="${ASSET}.sha256"
 
-          if gh release view "$TAG" >/dev/null 2>&1; then
-            gh release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
+          if "$GH_EXE" release view "$TAG" >/dev/null 2>&1; then
+            "$GH_EXE" release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
           else
-            gh release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
+            "$GH_EXE" release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
           fi
 
   build-and-release:
