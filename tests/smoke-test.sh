@@ -31,41 +31,43 @@ while [[ $# -gt 0 ]]; do
       shift 2
       ;;
     *)
-      echo "Usage: $0 --install <path/to/install.sh> [--remove <path/to/remove.sh>]"
+      echo "Usage: $0 [--install <path/to/install.sh>] [--remove <path/to/remove.sh>]"
       exit 1
       ;;
   esac
 done
 
-if [[ -z "$INSTALL_SCRIPT" ]]; then
-  echo "[ERROR] Argument requis: --install <path/to/install.sh>"
+if [[ -z "$INSTALL_SCRIPT" && -z "$REMOVE_SCRIPT" ]]; then
+  echo "[ERROR] Au moins un argument est requis: --install <path/to/install.sh> ou --remove <path/to/remove.sh>"
   exit 1
 fi
 
-if [[ ! -x "$INSTALL_SCRIPT" ]]; then
-  echo "[ERROR] Script d'installation introuvable ou non exécutable: $INSTALL_SCRIPT"
-  exit 1
+if [[ -n "$INSTALL_SCRIPT" ]]; then
+  if [[ ! -x "$INSTALL_SCRIPT" ]]; then
+    echo "[ERROR] Script d'installation introuvable ou non exécutable: $INSTALL_SCRIPT"
+    exit 1
+  fi
+
+  run_root env \
+    HEELONVAULT_NON_INTERACTIVE=1 \
+    HEELONVAULT_DEPLOY_MODE=personal \
+    HEELONVAULT_KEEP_LEGACY_DATA=1 \
+    "$INSTALL_SCRIPT"
+
+  test -x /opt/heelonvault/heelonvault
+  test -x /opt/heelonvault/run.sh
+  test -f /usr/share/applications/com.heelonvault.rust.desktop
+  test -f /usr/share/applications/heelonvault.desktop
+  test "$(stat -c '%a' /opt/heelonvault/data)" = "700"
+  test "$(stat -c '%a' /opt/heelonvault/logs)" = "700"
+
+  desktop-file-validate /usr/share/applications/com.heelonvault.rust.desktop
+  desktop-file-validate /usr/share/applications/heelonvault.desktop
+
+  grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
+  grep -q '^TryExec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
+  grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/heelonvault.desktop
 fi
-
-run_root env \
-  HEELONVAULT_NON_INTERACTIVE=1 \
-  HEELONVAULT_DEPLOY_MODE=personal \
-  HEELONVAULT_KEEP_LEGACY_DATA=1 \
-  "$INSTALL_SCRIPT"
-
-test -x /opt/heelonvault/heelonvault
-test -x /opt/heelonvault/run.sh
-test -f /usr/share/applications/com.heelonvault.rust.desktop
-test -f /usr/share/applications/heelonvault.desktop
-test "$(stat -c '%a' /opt/heelonvault/data)" = "700"
-test "$(stat -c '%a' /opt/heelonvault/logs)" = "700"
-
-desktop-file-validate /usr/share/applications/com.heelonvault.rust.desktop
-desktop-file-validate /usr/share/applications/heelonvault.desktop
-
-grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
-grep -q '^TryExec=/opt/heelonvault/run.sh$' /usr/share/applications/com.heelonvault.rust.desktop
-grep -q '^Exec=/opt/heelonvault/run.sh$' /usr/share/applications/heelonvault.desktop
 
 if [[ -n "$REMOVE_SCRIPT" ]]; then
   if [[ ! -x "$REMOVE_SCRIPT" ]]; then
