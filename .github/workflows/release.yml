@@ -61,13 +61,28 @@ jobs:
       - name: Build MSI
         run: |
           WIX_EXE="$(cygpath -u "$USERPROFILE")/.dotnet/tools/wix.exe"
-          "$WIX_EXE" build -acceptEula wix7 wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
+          "$WIX_EXE" build -acceptEula wix7 -arch x64 wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
 
       - name: Smoke test – install MSI and verify binary
         run: |
           MSI_PATH="$(cygpath -w "$PWD/heelonvault-windows-x86_64.msi")"
           "/c/Windows/System32/msiexec.exe" //i "$MSI_PATH" //qn //norestart
-          "/c/Program Files/HeelonVault/heelonvault.exe" --version
+
+          APP_PATH=""
+          if [[ -x "/c/Program Files/HeelonVault/heelonvault.exe" ]]; then
+            APP_PATH="/c/Program Files/HeelonVault/heelonvault.exe"
+          elif [[ -x "/c/Program Files (x86)/HeelonVault/heelonvault.exe" ]]; then
+            APP_PATH="/c/Program Files (x86)/HeelonVault/heelonvault.exe"
+          fi
+
+          if [[ -z "$APP_PATH" ]]; then
+            echo "[ERROR] heelonvault.exe introuvable après installation MSI"
+            ls -la "/c/Program Files" | head -100 || true
+            ls -la "/c/Program Files (x86)" | head -100 || true
+            exit 1
+          fi
+
+          "$APP_PATH" --version
 
       - name: Compute MSI checksum
         run: sha256sum heelonvault-windows-x86_64.msi > heelonvault-windows-x86_64.msi.sha256
