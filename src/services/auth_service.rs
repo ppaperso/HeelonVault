@@ -14,8 +14,8 @@ struct UserCredentialRecord {
     password_hash: SecretBox<Vec<u8>>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait AuthService {
+#[trait_variant::make(AuthService: Send)]
+pub trait LocalAuthService {
     async fn create_user(
         &self,
         username: &str,
@@ -360,8 +360,8 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{AuthService, AuthServiceImpl};
     use crate::services::crypto_service::CryptoServiceImpl;
     use secrecy::SecretBox;

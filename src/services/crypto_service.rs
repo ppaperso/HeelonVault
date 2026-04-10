@@ -36,8 +36,8 @@ pub struct EncryptedPayload {
     pub ciphertext: SecretBox<Vec<u8>>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait CryptoService {
+#[trait_variant::make(CryptoService: Send)]
+pub trait LocalCryptoService {
     async fn generate_kdf_salt(&self) -> Result<SecretBox<Vec<u8>>, AppError>;
     async fn derive_key(
         &self,

@@ -28,8 +28,8 @@ pub struct BootstrapResult {
     pub master_key: SecretBox<Vec<u8>>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait AdminService {
+#[trait_variant::make(AdminService: Send)]
+pub trait LocalAdminService {
     /// Create a new user account.
     /// - Registers credentials in the in-memory AuthService
     /// - Persists the user row and password envelope in the DB

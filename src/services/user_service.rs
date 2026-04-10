@@ -17,8 +17,8 @@ pub struct UserProfileUpdate {
     pub current_password: Option<SecretBox<Vec<u8>>>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait UserService {
+#[trait_variant::make(UserService: Send)]
+pub trait LocalUserService {
     async fn get_user_profile(&self, user_id: Uuid) -> Result<User, AppError>;
     async fn get_user_profile_by_username(&self, username: &str) -> Result<User, AppError>;
     async fn resolve_username_for_login_identifier(

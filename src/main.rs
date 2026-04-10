@@ -94,10 +94,6 @@ impl SqlxVaultEnvelopeRepository {
     fn new(pool: SqlitePool) -> Self {
         Self { pool }
     }
-
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
 }
 
 impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
@@ -108,14 +104,11 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
         let row_opt = sqlx::query("SELECT vault_key_envelope FROM vaults WHERE id = ?1")
             .bind(vault_id.to_string())
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|error| Self::map_storage_err("get vault key envelope", error))?;
+            .await?;
 
         match row_opt {
             Some(row) => {
-                let envelope_bytes: Option<Vec<u8>> = row
-                    .try_get("vault_key_envelope")
-                    .map_err(|error| Self::map_storage_err("read vault key envelope", error))?;
+                let envelope_bytes: Option<Vec<u8>> = row.try_get("vault_key_envelope")?;
                 Ok(envelope_bytes.map(|bytes| SecretBox::new(Box::new(bytes))))
             }
             None => Ok(None),
@@ -139,10 +132,8 @@ struct AppContext {
     audit_service: Arc<AuditService>,
     admin_service: Arc<AdminServiceHandle>,
     team_service: Arc<TeamServiceHandle>,
-    #[allow(dead_code)]
-    backup_app_service: Arc<BackupApplicationServiceHandle>,
-    #[allow(dead_code)]
-    license_service: Arc<LicenseService>,
+    _backup_app_service: Arc<BackupApplicationServiceHandle>,
+    _license_service: Arc<LicenseService>,
     _password_service: PasswordServiceImpl,
 }
 
@@ -216,12 +207,16 @@ impl Write for DailyLogFileWriter {
 }
 
 fn main() -> Result<()> {
+    let args: Vec<String> = env::args().collect();
+
     // Lightweight --version flag for installer smoke tests and scripting.
     // Must run before GTK/GLib initialisation (which requires a display).
-    if std::env::args().any(|a| a == "--version") {
+    if args.iter().any(|arg| arg == "--version") {
         println!("{}", env!("CARGO_PKG_VERSION"));
         return Ok(());
     }
+
+    let startup_check_only = args.iter().any(|arg| arg == "--startup-check");
 
     let _logging_guard = init_logging()?;
     register_resources()?;
@@ -238,6 +233,15 @@ fn main() -> Result<()> {
         AppStartMode::Ready(ctx) => (Arc::new(ctx), false),
         AppStartMode::NeedsBootstrap(ctx) => (Arc::new(ctx), true),
     };
+
+    if startup_check_only {
+        info!(
+            needs_bootstrap = start_needs_bootstrap,
+            "startup check completed successfully"
+        );
+        println!("startup-check: ok");
+        return Ok(());
+    }
 
     let application = adw::Application::builder()
         .application_id(APP_ID)
@@ -315,7 +319,7 @@ fn main() -> Result<()> {
                 None
             };
             let login_license_badge_text = context_for_login
-                .license_service
+                ._license_service
                 .get_cached()
                 .map(|license| match license.tier {
                     heelonvault_rust::models::LicenseTier::Community => "Licence free".to_string(),
@@ -423,7 +427,7 @@ fn main() -> Result<()> {
 
                     let main_window_build_started = Instant::now();
                     let license_badge_text = context_for_success
-                        .license_service
+                        ._license_service
                         .get_cached()
                         .map(|license| match license.tier {
                             heelonvault_rust::models::LicenseTier::Community => {
@@ -445,10 +449,10 @@ fn main() -> Result<()> {
                         Arc::clone(&context_for_success.totp_service),
                         Arc::clone(&context_for_success.auth_policy_service),
                         Arc::clone(&context_for_success.backup_service),
-                        Arc::clone(&context_for_success.backup_app_service),
+                        Arc::clone(&context_for_success._backup_app_service),
                         Arc::clone(&context_for_success.import_service),
                         Arc::clone(&context_for_success.audit_service),
-                        Arc::clone(&context_for_success.license_service),
+                        Arc::clone(&context_for_success._license_service),
                         context_for_success.pool.clone(),
                         context_for_success.database_path.clone(),
                         session_user_id,
@@ -636,11 +640,15 @@ fn init_logging() -> Result<WorkerGuard> {
     let env_filter = EnvFilter::try_new(filter_spec.clone())
         .with_context(|| format!("invalid log level/filter: {filter_spec}"))?;
 
-    let log_dir = env::var("HEELONVAULT_LOG_DIR")
+    let log_dir_path = if let Some(path_raw) = env::var("HEELONVAULT_LOG_DIR")
         .ok()
         .filter(|value| !value.trim().is_empty())
-        .unwrap_or_else(|| "logs".to_string());
-    let log_dir_path = PathBuf::from(&log_dir);
+    {
+        PathBuf::from(path_raw)
+    } else {
+        let current_dir = env::current_dir().context("failed to resolve current directory")?;
+        resolve_default_log_dir(&current_dir)
+    };
     fs::create_dir_all(&log_dir_path)
         .with_context(|| format!("failed to create log directory {}", log_dir_path.display()))?;
 
@@ -839,8 +847,8 @@ async fn initialize_app_context() -> Result<AppStartMode> {
         audit_service,
         admin_service,
         team_service,
-        backup_app_service,
-        license_service,
+        _backup_app_service: backup_app_service,
+        _license_service: license_service,
         _password_service: password_service,
     };
     if needs_bootstrap {
@@ -851,14 +859,14 @@ async fn initialize_app_context() -> Result<AppStartMode> {
 }
 #[cfg(test)]
 mod tests {
-    use super::resolve_default_database_path;
+    use super::{resolve_default_database_path_for, resolve_default_log_dir_for};
     use std::path::Path;
 
     #[test]
     fn default_database_path_uses_root_data_when_cwd_is_project_root() {
         let project_root = Path::new("/tmp/heelonvault");
         assert_eq!(
-            resolve_default_database_path(project_root),
+            resolve_default_database_path_for(project_root, None),
             project_root.join("data").join("heelonvault-rust-dev.db")
         );
     }
@@ -867,10 +875,34 @@ mod tests {
     fn default_database_path_uses_parent_data_when_cwd_is_rust_dir() {
         let rust_dir = Path::new("/tmp/heelonvault/rust");
         assert_eq!(
-            resolve_default_database_path(rust_dir),
+            resolve_default_database_path_for(rust_dir, None),
             Path::new("/tmp/heelonvault")
                 .join("data")
                 .join("heelonvault-rust-dev.db")
+        );
+    }
+
+    #[test]
+    fn windows_database_path_uses_local_app_data_layout() {
+        let project_root = Path::new("C:/Program Files/HeelonVault");
+        let runtime_root = Some(Path::new("C:/Users/test/AppData/Local/heelonvault").to_path_buf());
+
+        assert_eq!(
+            resolve_default_database_path_for(project_root, runtime_root),
+            Path::new("C:/Users/test/AppData/Local/heelonvault")
+                .join("data")
+                .join("heelonvault-rust.db")
+        );
+    }
+
+    #[test]
+    fn windows_log_dir_uses_local_app_data_layout() {
+        let project_root = Path::new("C:/Program Files/HeelonVault");
+        let runtime_root = Some(Path::new("C:/Users/test/AppData/Local/heelonvault").to_path_buf());
+
+        assert_eq!(
+            resolve_default_log_dir_for(project_root, runtime_root),
+            Path::new("C:/Users/test/AppData/Local/heelonvault").join("logs")
         );
     }
 }
@@ -1115,6 +1147,17 @@ fn resolve_database_path() -> Result<PathBuf> {
 }
 
 fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
+    resolve_default_database_path_for(current_dir, resolve_windows_runtime_root())
+}
+
+fn resolve_default_database_path_for(
+    current_dir: &Path,
+    windows_runtime_root: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(runtime_root) = windows_runtime_root {
+        return runtime_root.join("data").join("heelonvault-rust.db");
+    }
+
     let db_name = "heelonvault-rust-dev.db";
     if current_dir.file_name().is_some_and(|name| name == "rust") {
         if let Some(project_root) = current_dir.parent() {
@@ -1123,4 +1166,27 @@ fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
     }
 
     current_dir.join("data").join(db_name)
+}
+
+fn resolve_default_log_dir(current_dir: &Path) -> PathBuf {
+    resolve_default_log_dir_for(current_dir, resolve_windows_runtime_root())
+}
+
+fn resolve_default_log_dir_for(
+    current_dir: &Path,
+    windows_runtime_root: Option<PathBuf>,
+) -> PathBuf {
+    if let Some(runtime_root) = windows_runtime_root {
+        return runtime_root.join("logs");
+    }
+
+    current_dir.join("logs")
+}
+
+fn resolve_windows_runtime_root() -> Option<PathBuf> {
+    if cfg!(target_os = "windows") {
+        dirs::data_local_dir().map(|path| path.join("heelonvault"))
+    } else {
+        None
+    }
 }

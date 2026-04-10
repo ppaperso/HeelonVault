@@ -23,8 +23,8 @@ pub struct TotpSetupPayload {
     pub qr_png: Vec<u8>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait TotpService {
+#[trait_variant::make(TotpService: Send)]
+pub trait LocalTotpService {
     async fn is_totp_enabled_for_user_id(&self, user_id: Uuid) -> Result<bool, AppError>;
     async fn is_totp_enabled_for_username(&self, username: &str) -> Result<bool, AppError>;
     fn create_setup_payload(&self, account_name: &str) -> Result<TotpSetupPayload, AppError>;
@@ -78,10 +78,6 @@ where
             crypto_service,
             issuer: issuer.into(),
         }
-    }
-
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
     }
 
     fn build_totp(&self, account_name: &str, base32_secret: &str) -> Result<TOTP, AppError> {
@@ -165,14 +161,11 @@ where
         let row_opt = sqlx::query("SELECT totp_secret FROM users WHERE username = ?1")
             .bind(username)
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|error| Self::map_storage_err("get totp secret by username", error))?;
+            .await?;
 
         match row_opt {
             Some(row) => {
-                let bytes: Option<Vec<u8>> = row
-                    .try_get("totp_secret")
-                    .map_err(|error| Self::map_storage_err("read totp_secret", error))?;
+                let bytes: Option<Vec<u8>> = row.try_get("totp_secret")?;
                 Ok(bytes.map(|value| SecretBox::new(Box::new(value))))
             }
             None => Ok(None),
@@ -186,14 +179,11 @@ where
         let row_opt = sqlx::query("SELECT totp_secret FROM users WHERE id = ?1")
             .bind(user_id.to_string())
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|error| Self::map_storage_err("get totp secret by user id", error))?;
+            .await?;
 
         match row_opt {
             Some(row) => {
-                let bytes: Option<Vec<u8>> = row
-                    .try_get("totp_secret")
-                    .map_err(|error| Self::map_storage_err("read totp_secret", error))?;
+                let bytes: Option<Vec<u8>> = row.try_get("totp_secret")?;
                 Ok(bytes.map(|value| SecretBox::new(Box::new(value))))
             }
             None => Ok(None),
@@ -283,7 +273,7 @@ where
         let password_envelope = self.auth_service.get_password_envelope(username).await?;
         let key = Self::derive_key_from_password_envelope(&password_envelope)?;
 
-        let is_code_valid = self.verify_setup_code(username, base32_secret, code)?;
+        let is_code_valid = TotpService::verify_setup_code(self, username, base32_secret, code)?;
         if !is_code_valid {
             return Err(AppError::Authorization(AccessDeniedReason::InvalidTotpCode));
         }
@@ -301,8 +291,7 @@ where
             .bind(envelope.expose_secret().as_slice())
             .bind(user_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|error| Self::map_storage_err("enable totp", error))?;
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -317,8 +306,7 @@ where
         let result = sqlx::query("UPDATE users SET totp_secret = NULL WHERE id = ?1")
             .bind(user_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|error| Self::map_storage_err("disable totp", error))?;
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(

@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::models::{Team, TeamMember, TeamMemberRole};
 
-#[allow(async_fn_in_trait)]
-pub trait TeamRepository {
+#[trait_variant::make(TeamRepository: Send)]
+pub trait LocalTeamRepository {
     async fn create_team(
         &self,
         id: Uuid,
@@ -44,36 +44,24 @@ impl SqlxTeamRepository {
         Self { pool }
     }
 
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
-
     fn parse_member_role(raw: &str) -> Result<TeamMemberRole, AppError> {
         TeamMemberRole::from_db_str(raw)
             .map_err(|err| AppError::Storage(format!("invalid team member role in storage: {err}")))
     }
 
     fn row_to_team(row: &sqlx::sqlite::SqliteRow) -> Result<Team, AppError> {
-        let id_str: String = row
-            .try_get("id")
-            .map_err(|err| Self::map_storage_err("read team id", err))?;
-        let name: String = row
-            .try_get("name")
-            .map_err(|err| Self::map_storage_err("read team name", err))?;
-        let created_by_str: Option<String> = row
-            .try_get("created_by")
-            .map_err(|err| Self::map_storage_err("read team created_by", err))?;
-        let created_at: String = row
-            .try_get("created_at")
-            .map_err(|err| Self::map_storage_err("read team created_at", err))?;
+        let id_str: String = row.try_get("id")?;
+        let name: String = row.try_get("name")?;
+        let created_by_str: Option<String> = row.try_get("created_by")?;
+        let created_at: String = row.try_get("created_at")?;
 
-        let id =
-            Uuid::parse_str(&id_str).map_err(|err| Self::map_storage_err("parse team id", err))?;
+        let id = Uuid::parse_str(&id_str)
+            .map_err(|err| AppError::Storage(format!("parse team id: {err}")))?;
         let created_by = created_by_str
             .as_deref()
             .map(Uuid::parse_str)
             .transpose()
-            .map_err(|err| Self::map_storage_err("parse team created_by", err))?;
+            .map_err(|err| AppError::Storage(format!("parse team created_by: {err}")))?;
 
         Ok(Team {
             id,
@@ -101,14 +89,12 @@ impl TeamRepository for SqlxTeamRepository {
             .bind(name)
             .bind(created_by.map(|u| u.to_string()))
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("create team", err))?;
+            .await?;
 
         let row = sqlx::query("SELECT id, name, created_by, created_at FROM teams WHERE id = ?1")
             .bind(id.to_string())
             .fetch_one(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("fetch created team", err))?;
+            .await?;
 
         Self::row_to_team(&row)
     }
@@ -118,8 +104,7 @@ impl TeamRepository for SqlxTeamRepository {
             sqlx::query("SELECT id, name, created_by, created_at FROM teams WHERE id = ?1")
                 .bind(team_id.to_string())
                 .fetch_optional(&self.pool)
-                .await
-                .map_err(|err| Self::map_storage_err("get team by id", err))?;
+                .await?;
 
         match row_opt {
             Some(row) => Ok(Some(Self::row_to_team(&row)?)),
@@ -130,8 +115,7 @@ impl TeamRepository for SqlxTeamRepository {
     async fn list_all(&self) -> Result<Vec<Team>, AppError> {
         let rows = sqlx::query("SELECT id, name, created_by, created_at FROM teams ORDER BY name")
             .fetch_all(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("list all teams", err))?;
+            .await?;
 
         rows.iter().map(Self::row_to_team).collect()
     }
@@ -146,8 +130,7 @@ impl TeamRepository for SqlxTeamRepository {
         )
         .bind(user_id.to_string())
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list teams for user", err))?;
+        .await?;
 
         rows.iter().map(Self::row_to_team).collect()
     }
@@ -156,8 +139,7 @@ impl TeamRepository for SqlxTeamRepository {
         let result = sqlx::query("DELETE FROM teams WHERE id = ?1")
             .bind(team_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("delete team", err))?;
+            .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(
                 "team not found for deletion".to_string(),
@@ -180,8 +162,7 @@ impl TeamRepository for SqlxTeamRepository {
         .bind(user_id.to_string())
         .bind(role.to_db_str())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("add team member", err))?;
+        .await?;
         Ok(())
     }
 
@@ -190,8 +171,7 @@ impl TeamRepository for SqlxTeamRepository {
             .bind(team_id.to_string())
             .bind(user_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("remove team member", err))?;
+            .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(
                 "team membership not found for removal".to_string(),
@@ -207,29 +187,20 @@ impl TeamRepository for SqlxTeamRepository {
         )
         .bind(team_id.to_string())
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list team members", err))?;
+        .await?;
 
         let mut members = Vec::with_capacity(rows.len());
         for row in &rows {
-            let team_id_str: String = row
-                .try_get("team_id")
-                .map_err(|err| Self::map_storage_err("read team_id", err))?;
-            let user_id_str: String = row
-                .try_get("user_id")
-                .map_err(|err| Self::map_storage_err("read user_id", err))?;
-            let role_raw: String = row
-                .try_get("role")
-                .map_err(|err| Self::map_storage_err("read member role", err))?;
-            let joined_at: String = row
-                .try_get("joined_at")
-                .map_err(|err| Self::map_storage_err("read joined_at", err))?;
+            let team_id_str: String = row.try_get("team_id")?;
+            let user_id_str: String = row.try_get("user_id")?;
+            let role_raw: String = row.try_get("role")?;
+            let joined_at: String = row.try_get("joined_at")?;
 
             members.push(TeamMember {
                 team_id: Uuid::parse_str(&team_id_str)
-                    .map_err(|err| Self::map_storage_err("parse team_id", err))?,
+                    .map_err(|err| AppError::Storage(format!("parse team_id: {err}")))?,
                 user_id: Uuid::parse_str(&user_id_str)
-                    .map_err(|err| Self::map_storage_err("parse user_id", err))?,
+                    .map_err(|err| AppError::Storage(format!("parse user_id: {err}")))?,
                 role: Self::parse_member_role(&role_raw)?,
                 joined_at,
             });
@@ -247,14 +218,11 @@ impl TeamRepository for SqlxTeamRepository {
                 .bind(team_id.to_string())
                 .bind(user_id.to_string())
                 .fetch_optional(&self.pool)
-                .await
-                .map_err(|err| Self::map_storage_err("get member role", err))?;
+                .await?;
 
         match row_opt {
             Some(row) => {
-                let role_raw: String = row
-                    .try_get("role")
-                    .map_err(|err| Self::map_storage_err("read member role", err))?;
+                let role_raw: String = row.try_get("role")?;
                 Ok(Some(Self::parse_member_role(&role_raw)?))
             }
             None => Ok(None),
@@ -265,17 +233,14 @@ impl TeamRepository for SqlxTeamRepository {
         let rows = sqlx::query("SELECT user_id FROM team_members WHERE team_id = ?1")
             .bind(team_id.to_string())
             .fetch_all(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("list member user ids", err))?;
+            .await?;
 
         let mut ids = Vec::with_capacity(rows.len());
         for row in &rows {
-            let user_id_str: String = row
-                .try_get("user_id")
-                .map_err(|err| Self::map_storage_err("read user_id for ids", err))?;
+            let user_id_str: String = row.try_get("user_id")?;
             ids.push(
                 Uuid::parse_str(&user_id_str)
-                    .map_err(|err| Self::map_storage_err("parse user_id for ids", err))?,
+                    .map_err(|err| AppError::Storage(format!("parse user_id for ids: {err}")))?,
             );
         }
         Ok(ids)
@@ -285,17 +250,14 @@ impl TeamRepository for SqlxTeamRepository {
         let rows = sqlx::query("SELECT team_id FROM team_members WHERE user_id = ?1")
             .bind(user_id.to_string())
             .fetch_all(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("list team ids for user", err))?;
+            .await?;
 
         let mut ids = Vec::with_capacity(rows.len());
         for row in &rows {
-            let team_id_str: String = row
-                .try_get("team_id")
-                .map_err(|err| Self::map_storage_err("read team_id for user", err))?;
+            let team_id_str: String = row.try_get("team_id")?;
             ids.push(
                 Uuid::parse_str(&team_id_str)
-                    .map_err(|err| Self::map_storage_err("parse team_id for user", err))?,
+                    .map_err(|err| AppError::Storage(format!("parse team_id for user: {err}")))?,
             );
         }
         Ok(ids)
@@ -303,8 +265,8 @@ impl TeamRepository for SqlxTeamRepository {
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{SqlxTeamRepository, TeamRepository};
     use crate::models::TeamMemberRole;
     use sqlx::sqlite::SqlitePoolOptions;

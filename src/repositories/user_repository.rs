@@ -5,8 +5,8 @@ use secrecy::SecretBox;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-#[allow(async_fn_in_trait)]
-pub trait UserRepository {
+#[trait_variant::make(UserRepository: Send)]
+pub trait LocalUserRepository {
     async fn get_by_id(&self, user_id: Uuid) -> Result<Option<User>, AppError>;
     async fn get_by_username(&self, username: &str) -> Result<Option<User>, AppError>;
     async fn resolve_username_for_login_identifier(
@@ -63,10 +63,6 @@ impl SqlxUserRepository {
         Self { pool }
     }
 
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
-
     fn parse_role(role: &str) -> Result<UserRole, AppError> {
         match role {
             "user" => Ok(UserRole::User),
@@ -92,38 +88,21 @@ impl UserRepository for SqlxUserRepository {
         )
             .bind(user_id.to_string())
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("get user by id", err))?;
+            .await?;
 
         match row_opt {
             Some(row) => {
-                let id_str: String = row
-                    .try_get("id")
-                    .map_err(|err| Self::map_storage_err("read user id", err))?;
-                let username: String = row
-                    .try_get("username")
-                    .map_err(|err| Self::map_storage_err("read username", err))?;
-                let role_raw: String = row
-                    .try_get("role")
-                    .map_err(|err| Self::map_storage_err("read role", err))?;
-                let email: Option<String> = row
-                    .try_get("email")
-                    .map_err(|err| Self::map_storage_err("read email", err))?;
-                let display_name: Option<String> = row
-                    .try_get("display_name")
-                    .map_err(|err| Self::map_storage_err("read display_name", err))?;
-                let preferred_language: String = row
-                    .try_get("preferred_language")
-                    .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
-                let show_passwords_in_edit: i64 = row
-                    .try_get("show_passwords_in_edit")
-                    .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
-                let updated_at: Option<String> = row
-                    .try_get("updated_at")
-                    .map_err(|err| Self::map_storage_err("read updated_at", err))?;
+                let id_str: String = row.try_get("id")?;
+                let username: String = row.try_get("username")?;
+                let role_raw: String = row.try_get("role")?;
+                let email: Option<String> = row.try_get("email")?;
+                let display_name: Option<String> = row.try_get("display_name")?;
+                let preferred_language: String = row.try_get("preferred_language")?;
+                let show_passwords_in_edit: i64 = row.try_get("show_passwords_in_edit")?;
+                let updated_at: Option<String> = row.try_get("updated_at")?;
 
                 let parsed_id = Uuid::parse_str(&id_str)
-                    .map_err(|err| Self::map_storage_err("parse user id", err))?;
+                    .map_err(|err| AppError::Storage(format!("parse user id: {err}")))?;
                 let role = Self::parse_role(&role_raw)?;
 
                 Ok(Some(User {
@@ -147,38 +126,21 @@ impl UserRepository for SqlxUserRepository {
         )
         .bind(username)
         .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("get user by username", err))?;
+        .await?;
 
         match row_opt {
             Some(row) => {
-                let id_str: String = row
-                    .try_get("id")
-                    .map_err(|err| Self::map_storage_err("read user id", err))?;
-                let stored_username: String = row
-                    .try_get("username")
-                    .map_err(|err| Self::map_storage_err("read username", err))?;
-                let role_raw: String = row
-                    .try_get("role")
-                    .map_err(|err| Self::map_storage_err("read role", err))?;
-                let email: Option<String> = row
-                    .try_get("email")
-                    .map_err(|err| Self::map_storage_err("read email", err))?;
-                let display_name: Option<String> = row
-                    .try_get("display_name")
-                    .map_err(|err| Self::map_storage_err("read display_name", err))?;
-                let preferred_language: String = row
-                    .try_get("preferred_language")
-                    .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
-                let show_passwords_in_edit: i64 = row
-                    .try_get("show_passwords_in_edit")
-                    .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
-                let updated_at: Option<String> = row
-                    .try_get("updated_at")
-                    .map_err(|err| Self::map_storage_err("read updated_at", err))?;
+                let id_str: String = row.try_get("id")?;
+                let stored_username: String = row.try_get("username")?;
+                let role_raw: String = row.try_get("role")?;
+                let email: Option<String> = row.try_get("email")?;
+                let display_name: Option<String> = row.try_get("display_name")?;
+                let preferred_language: String = row.try_get("preferred_language")?;
+                let show_passwords_in_edit: i64 = row.try_get("show_passwords_in_edit")?;
+                let updated_at: Option<String> = row.try_get("updated_at")?;
 
                 let parsed_id = Uuid::parse_str(&id_str)
-                    .map_err(|err| Self::map_storage_err("parse user id", err))?;
+                    .map_err(|err| AppError::Storage(format!("parse user id: {err}")))?;
                 let role = Self::parse_role(&role_raw)?;
 
                 Ok(Some(User {
@@ -233,14 +195,11 @@ impl UserRepository for SqlxUserRepository {
         )
         .bind(normalized_identifier)
         .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("resolve username for login identifier", err))?;
+        .await?;
 
         match row_opt {
             Some(row) => {
-                let username: String = row
-                    .try_get("username")
-                    .map_err(|err| Self::map_storage_err("read resolved username", err))?;
+                let username: String = row.try_get("username")?;
                 Ok(Some(username))
             }
             None => Ok(None),
@@ -254,14 +213,11 @@ impl UserRepository for SqlxUserRepository {
         let row_opt = sqlx::query("SELECT password_envelope FROM users WHERE id = ?1")
             .bind(user_id.to_string())
             .fetch_optional(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("get password envelope by user id", err))?;
+            .await?;
 
         match row_opt {
             Some(row) => {
-                let envelope_bytes: Option<Vec<u8>> = row
-                    .try_get("password_envelope")
-                    .map_err(|err| Self::map_storage_err("read password envelope", err))?;
+                let envelope_bytes: Option<Vec<u8>> = row.try_get("password_envelope")?;
                 Ok(envelope_bytes.map(|value| SecretBox::new(Box::new(value))))
             }
             None => Ok(None),
@@ -291,8 +247,7 @@ impl UserRepository for SqlxUserRepository {
         .bind(show_passwords_in_edit.map(|value| if value { 1_i64 } else { 0_i64 }))
         .bind(user_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("update user profile", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -312,8 +267,7 @@ impl UserRepository for SqlxUserRepository {
             .bind(encrypted_password_envelope.expose_secret().as_slice())
             .bind(user_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("update password envelope", err))?;
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -333,8 +287,7 @@ impl UserRepository for SqlxUserRepository {
             .bind(encrypted_totp_secret_envelope.expose_secret().as_slice())
             .bind(user_id.to_string())
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("update totp secret envelope", err))?;
+            .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -359,8 +312,7 @@ impl UserRepository for SqlxUserRepository {
         .bind(if show_passwords_in_edit { 1_i64 } else { 0_i64 })
         .bind(user_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("update show_passwords_in_edit", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -379,37 +331,20 @@ impl UserRepository for SqlxUserRepository {
              FROM users ORDER BY username",
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list all users", err))?;
+        .await?;
 
         let mut users = Vec::with_capacity(rows.len());
         for row in rows {
-            let id_str: String = row
-                .try_get("id")
-                .map_err(|err| Self::map_storage_err("read user id", err))?;
-            let username: String = row
-                .try_get("username")
-                .map_err(|err| Self::map_storage_err("read username", err))?;
-            let role_raw: String = row
-                .try_get("role")
-                .map_err(|err| Self::map_storage_err("read role", err))?;
-            let email: Option<String> = row
-                .try_get("email")
-                .map_err(|err| Self::map_storage_err("read email", err))?;
-            let display_name: Option<String> = row
-                .try_get("display_name")
-                .map_err(|err| Self::map_storage_err("read display_name", err))?;
-            let preferred_language: String = row
-                .try_get("preferred_language")
-                .map_err(|err| Self::map_storage_err("read preferred_language", err))?;
-            let show_passwords_in_edit: i64 = row
-                .try_get("show_passwords_in_edit")
-                .map_err(|err| Self::map_storage_err("read show_passwords_in_edit", err))?;
-            let updated_at: Option<String> = row
-                .try_get("updated_at")
-                .map_err(|err| Self::map_storage_err("read updated_at", err))?;
+            let id_str: String = row.try_get("id")?;
+            let username: String = row.try_get("username")?;
+            let role_raw: String = row.try_get("role")?;
+            let email: Option<String> = row.try_get("email")?;
+            let display_name: Option<String> = row.try_get("display_name")?;
+            let preferred_language: String = row.try_get("preferred_language")?;
+            let show_passwords_in_edit: i64 = row.try_get("show_passwords_in_edit")?;
+            let updated_at: Option<String> = row.try_get("updated_at")?;
             let parsed_id = Uuid::parse_str(&id_str)
-                .map_err(|err| Self::map_storage_err("parse user id", err))?;
+                .map_err(|err| AppError::Storage(format!("parse user id: {err}")))?;
             let role = Self::parse_role(&role_raw)?;
             users.push(User {
                 id: parsed_id,
@@ -436,8 +371,7 @@ impl UserRepository for SqlxUserRepository {
             .bind(username)
             .bind(Self::format_role(role))
             .execute(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("create user in db", err))?;
+            .await?;
         Ok(())
     }
 
@@ -447,26 +381,20 @@ impl UserRepository for SqlxUserRepository {
         let exists = sqlx::query_scalar::<_, i64>("SELECT COUNT(*) FROM users WHERE id = ?1")
             .bind(&user_id_str)
             .fetch_one(&self.pool)
-            .await
-            .map_err(|err| Self::map_storage_err("check user exists before delete", err))?;
+            .await?;
         if exists == 0 {
             return Err(AppError::NotFound(
                 "user not found for deletion".to_string(),
             ));
         }
 
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|err| Self::map_storage_err("begin transaction for delete user", err))?;
+        let mut tx = self.pool.begin().await?;
 
         // login_history has no ON DELETE CASCADE — must be cleaned up manually
         sqlx::query("DELETE FROM login_history WHERE user_id = ?1")
             .bind(&user_id_str)
             .execute(&mut *tx)
-            .await
-            .map_err(|err| Self::map_storage_err("delete login history for user", err))?;
+            .await?;
 
         // All other FK references cascade automatically (vaults → secret_items,
         // team_members, vault_key_shares) or are SET NULL (audit_log, teams.created_by,
@@ -474,12 +402,9 @@ impl UserRepository for SqlxUserRepository {
         sqlx::query("DELETE FROM users WHERE id = ?1")
             .bind(&user_id_str)
             .execute(&mut *tx)
-            .await
-            .map_err(|err| Self::map_storage_err("delete user", err))?;
+            .await?;
 
-        tx.commit()
-            .await
-            .map_err(|err| Self::map_storage_err("commit delete user transaction", err))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -490,8 +415,7 @@ impl UserRepository for SqlxUserRepository {
                 .bind(Self::format_role(role))
                 .bind(user_id.to_string())
                 .execute(&self.pool)
-                .await
-                .map_err(|err| Self::map_storage_err("update user role", err))?;
+                .await?;
         if result.rows_affected() == 0 {
             return Err(AppError::NotFound(
                 "user not found for role update".to_string(),
@@ -506,17 +430,12 @@ impl UserRepository for SqlxUserRepository {
              WHERE password_envelope IS NOT NULL",
         )
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list all password envelopes", err))?;
+        .await?;
 
         let mut result = Vec::with_capacity(rows.len());
         for row in rows {
-            let username: String = row
-                .try_get("username")
-                .map_err(|err| Self::map_storage_err("read username for envelope", err))?;
-            let envelope: Vec<u8> = row
-                .try_get("password_envelope")
-                .map_err(|err| Self::map_storage_err("read password envelope", err))?;
+            let username: String = row.try_get("username")?;
+            let envelope: Vec<u8> = row.try_get("password_envelope")?;
             result.push((username, envelope));
         }
         Ok(result)
@@ -524,8 +443,8 @@ impl UserRepository for SqlxUserRepository {
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{SqlxUserRepository, UserRepository};
     use crate::errors::AppError;
     use crate::models::UserRole;

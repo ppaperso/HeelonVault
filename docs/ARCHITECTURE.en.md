@@ -2,7 +2,7 @@
 
 Language: EN | [FR](ARCHITECTURE.md)
 
-Documented target version: `1.0.1`
+Documented target version: `1.0.3`
 
 ## Overview
 

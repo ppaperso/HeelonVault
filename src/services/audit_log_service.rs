@@ -7,8 +7,8 @@ use crate::repositories::user_repository::UserRepository;
 
 // ── trait ─────────────────────────────────────────────────────────────────────
 
-#[allow(async_fn_in_trait)]
-pub trait AuditLogService {
+#[trait_variant::make(AuditLogService: Send)]
+pub trait LocalAuditLogService {
     async fn record_event(
         &self,
         actor_user_id: Option<Uuid>,
@@ -147,8 +147,8 @@ where
 // ── unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 

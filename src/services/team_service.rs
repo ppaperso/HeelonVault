@@ -29,8 +29,8 @@ pub struct KeyRotationResult {
 
 // ── trait ─────────────────────────────────────────────────────────────────────
 
-#[allow(async_fn_in_trait)]
-pub trait TeamService {
+#[trait_variant::make(TeamService: Send)]
+pub trait LocalTeamService {
     async fn create_team(&self, creator_id: Uuid, name: &str) -> Result<Team, AppError>;
 
     async fn delete_team(&self, requester_id: Uuid, team_id: Uuid) -> Result<(), AppError>;
@@ -654,8 +654,8 @@ fn generate_vault_key() -> Result<SecretBox<Vec<u8>>, AppError> {
 // ── unit tests ────────────────────────────────────────────────────────────────
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use std::collections::HashMap;
     use std::sync::MutexGuard;
     use std::sync::{Arc, Mutex};

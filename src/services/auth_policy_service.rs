@@ -20,8 +20,8 @@ impl AuthPolicyState {
     }
 }
 
-#[allow(async_fn_in_trait)]
-pub trait AuthPolicyService {
+#[trait_variant::make(AuthPolicyService: Send)]
+pub trait LocalAuthPolicyService {
     async fn get_state(&self, username: &str) -> Result<AuthPolicyState, AppError>;
     async fn record_failed_attempt(&self, username: &str) -> Result<AuthPolicyState, AppError>;
     async fn reset_failed_attempts(&self, username: &str) -> Result<(), AppError>;
@@ -38,10 +38,6 @@ impl SqlxAuthPolicyService {
         Self { pool }
     }
 
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
-
     async fn ensure_row_exists(&self, username: &str) -> Result<(), AppError> {
         sqlx::query(
             "INSERT INTO auth_policy (username, failed_attempts, last_attempt_at)
@@ -50,8 +46,7 @@ impl SqlxAuthPolicyService {
         )
         .bind(username)
         .execute(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("ensure auth_policy row", error))?;
+        .await?;
 
         Ok(())
     }
@@ -96,15 +91,10 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         )
         .bind(username)
         .fetch_one(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("get auth_policy state", error))?;
+        .await?;
 
-        let failed_attempts: i64 = row
-            .try_get("failed_attempts")
-            .map_err(|error| Self::map_storage_err("read failed_attempts", error))?;
-        let last_attempt_at: Option<i64> = row
-            .try_get("last_attempt_at")
-            .map_err(|error| Self::map_storage_err("read last_attempt_at", error))?;
+        let failed_attempts: i64 = row.try_get("failed_attempts")?;
+        let last_attempt_at: Option<i64> = row.try_get("last_attempt_at")?;
 
         let now_ts = Utc::now().timestamp();
         Ok(AuthPolicyState {
@@ -137,10 +127,9 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         .bind(username)
         .bind(now_ts)
         .execute(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("record failed auth attempt", error))?;
+        .await?;
 
-        let state = self.get_state(username).await?;
+        let state = AuthPolicyService::get_state(self, username).await?;
         if state.failed_attempts == 3 || state.failed_attempts == 5 {
             error!(
                 username = %username,
@@ -164,10 +153,7 @@ impl AuthPolicyService for SqlxAuthPolicyService {
             sqlx::query_scalar("SELECT failed_attempts FROM auth_policy WHERE username = ?1")
                 .bind(username)
                 .fetch_one(&self.pool)
-                .await
-                .map_err(|error| {
-                    Self::map_storage_err("read failed attempts before reset", error)
-                })?;
+                .await?;
 
         sqlx::query(
             "UPDATE auth_policy
@@ -177,8 +163,7 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         )
         .bind(username)
         .execute(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("reset failed auth attempts", error))?;
+        .await?;
 
         info!(
             username = %username,
@@ -200,8 +185,7 @@ impl AuthPolicyService for SqlxAuthPolicyService {
             sqlx::query_scalar("SELECT auto_lock_delay_mins FROM auth_policy WHERE username = ?1")
                 .bind(username)
                 .fetch_optional(&self.pool)
-                .await
-                .map_err(|error| Self::map_storage_err("get auto_lock_delay_mins", error))?;
+                .await?;
 
         let delay = delay_opt.unwrap_or(DEFAULT_AUTO_LOCK_DELAY_MINS);
         if Self::is_allowed_auto_lock_delay(delay) {
@@ -233,8 +217,7 @@ impl AuthPolicyService for SqlxAuthPolicyService {
         .bind(username)
         .bind(mins)
         .execute(&self.pool)
-        .await
-        .map_err(|error| Self::map_storage_err("update auto_lock_delay_mins", error))?;
+        .await?;
 
         info!(username = %username, auto_lock_delay_mins = mins, "auto-lock delay updated");
         Ok(())

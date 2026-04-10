@@ -7,6 +7,27 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.3] — 2026-04-10
+
+### UI refactoring
+
+- Finalized the split of large Rust screens into dedicated modules for `login_dialog`, `main_window`, `profile_view`, and related flows.
+- Kept the maintainability constraint satisfied: no active UI Rust file above 800 lines.
+- Extracted sizing helpers and UI subcomponents to reduce local coupling and clarify responsibilities.
+
+### Technical cleanup
+
+- Removed unreferenced intermediate split files left behind during the refactor.
+- Verified that `resources/images/user-guide` images remain documentation-only assets and are not unintentionally bundled at runtime.
+
+### Validation
+
+- Validated the release state with `cargo check`, `cargo clippy`, `cargo test`, and `cargo fmt --all -- --check`.
+
+### Version
+
+- Bumped application and documentation version to **1.0.3**.
+
 ## [1.0.1] — 2026-04-06
 
 ### Product documentation
@@ -20,7 +41,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 - Added a shared smoke test (`tests/smoke-test.sh`) with `--install/--remove`, permissions checks, and desktop-entry validation.
 - Hardened CI/Release workflows: Rust cache, Fedora container job, external `.sha256` checksum asset, build provenance attestation, and core script inclusion in `dist/`.
 
-### Version
+### Version1
 
 - Bumped application and documentation version to **1.0.1**.
 

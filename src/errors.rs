@@ -70,6 +70,10 @@ pub enum AppError {
     Conflict(String),
     #[error("storage error: {0}")]
     Storage(String),
+    #[error("database error: {0}")]
+    Database(#[from] sqlx::Error),
+    #[error("IO error: {0}")]
+    Io(#[from] std::io::Error),
     #[error("crypto error: {0}")]
     Crypto(String),
     #[error("authorization error: {0}")]

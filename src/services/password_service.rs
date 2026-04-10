@@ -13,8 +13,8 @@ const UPPERCASE_CHARSET: &[u8] = b"ABCDEFGHJKLMNPQRSTUVWXYZ";
 const DIGIT_CHARSET: &[u8] = b"23456789";
 const SYMBOL_CHARSET: &[u8] = b"!@#$%^&*()-_=+[]{}:;,.?/";
 
-#[allow(async_fn_in_trait)]
-pub trait PasswordService {
+#[trait_variant::make(PasswordService: Send)]
+pub trait LocalPasswordService {
     fn validate_password_policy(&self, password: &SecretBox<Vec<u8>>) -> Result<(), AppError>;
     fn score_password_strength(&self, password: &SecretBox<Vec<u8>>) -> Result<u8, AppError>;
     fn generate_password(&self, length: usize) -> Result<SecretBox<Vec<u8>>, AppError>;
@@ -252,7 +252,7 @@ impl PasswordService for PasswordServiceImpl {
         }
 
         let secret_password = SecretBox::new(Box::new(password));
-        self.validate_password_policy(&secret_password)?;
+        PasswordService::validate_password_policy(self, &secret_password)?;
         Ok(secret_password)
     }
 }

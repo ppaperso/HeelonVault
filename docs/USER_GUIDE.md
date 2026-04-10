@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](USER_GUIDE.en.md)
 
-Version cible documentée : `1.0.1`
+Version cible documentée : `1.0.3`
 
 ## Objectif
 

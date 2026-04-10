@@ -2,7 +2,7 @@
 
 Language: EN | [FR](USER_GUIDE.md)
 
-Documented target version: `1.0.1`
+Documented target version: `1.0.3`
 
 ## Purpose
 

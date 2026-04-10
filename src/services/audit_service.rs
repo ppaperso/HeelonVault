@@ -183,8 +183,7 @@ impl AuditService {
         .bind(target_id_str)
         .bind(detail_str)
         .execute(self.db_pool.as_ref())
-        .await
-        .map_err(|e| AppError::Storage(format!("audit log insert: {}", e)))?;
+        .await?;
 
         Ok(())
     }

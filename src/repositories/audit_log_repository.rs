@@ -4,8 +4,8 @@ use uuid::Uuid;
 use crate::errors::AppError;
 use crate::models::{AuditAction, AuditLogEntry};
 
-#[allow(async_fn_in_trait)]
-pub trait AuditLogRepository {
+#[trait_variant::make(AuditLogRepository: Send)]
+pub trait LocalAuditLogRepository {
     /// Append a single audit record. Non-blocking for the caller: failures are
     /// logged but must not abort the originating operation.
     async fn append(
@@ -42,38 +42,20 @@ impl SqlxAuditLogRepository {
         Self { pool }
     }
 
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
-
     fn row_to_entry(row: &sqlx::sqlite::SqliteRow) -> Result<AuditLogEntry, AppError> {
-        let id: i64 = row
-            .try_get("id")
-            .map_err(|err| Self::map_storage_err("read audit id", err))?;
-        let actor_str: Option<String> = row
-            .try_get("actor_user_id")
-            .map_err(|err| Self::map_storage_err("read actor_user_id", err))?;
-        let action: String = row
-            .try_get("action")
-            .map_err(|err| Self::map_storage_err("read action", err))?;
-        let target_type: Option<String> = row
-            .try_get("target_type")
-            .map_err(|err| Self::map_storage_err("read target_type", err))?;
-        let target_id: Option<String> = row
-            .try_get("target_id")
-            .map_err(|err| Self::map_storage_err("read target_id", err))?;
-        let detail: Option<String> = row
-            .try_get("detail")
-            .map_err(|err| Self::map_storage_err("read detail", err))?;
-        let performed_at: String = row
-            .try_get("performed_at")
-            .map_err(|err| Self::map_storage_err("read performed_at", err))?;
+        let id: i64 = row.try_get("id")?;
+        let actor_str: Option<String> = row.try_get("actor_user_id")?;
+        let action: String = row.try_get("action")?;
+        let target_type: Option<String> = row.try_get("target_type")?;
+        let target_id: Option<String> = row.try_get("target_id")?;
+        let detail: Option<String> = row.try_get("detail")?;
+        let performed_at: String = row.try_get("performed_at")?;
 
         let actor_user_id = actor_str
             .as_deref()
             .map(Uuid::parse_str)
             .transpose()
-            .map_err(|err| Self::map_storage_err("parse actor_user_id", err))?;
+            .map_err(|err| AppError::Storage(format!("parse actor_user_id: {err}")))?;
 
         Ok(AuditLogEntry {
             id,
@@ -106,8 +88,7 @@ impl AuditLogRepository for SqlxAuditLogRepository {
         .bind(target_id)
         .bind(detail)
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("append audit log", err))?;
+        .await?;
         Ok(())
     }
 
@@ -118,8 +99,7 @@ impl AuditLogRepository for SqlxAuditLogRepository {
         )
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list recent audit log", err))?;
+        .await?;
 
         rows.iter().map(Self::row_to_entry).collect()
     }
@@ -137,8 +117,7 @@ impl AuditLogRepository for SqlxAuditLogRepository {
         .bind(actor_user_id.to_string())
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list audit log for actor", err))?;
+        .await?;
 
         rows.iter().map(Self::row_to_entry).collect()
     }
@@ -158,16 +137,15 @@ impl AuditLogRepository for SqlxAuditLogRepository {
         .bind(target_id)
         .bind(limit)
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list audit log for target", err))?;
+        .await?;
 
         rows.iter().map(Self::row_to_entry).collect()
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{AuditLogRepository, SqlxAuditLogRepository};
     use crate::models::AuditAction;
     use sqlx::sqlite::SqlitePoolOptions;

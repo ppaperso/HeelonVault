@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](UPDATE_GUIDE.en.md)
 
-Version documentée: `1.0.1`
+Version documentée: `1.0.3`
 
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 

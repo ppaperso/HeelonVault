@@ -10,10 +10,6 @@ pub struct LoginHistoryEntry {
     pub device_info: Option<String>,
 }
 
-fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-    AppError::Storage(format!("{context}: {}", error.to_string()))
-}
-
 pub async fn record_successful_login(
     pool: &SqlitePool,
     user_id: Uuid,
@@ -28,8 +24,7 @@ pub async fn record_successful_login(
     .bind(ip_address)
     .bind(device_info)
     .execute(pool)
-    .await
-    .map_err(|err| map_storage_err("insert login history", err))?;
+    .await?;
 
     Ok(())
 }
@@ -51,20 +46,13 @@ pub async fn list_recent_logins(
     .bind(user_id.to_string())
     .bind(safe_limit)
     .fetch_all(pool)
-    .await
-    .map_err(|err| map_storage_err("list login history", err))?;
+    .await?;
 
     let mut entries = Vec::with_capacity(rows.len());
     for row in rows {
-        let login_at: String = row
-            .try_get("login_at")
-            .map_err(|err| map_storage_err("read login_at", err))?;
-        let ip_address: Option<String> = row
-            .try_get("ip_address")
-            .map_err(|err| map_storage_err("read ip_address", err))?;
-        let device_info: Option<String> = row
-            .try_get("device_info")
-            .map_err(|err| map_storage_err("read device_info", err))?;
+        let login_at: String = row.try_get("login_at")?;
+        let ip_address: Option<String> = row.try_get("ip_address")?;
+        let device_info: Option<String> = row.try_get("device_info")?;
 
         entries.push(LoginHistoryEntry {
             login_at,

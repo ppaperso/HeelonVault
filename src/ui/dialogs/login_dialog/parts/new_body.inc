@@ -1,101 +1,9 @@
-#![allow(clippy::too_many_arguments)]
-
-use std::cell::{Cell, RefCell};
-use std::path::PathBuf;
-use std::rc::Rc;
-use std::sync::Arc;
-use std::time::Duration;
-use std::time::Instant;
-
-use gtk4::glib;
-use gtk4::prelude::*;
-use gtk4::{Align, InputPurpose, Justification, Orientation};
-use libadwaita as adw;
-use secrecy::SecretBox;
-use tokio::runtime::Handle;
-use tracing::info;
-use tracing::warn;
-use uuid::Uuid;
-
-use crate::errors::{AccessDeniedReason, AppError};
-use crate::i18n::I18nArg;
-use crate::services::admin_service::BootstrapResult;
-use crate::services::auth_policy_service::AuthPolicyService;
-use crate::services::auth_service::AuthService;
-use crate::services::totp_service::TotpService;
-use crate::services::user_service::UserService;
-use crate::ui::messages;
-use crate::ui::widgets::password_strength_bar::PasswordStrengthBar;
-
-pub struct LoginDialog {
-    window: gtk4::Window,
-}
-
-pub struct AuthenticatedSession {
-    pub user_id: Uuid,
-    pub username: String,
-    pub identity_label: String,
-    pub master_key: SecretBox<Vec<u8>>,
-}
-
-pub struct BootstrapServicesContext {
-    pub generate_recovery_key: Arc<dyn Fn() -> Result<String, AppError> + Send + Sync>,
-    pub do_bootstrap:
-        Arc<dyn Fn(String, Vec<u8>) -> Result<BootstrapResult, AppError> + Send + Sync>,
-}
-
-enum LoginAttemptOutcome {
-    Success(AuthenticatedSession),
-    InvalidCredentials { remaining_lock_secs: i64 },
-    InvalidTotp { remaining_lock_secs: i64 },
-    Locked { remaining_lock_secs: i64 },
-    RequiresTotp,
-}
-
-impl LoginDialog {
-    fn professional_customer_name(license_badge_text: &str) -> Option<String> {
-        for prefix in [
-            "Licence pro - ",
-            "Pro: ",
-            "Professional - ",
-            "Professional: ",
-        ] {
-            if let Some(customer_name) = license_badge_text.strip_prefix(prefix) {
-                let normalized = customer_name.trim();
-                if !normalized.is_empty() {
-                    return Some(normalized.to_ascii_uppercase());
-                }
-            }
-        }
-
-        None
-    }
-
-    pub fn new<TAuth, TPolicy, TUser, TTotp>(
-        application: &adw::Application,
-        parent: &adw::ApplicationWindow,
-        runtime_handle: Handle,
-        auth_service: Arc<TAuth>,
-        auth_policy_service: Arc<TPolicy>,
-        user_service: Arc<TUser>,
-        totp_service: Arc<TTotp>,
-        bootstrap_ctx: Option<BootstrapServicesContext>,
-        license_badge_text: String,
-        on_restore_requested: impl Fn(PathBuf, String, String) -> Result<(), AppError>
-            + Send
-            + Sync
-            + 'static,
-        on_restore_completed: impl Fn() + 'static,
-        on_authenticated: impl Fn(AuthenticatedSession) + 'static,
-        on_cancelled: impl Fn() + 'static,
-    ) -> Self
-    where
-        TAuth: AuthService + Send + Sync + 'static,
-        TPolicy: AuthPolicyService + Send + Sync + 'static,
-        TUser: UserService + Send + Sync + 'static,
-        TTotp: TotpService + Send + Sync + 'static,
-    {
+{
         const FAILURE_COOLDOWN_MS: u64 = 1200;
+
+        let in_bootstrap_mode = bootstrap_ctx.is_some();
+        let (initial_width, initial_height) =
+            window_state::resolve_login_window_size(in_bootstrap_mode);
 
         let on_restore_requested: Arc<
             dyn Fn(PathBuf, String, String) -> Result<(), AppError> + Send + Sync,
@@ -111,20 +19,22 @@ impl LoginDialog {
             .transient_for(parent)
             .title(crate::tr!("login-window-title").as_str())
             .modal(true)
-            .resizable(false)
-            .default_width(460)
-            .default_height(540)
+            .resizable(true)
+            .default_width(initial_width)
+            .default_height(initial_height)
             .build();
+        let (login_min_width, login_min_height) = window_state::login_min_size();
+        window.set_size_request(login_min_width, login_min_height);
 
         let shell = gtk4::Box::builder()
             .orientation(Orientation::Vertical)
-            .valign(Align::Center)
             .margin_top(24)
             .margin_bottom(24)
             .margin_start(24)
             .margin_end(24)
             .build();
         shell.add_css_class("login-shell");
+        shell.set_vexpand(true);
 
         let root = gtk4::Box::builder()
             .orientation(Orientation::Vertical)
@@ -459,7 +369,11 @@ impl LoginDialog {
         step_stack.set_visible_child_name("credentials");
 
         // ── Bootstrap init panels (only constructed when no admin exists) ─────────
-        let in_bootstrap_mode = bootstrap_ctx.is_some();
+        root.set_valign(if in_bootstrap_mode {
+            Align::Start
+        } else {
+            Align::Center
+        });
 
         // Step 1: Identity (username + password + confirm)
         let init_identity_box = gtk4::Box::builder()
@@ -1068,15 +982,33 @@ impl LoginDialog {
 
         root.append(&hero_frame);
         root.append(&form_card);
-        shell.append(&root);
-        window.set_child(Some(&shell));
+
+        let clamp = adw::Clamp::new();
+        clamp.set_maximum_size(560);
+        clamp.set_tightening_threshold(420);
+        clamp.set_child(Some(&root));
+        shell.append(&clamp);
+
+        let scrolled_shell = gtk4::ScrolledWindow::builder()
+            .hscrollbar_policy(gtk4::PolicyType::Never)
+            .vscrollbar_policy(gtk4::PolicyType::Automatic)
+            .min_content_width(360)
+            .build();
+        scrolled_shell.set_child(Some(&shell));
+        window.set_child(Some(&scrolled_shell));
         window.set_default_widget(Some(&login_button));
 
         let authenticated_for_close = Rc::clone(&authenticated);
         let on_cancelled_for_close = Rc::clone(&on_cancelled);
         let init_clipboard_dirty_for_close = Rc::clone(&init_clipboard_dirty);
         let init_clipboard_timer_for_close = Rc::clone(&init_clipboard_timer);
-        window.connect_close_request(move |_| {
+        window.connect_close_request(move |win| {
+            window_state::save_login_or_bootstrap_window_size(
+                in_bootstrap_mode,
+                win.width(),
+                win.height(),
+            );
+
             // Clear recovery key from clipboard on dialog close
             if init_clipboard_dirty_for_close.get() {
                 if let Some(display) = gtk4::gdk::Display::default() {
@@ -1491,895 +1423,59 @@ impl LoginDialog {
 					}
 				});
 			} else if current_step == "init-identity" {
-				// Init Step 1: Validate identity, generate recovery key, go to oath step
-				let username = init_username_for_submit.text().trim().to_string();
-				if username.is_empty() {
-					Self::show_feedback(&error_for_submit, crate::tr!("init-error-username-empty").as_str());
-					return;
-				}
-				if let Some(ref gen_key_fn) = gen_key_fn_for_submit {
-					match gen_key_fn() {
-						Ok(phrase) => {
-							let phrase: String = phrase;
-							let words: Vec<String> = phrase
-								.split_whitespace()
-								.map(|w| w.to_lowercase())
-								.collect();
-							if words.len() == 24 {
-								for (i, lbl) in word_labels_for_submit.iter().enumerate() {
-									lbl.set_text(&words[i]);
-								}
-								let phrase_sum: u64 =
-									phrase.bytes().map(|b| b as u64).sum();
-								let ia = (phrase_sum % 24) as usize;
-								let ib_raw =
-									((phrase_sum / 24).wrapping_add(7) % 24) as usize;
-								let ib =
-									if ib_raw == ia { (ia + 1) % 24 } else { ib_raw };
-								let (ia, ib) = (ia.min(ib), ia.max(ib));
-								init_verify_indices_for_submit.set((ia, ib));
-								let hint = crate::i18n::tr_args(
-									"init-verify-hint",
-									&[
-										("a", I18nArg::Num((ia + 1) as i64)),
-										("b", I18nArg::Num((ib + 1) as i64)),
-									],
-								);
-								init_verify_hint_for_submit.set_text(hint.as_str());
-								let la = crate::i18n::tr_args(
-									"init-verify-label-a",
-									&[("index", I18nArg::Num((ia + 1) as i64))],
-								);
-								init_verify_a_label_for_submit.set_text(la.as_str());
-								let lb = crate::i18n::tr_args(
-									"init-verify-label-b",
-									&[("index", I18nArg::Num((ib + 1) as i64))],
-								);
-								init_verify_b_label_for_submit.set_text(lb.as_str());
-								*init_oath_words_for_submit.borrow_mut() = words;
-								check_init_identity_gate_for_submit();
-								step_for_button.set_visible_child_name("init-oath");
-							} else {
-								Self::show_feedback(
-									&error_for_submit,
-									crate::tr!("login-error-internal").as_str(),
-								);
-							}
-						}
-						Err(_) => {
-							Self::show_feedback(
-								&error_for_submit,
-								crate::tr!("login-error-internal").as_str(),
-							);
-						}
-					}
-				}
+                bootstrap_flow::handle_init_identity_step(
+                    &init_username_for_submit,
+                    &error_for_submit,
+                    gen_key_fn_for_submit.as_ref(),
+                    word_labels_for_submit.as_slice(),
+                    Rc::clone(&init_verify_indices_for_submit),
+                    &init_verify_hint_for_submit,
+                    &init_verify_a_label_for_submit,
+                    &init_verify_b_label_for_submit,
+                    Rc::clone(&init_oath_words_for_submit),
+                    &check_init_identity_gate_for_submit,
+                    &step_for_button,
+                );
 			} else if current_step == "init-oath" {
-				// Init Step 2: Clear clipboard, bootstrap vault, auto-login
-				if init_clipboard_dirty_for_submit.get() {
-					if let Some(display) = gtk4::gdk::Display::default() {
-						display.clipboard().set_text("");
-					}
-					if let Some(id) = init_clipboard_timer_for_submit.borrow_mut().take() {
-						id.remove();
-					}
-					init_clipboard_dirty_for_submit.set(false);
-				}
-				let username = init_username_for_submit.text().trim().to_string();
-				let password_bytes: Vec<u8> =
-					init_password_for_submit.text().as_bytes().to_vec();
-				step_for_button.set_visible_child_name("init-pending");
-				init_pending_spinner_for_submit.start();
-				let (result_sender, result_receiver) =
-					tokio::sync::oneshot::channel::<Result<BootstrapResult, AppError>>();
-				let do_bootstrap_fn_cloned = do_bootstrap_fn_for_submit.clone();
-				std::thread::spawn(move || {
-					let result = if let Some(ref f) = do_bootstrap_fn_cloned {
-						f(username, password_bytes)
-					} else {
-						Err(AppError::Conflict(
-							"bootstrap function unavailable".to_string(),
-						))
-					};
-					let _ = result_sender.send(result);
-				});
-				let dialog_for_result = dialog_for_submit.clone();
-				let error_for_result = error_for_submit.clone();
-				let step_for_result = step_for_button.clone();
-				let spinner_result = init_pending_spinner_for_submit.clone();
-				let button_for_result = button_for_submit.clone();
-				let spinner_for_result = spinner_for_submit.clone();
-				let authenticated_for_result = Rc::clone(&authenticated_for_submit);
-				let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
-				glib::MainContext::default().spawn_local(async move {
-					match result_receiver.await {
-						Ok(Ok(bootstrap_result)) => {
-							spinner_result.stop();
-							authenticated_for_result.set(true);
-							let identity_label = bootstrap_result.username.clone();
-							on_authenticated_for_result(AuthenticatedSession {
-								user_id: bootstrap_result.user_id,
-								username: bootstrap_result.username,
-								identity_label,
-								master_key: bootstrap_result.master_key,
-							});
-							dialog_for_result.close();
-						}
-						Ok(Err(e)) => {
-							spinner_result.stop();
-							step_for_result.set_visible_child_name("init-identity");
-							Self::set_pending_state(
-								&button_for_result,
-								&spinner_for_result,
-								false,
-							);
-							let msg = match &e {
-								AppError::Conflict(_) => {
-									crate::tr!("init-error-already-initialized")
-								}
-								_ => crate::tr!("login-error-unavailable"),
-							};
-							Self::show_feedback(&error_for_result, msg.as_str());
-						}
-						Err(_) => {
-							spinner_result.stop();
-							step_for_result.set_visible_child_name("init-identity");
-							Self::set_pending_state(
-								&button_for_result,
-								&spinner_for_result,
-								false,
-							);
-							Self::show_feedback(
-								&error_for_result,
-								crate::tr!("login-error-interrupted").as_str(),
-							);
-						}
-					}
-				});
+                bootstrap_flow::handle_init_oath_step(
+                    Rc::clone(&init_clipboard_dirty_for_submit),
+                    Rc::clone(&init_clipboard_timer_for_submit),
+                    &init_username_for_submit,
+                    &init_password_for_submit,
+                    &step_for_button,
+                    &init_pending_spinner_for_submit,
+                    do_bootstrap_fn_for_submit.clone(),
+                    &dialog_for_submit,
+                    &error_for_submit,
+                    &button_for_submit,
+                    &spinner_for_submit,
+                    Rc::clone(&authenticated_for_submit),
+                    Rc::clone(&on_authenticated_for_submit),
+                );
 			} else {
-				// STEP 2: Verify TOTP code
-				let totp = totp_for_submit.text().trim().to_string();
-				let username = username_for_submit.text().trim().to_string();
-				let password = password_for_submit.text().to_string();
-
-				Self::set_pending_state(&button_for_submit, &spinner_for_submit, true);
-
-				let (result_sender, result_receiver) = tokio::sync::oneshot::channel();
-				let auth_for_task = Arc::clone(&auth_for_submit);
-				let auth_policy_for_task = Arc::clone(&auth_policy_for_submit);
-				let user_for_task = Arc::clone(&user_for_submit);
-				let totp_for_task = Arc::clone(&totp_service);
-				let username_for_task = username;
-				let password_for_task = password.into_bytes();
-				let totp_for_task_value = totp.clone();
-				let runtime_for_task = runtime_for_submit.clone();
-
-				std::thread::spawn(move || {
-					let password_bytes = password_for_task;
-					let result: Result<LoginAttemptOutcome, AppError> = runtime_for_task.block_on(async move {
-						let resolved_username = user_for_task
-							.resolve_username_for_login_identifier(&username_for_task)
-							.await?;
-
-						let canonical_username = match resolved_username {
-							Some(value) => value,
-							None => {
-								return Ok(LoginAttemptOutcome::InvalidCredentials {
-									remaining_lock_secs: 0,
-								});
-							}
-						};
-
-						let lock_state = auth_policy_for_task.get_state(canonical_username.as_str()).await?;
-						if lock_state.is_locked() {
-							return Ok(LoginAttemptOutcome::Locked {
-								remaining_lock_secs: lock_state.remaining_lock_secs,
-							});
-						}
-
-						if !Self::is_valid_totp(&totp_for_task_value) {
-							let state = auth_policy_for_task
-								.record_failed_attempt(canonical_username.as_str())
-								.await?;
-							return Ok(LoginAttemptOutcome::InvalidTotp {
-								remaining_lock_secs: state.remaining_lock_secs,
-							});
-						}
-
-						let totp_ok = totp_for_task
-							.verify_login_totp(
-								canonical_username.as_str(),
-								SecretBox::new(Box::new(password_bytes.clone())),
-								totp_for_task_value.as_str(),
-							)
-							.await?;
-
-						if !totp_ok {
-							let state = auth_policy_for_task
-								.record_failed_attempt(canonical_username.as_str())
-								.await?;
-							return Ok(LoginAttemptOutcome::InvalidTotp {
-								remaining_lock_secs: state.remaining_lock_secs,
-							});
-						}
-
-						let master_key = auth_for_task
-							.derive_key_if_valid(
-								canonical_username.as_str(),
-								SecretBox::new(Box::new(password_bytes.clone())),
-							)
-							.await?
-							.ok_or(AppError::Authorization(AccessDeniedReason::InvalidCredentials))?;
-
-						let user_profile = user_for_task
-							.get_user_profile_by_username(canonical_username.as_str())
-							.await?;
-
-						let identity_label = user_profile
-							.display_name
-							.as_deref()
-							.filter(|value| !value.trim().is_empty())
-							.map(|value| value.to_string())
-							.unwrap_or_else(|| user_profile.username.clone());
-
-						auth_policy_for_task
-							.reset_failed_attempts(canonical_username.as_str())
-							.await?;
-						Ok(LoginAttemptOutcome::Success(AuthenticatedSession {
-							user_id: user_profile.id,
-							username: canonical_username,
-							identity_label,
-							master_key,
-						}))
-					});
-					let _ = result_sender.send(result);
-				});
-
-				let dialog_for_result = dialog_for_submit.clone();
-				let error_for_result = error_for_submit.clone();
-				let button_for_result = button_for_submit.clone();
-				let spinner_for_result = spinner_for_submit.clone();
-				let totp_for_result = totp_for_submit.clone();
-				let authenticated_for_result = Rc::clone(&authenticated_for_submit);
-				let on_authenticated_for_result = Rc::clone(&on_authenticated_for_submit);
-				let lock_active_for_result = Rc::clone(&lock_active_for_submit);
-				let lock_timer_for_result = Rc::clone(&lock_timer_for_submit);
-
-				glib::MainContext::default().spawn_local(async move {
-					let verification_result = result_receiver.await;
-
-					match verification_result {
-						Ok(Ok(LoginAttemptOutcome::Success(session))) => {
-							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-							authenticated_for_result.set(true);
-							on_authenticated_for_result(session);
-							dialog_for_result.close();
-						}
-						Ok(Ok(LoginAttemptOutcome::InvalidTotp { remaining_lock_secs })) => {
-							totp_for_result.grab_focus();
-
-							if remaining_lock_secs > 0 {
-								Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-								Self::start_lock_countdown(
-									&button_for_result,
-									&spinner_for_result,
-									&error_for_result,
-									remaining_lock_secs,
-									Rc::clone(&lock_active_for_result),
-									Rc::clone(&lock_timer_for_result),
-								);
-							} else {
-								let totp_feedback = messages::login_totp_error_message(
-									totp_for_result.text().trim(),
-								);
-								Self::show_feedback(
-									&error_for_result,
-									totp_feedback.as_str(),
-								);
-								let button_after_delay = button_for_result.clone();
-								let spinner_after_delay = spinner_for_result.clone();
-								glib::timeout_add_local_once(
-									Duration::from_millis(FAILURE_COOLDOWN_MS),
-									move || {
-										Self::set_pending_state(
-											&button_after_delay,
-											&spinner_after_delay,
-											false,
-										);
-									},
-								);
-							}
-						}
-						Ok(Ok(LoginAttemptOutcome::Locked { remaining_lock_secs })) => {
-							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-							Self::start_lock_countdown(
-								&button_for_result,
-								&spinner_for_result,
-								&error_for_result,
-								remaining_lock_secs,
-								Rc::clone(&lock_active_for_result),
-								Rc::clone(&lock_timer_for_result),
-							);
-						}
-						Ok(Ok(LoginAttemptOutcome::InvalidCredentials { remaining_lock_secs: _ })) => {
-							// This shouldn't happen in TOTP step, but handle it
-							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-							Self::show_feedback(
-								&error_for_result,
-								crate::tr!("login-error-internal").as_str(),
-							);
-						}
-						Ok(Ok(LoginAttemptOutcome::RequiresTotp)) => {
-							// Shouldn't happen in TOTP step
-							Self::set_pending_state(&button_for_result, &spinner_for_result, false);
-						}
-						Ok(Err(_)) => {
-							Self::show_feedback(
-								&error_for_result,
-								crate::tr!("login-error-unavailable").as_str(),
-							);
-							let button_after_delay = button_for_result.clone();
-							let spinner_after_delay = spinner_for_result.clone();
-							glib::timeout_add_local_once(
-								Duration::from_millis(FAILURE_COOLDOWN_MS),
-								move || {
-									Self::set_pending_state(
-										&button_after_delay,
-										&spinner_after_delay,
-										false,
-									);
-								},
-							);
-						}
-						Err(_) => {
-							Self::show_feedback(
-								&error_for_result,
-								crate::tr!("login-error-interrupted").as_str(),
-							);
-							let button_after_delay = button_for_result.clone();
-							let spinner_after_delay = spinner_for_result.clone();
-							glib::timeout_add_local_once(
-								Duration::from_millis(FAILURE_COOLDOWN_MS),
-								move || {
-									Self::set_pending_state(
-										&button_after_delay,
-										&spinner_after_delay,
-										false,
-									);
-								},
-							);
-						}
-					}
-				});
+                login_flow::handle_totp_submit(
+                    runtime_for_submit.clone(),
+                    Arc::clone(&auth_for_submit),
+                    Arc::clone(&auth_policy_for_submit),
+                    Arc::clone(&user_for_submit),
+                    Arc::clone(&totp_service),
+                    &username_for_submit,
+                    &password_for_submit,
+                    &totp_for_submit,
+                    &button_for_submit,
+                    &spinner_for_submit,
+                    &dialog_for_submit,
+                    &error_for_submit,
+                    Rc::clone(&authenticated_for_submit),
+                    Rc::clone(&on_authenticated_for_submit),
+                    Rc::clone(&lock_active_for_submit),
+                    Rc::clone(&lock_timer_for_submit),
+                    FAILURE_COOLDOWN_MS,
+                );
 			}
 		});
 
         username_entry.grab_focus();
 
         Self { window }
-    }
-
-    pub fn present(&self) {
-        self.window.present();
-    }
-
-    fn connect_feedback_reset<TWidget>(
-        widget: &TWidget,
-        error_label: &gtk4::Label,
-        lock_active: Rc<Cell<bool>>,
-    ) where
-        TWidget: IsA<gtk4::Editable> + Clone + 'static,
-    {
-        let error_for_reset = error_label.clone();
-        widget.connect_changed(move |_| {
-            if lock_active.get() {
-                return;
-            }
-            Self::clear_feedback(&error_for_reset);
-        });
-    }
-
-    fn start_lock_countdown(
-        button: &gtk4::Button,
-        spinner: &gtk4::Spinner,
-        error_label: &gtk4::Label,
-        remaining_secs: i64,
-        lock_active: Rc<Cell<bool>>,
-        lock_timer: Rc<RefCell<Option<glib::SourceId>>>,
-    ) {
-        if let Some(source_id) = lock_timer.borrow_mut().take() {
-            source_id.remove();
-        }
-
-        let mut current_secs = remaining_secs.max(0);
-        if current_secs == 0 {
-            lock_active.set(false);
-            Self::set_pending_state(button, spinner, false);
-            Self::show_feedback(error_label, crate::tr!("login-error-retry-now").as_str());
-            return;
-        }
-
-        lock_active.set(true);
-        spinner.set_visible(false);
-        spinner.set_spinning(false);
-        button.set_sensitive(false);
-
-        Self::show_feedback(
-            error_label,
-            crate::i18n::tr_args(
-                "login-error-account-locked",
-                &[("seconds", I18nArg::Num(current_secs))],
-            )
-            .as_str(),
-        );
-
-        let button_for_tick = button.clone();
-        let spinner_for_tick = spinner.clone();
-        let error_for_tick = error_label.clone();
-        let lock_active_for_tick = Rc::clone(&lock_active);
-        let lock_timer_for_tick = Rc::clone(&lock_timer);
-        let source_id = glib::timeout_add_seconds_local(1, move || {
-            current_secs = current_secs.saturating_sub(1);
-            if current_secs == 0 {
-                lock_active_for_tick.set(false);
-                Self::set_pending_state(&button_for_tick, &spinner_for_tick, false);
-                Self::show_feedback(
-                    &error_for_tick,
-                    crate::tr!("login-error-retry-now").as_str(),
-                );
-                let _ = lock_timer_for_tick.borrow_mut().take();
-                glib::ControlFlow::Break
-            } else {
-                Self::show_feedback(
-                    &error_for_tick,
-                    crate::i18n::tr_args(
-                        "login-error-account-locked",
-                        &[("seconds", I18nArg::Num(current_secs))],
-                    )
-                    .as_str(),
-                );
-                glib::ControlFlow::Continue
-            }
-        });
-
-        *lock_timer.borrow_mut() = Some(source_id);
-    }
-
-    fn clear_feedback(error_label: &gtk4::Label) {
-        error_label.set_text("");
-        error_label.set_visible(false);
-    }
-
-    fn show_feedback(error_label: &gtk4::Label, message: &str) {
-        error_label.set_text(message);
-        error_label.set_visible(true);
-    }
-
-    fn update_greeting(title_label: &gtk4::Label, username: &str) {
-        if username.is_empty() {
-            title_label.set_text(crate::tr!("login-greeting-empty").as_str());
-            return;
-        }
-
-        title_label.set_text(
-            crate::i18n::tr_args(
-                "login-greeting-hello",
-                &[("username", I18nArg::Str(username))],
-            )
-            .as_str(),
-        );
-    }
-
-    fn update_strength_feedback(password: &str, strength_label: &gtk4::Label) {
-        strength_label.remove_css_class("success");
-        strength_label.remove_css_class("warning");
-        strength_label.remove_css_class("error");
-
-        if password.is_empty() {
-            strength_label.set_text("");
-            strength_label.set_visible(false);
-            return;
-        }
-
-        let mut score = 0_u8;
-        let length = password.chars().count();
-        if length >= 12 {
-            score += 2;
-        } else if length >= 8 {
-            score += 1;
-        }
-
-        let has_lower = password
-            .chars()
-            .any(|character| character.is_ascii_lowercase());
-        let has_upper = password
-            .chars()
-            .any(|character| character.is_ascii_uppercase());
-        let has_digit = password.chars().any(|character| character.is_ascii_digit());
-        let has_special = password
-            .chars()
-            .any(|character| !character.is_ascii_alphanumeric());
-
-        let complexity = [has_lower, has_upper, has_digit, has_special]
-            .into_iter()
-            .filter(|value| *value)
-            .count();
-
-        if complexity >= 3 {
-            score += 2;
-        } else if complexity >= 2 {
-            score += 1;
-        }
-
-        let (label, css_class) = if score >= 4 {
-            (crate::tr!("login-password-strength-very-strong"), "success")
-        } else if score >= 3 {
-            (crate::tr!("login-password-strength-strong"), "success")
-        } else if score >= 2 {
-            (crate::tr!("login-password-strength-medium"), "warning")
-        } else {
-            (crate::tr!("login-password-strength-weak"), "error")
-        };
-
-        strength_label.remove_css_class("dim-label");
-        strength_label.add_css_class(css_class);
-        strength_label.set_text(label.as_str());
-        strength_label.set_visible(true);
-    }
-
-    fn set_pending_state(button: &gtk4::Button, spinner: &gtk4::Spinner, pending: bool) {
-        button.set_sensitive(!pending);
-        spinner.set_visible(pending);
-        spinner.set_spinning(pending);
-    }
-
-    fn is_valid_totp(totp: &str) -> bool {
-        totp.len() == 6 && totp.chars().all(|character| character.is_ascii_digit())
-    }
-
-    fn present_restore_dialog(
-        parent: &gtk4::Window,
-        on_restore_requested: Arc<
-            dyn Fn(PathBuf, String, String) -> Result<(), AppError> + Send + Sync,
-        >,
-        on_restore_completed: Rc<dyn Fn()>,
-    ) {
-        let dialog = gtk4::Window::builder()
-            .transient_for(parent)
-            .title(crate::tr!("login-restore-dialog-title").as_str())
-            .modal(true)
-            .resizable(false)
-            .default_width(520)
-            .default_height(420)
-            .build();
-
-        let content = gtk4::Box::builder()
-            .orientation(Orientation::Vertical)
-            .spacing(14)
-            .margin_top(20)
-            .margin_bottom(20)
-            .margin_start(20)
-            .margin_end(20)
-            .build();
-
-        let title = gtk4::Label::new(Some(crate::tr!("login-restore-description").as_str()));
-        title.set_wrap(true);
-        title.set_halign(Align::Start);
-
-        let file_label = gtk4::Label::new(Some(crate::tr!("login-restore-file-label").as_str()));
-        file_label.add_css_class("login-field-label");
-        file_label.set_halign(Align::Start);
-
-        let file_row = gtk4::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(8)
-            .build();
-
-        let file_entry = gtk4::Entry::builder()
-            .placeholder_text(crate::tr!("login-restore-file-placeholder").as_str())
-            .hexpand(true)
-            .build();
-        file_entry.add_css_class("login-entry");
-
-        let browse_button = gtk4::Button::with_label(crate::tr!("login-restore-browse").as_str());
-        browse_button.add_css_class("secondary-pill");
-
-        file_row.append(&file_entry);
-        file_row.append(&browse_button);
-
-        let phrase_label =
-            gtk4::Label::new(Some(crate::tr!("login-restore-phrase-label").as_str()));
-        phrase_label.add_css_class("login-field-label");
-        phrase_label.set_halign(Align::Start);
-
-        let phrase_entry = gtk4::Entry::builder()
-            .placeholder_text(crate::tr!("login-restore-phrase-placeholder").as_str())
-            .hexpand(true)
-            .build();
-        phrase_entry.add_css_class("login-entry");
-
-        let password_label =
-            gtk4::Label::new(Some(crate::tr!("login-restore-password-label").as_str()));
-        password_label.add_css_class("login-field-label");
-        password_label.set_halign(Align::Start);
-
-        let new_password_entry = gtk4::PasswordEntry::builder()
-            .placeholder_text(crate::tr!("login-restore-password-placeholder").as_str())
-            .hexpand(true)
-            .show_peek_icon(true)
-            .build();
-        new_password_entry.add_css_class("login-entry");
-
-        let strength_bar = PasswordStrengthBar::new();
-        strength_bar.connect_to_password_entry(&new_password_entry);
-
-        let confirm_label =
-            gtk4::Label::new(Some(crate::tr!("login-restore-confirm-label").as_str()));
-        confirm_label.add_css_class("login-field-label");
-        confirm_label.set_halign(Align::Start);
-
-        let confirm_password_entry = gtk4::PasswordEntry::builder()
-            .placeholder_text(crate::tr!("login-restore-confirm-placeholder").as_str())
-            .hexpand(true)
-            .show_peek_icon(true)
-            .build();
-        confirm_password_entry.add_css_class("login-entry");
-
-        let error_label = gtk4::Label::new(None);
-        error_label.add_css_class("login-error");
-        error_label.set_wrap(true);
-        error_label.set_halign(Align::Start);
-        error_label.set_visible(false);
-
-        let button_box = gtk4::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(10)
-            .build();
-
-        let cancel_button = gtk4::Button::with_label(crate::tr!("login-restore-cancel").as_str());
-        cancel_button.add_css_class("secondary-pill");
-
-        let restore_button = gtk4::Button::builder()
-            .hexpand(true)
-            .halign(Align::Fill)
-            .sensitive(false)
-            .build();
-        restore_button.add_css_class("primary-pill");
-
-        let restore_content = gtk4::Box::builder()
-            .orientation(Orientation::Horizontal)
-            .spacing(10)
-            .halign(Align::Center)
-            .build();
-        let restore_spinner = gtk4::Spinner::new();
-        restore_spinner.set_visible(false);
-        let restore_label = gtk4::Label::new(Some(crate::tr!("login-restore-submit").as_str()));
-        restore_content.append(&restore_spinner);
-        restore_content.append(&restore_label);
-        restore_button.set_child(Some(&restore_content));
-
-        button_box.append(&cancel_button);
-        button_box.append(&restore_button);
-
-        content.append(&title);
-        content.append(&file_label);
-        content.append(&file_row);
-        content.append(&phrase_label);
-        content.append(&phrase_entry);
-        content.append(&password_label);
-        content.append(&new_password_entry);
-        content.append(strength_bar.root());
-        content.append(&confirm_label);
-        content.append(&confirm_password_entry);
-        content.append(&error_label);
-        content.append(&button_box);
-        dialog.set_child(Some(&content));
-
-        let busy = Rc::new(Cell::new(false));
-        let update_action_state: Rc<dyn Fn()> = {
-            let busy = Rc::clone(&busy);
-            let restore_button = restore_button.clone();
-            let file_entry = file_entry.clone();
-            let phrase_entry = phrase_entry.clone();
-            let new_password_entry = new_password_entry.clone();
-            let confirm_password_entry = confirm_password_entry.clone();
-            Rc::new(move || {
-                let has_file = !file_entry.text().trim().is_empty();
-                let has_phrase = !phrase_entry.text().trim().is_empty();
-                let has_password = !new_password_entry.text().is_empty();
-                let matches_confirmation =
-                    new_password_entry.text() == confirm_password_entry.text();
-                restore_button.set_sensitive(
-                    !busy.get() && has_file && has_phrase && has_password && matches_confirmation,
-                );
-            })
-        };
-
-        for editable in [
-            file_entry.clone().upcast::<gtk4::Editable>(),
-            phrase_entry.clone().upcast::<gtk4::Editable>(),
-            new_password_entry.clone().upcast::<gtk4::Editable>(),
-            confirm_password_entry.clone().upcast::<gtk4::Editable>(),
-        ] {
-            let update_action_state = Rc::clone(&update_action_state);
-            editable.connect_changed(move |_| {
-                update_action_state();
-            });
-        }
-
-        let parent_for_chooser = dialog.clone();
-        let file_entry_for_chooser = file_entry.clone();
-        let update_action_for_chooser = Rc::clone(&update_action_state);
-        browse_button.connect_clicked(move |_| {
-            let chooser = gtk4::FileChooserNative::builder()
-                .title("Choisir un export .hvb")
-                .transient_for(&parent_for_chooser)
-                .action(gtk4::FileChooserAction::Open)
-                .accept_label("Selectionner")
-                .cancel_label("Annuler")
-                .build();
-
-            let filter = gtk4::FileFilter::new();
-            filter.add_pattern("*.hvb");
-            filter.set_name(Some("Sauvegardes HeelonVault (*.hvb)"));
-            chooser.set_filter(&filter);
-
-            let file_entry_for_response = file_entry_for_chooser.clone();
-            let update_action_for_response = Rc::clone(&update_action_for_chooser);
-            chooser.connect_response(move |dialog, response| {
-                if response == gtk4::ResponseType::Accept {
-                    if let Some(file) = dialog.file() {
-                        if let Some(path) = file.path() {
-                            file_entry_for_response.set_text(&path.display().to_string());
-                            update_action_for_response();
-                        }
-                    }
-                }
-                dialog.destroy();
-            });
-
-            chooser.show();
-        });
-
-        let dialog_for_cancel = dialog.clone();
-        cancel_button.connect_clicked(move |_| {
-            dialog_for_cancel.close();
-        });
-
-        let dialog_for_submit = dialog.clone();
-        let error_for_submit = error_label.clone();
-        let file_for_submit = file_entry.clone();
-        let phrase_for_submit = phrase_entry.clone();
-        let password_for_submit = new_password_entry.clone();
-        let confirm_for_submit = confirm_password_entry.clone();
-        let restore_button_for_submit = restore_button.clone();
-        let restore_spinner_for_submit = restore_spinner.clone();
-        let busy_for_submit = Rc::clone(&busy);
-        restore_button.connect_clicked(move |_| {
-            let file_path = file_for_submit.text().trim().to_string();
-            let recovery_phrase = phrase_for_submit.text().trim().to_string();
-            let new_password = password_for_submit.text().to_string();
-            let confirmation = confirm_for_submit.text().to_string();
-
-            Self::clear_feedback(&error_for_submit);
-
-            if file_path.is_empty() {
-                Self::show_feedback(
-                    &error_for_submit,
-                    "Selectionnez un export .hvb a restaurer.",
-                );
-                return;
-            }
-
-            if !PathBuf::from(&file_path).exists() {
-                Self::show_feedback(
-                    &error_for_submit,
-                    "Le fichier .hvb selectionne est introuvable.",
-                );
-                return;
-            }
-
-            if recovery_phrase.split_whitespace().count() != 24 {
-                Self::show_feedback(
-                    &error_for_submit,
-                    "La phrase de recuperation doit contenir exactement 24 mots.",
-                );
-                return;
-            }
-
-            if new_password != confirmation {
-                Self::show_feedback(
-                    &error_for_submit,
-                    "La confirmation du nouveau mot de passe ne correspond pas.",
-                );
-                return;
-            }
-
-            if strength_bar.last_score() < 3 {
-                Self::show_feedback(
-                    &error_for_submit,
-                    "Choisissez un mot de passe principal au moins solide avant de restaurer.",
-                );
-                return;
-            }
-
-            busy_for_submit.set(true);
-            Self::set_pending_state(
-                &restore_button_for_submit,
-                &restore_spinner_for_submit,
-                true,
-            );
-
-            let (sender, receiver) = tokio::sync::oneshot::channel();
-            let restore_handler = Arc::clone(&on_restore_requested);
-            std::thread::spawn(move || {
-                let result =
-                    restore_handler(PathBuf::from(file_path), recovery_phrase, new_password);
-                let _ = sender.send(result);
-            });
-
-            let dialog_for_result = dialog_for_submit.clone();
-            let error_for_result = error_for_submit.clone();
-            let restore_button_for_result = restore_button_for_submit.clone();
-            let restore_spinner_for_result = restore_spinner_for_submit.clone();
-            let busy_for_result = Rc::clone(&busy_for_submit);
-            let on_restore_completed = Rc::clone(&on_restore_completed);
-            let update_action_state = Rc::clone(&update_action_state);
-            glib::MainContext::default().spawn_local(async move {
-                match receiver.await {
-                    Ok(Ok(())) => {
-                        busy_for_result.set(false);
-                        Self::set_pending_state(
-                            &restore_button_for_result,
-                            &restore_spinner_for_result,
-                            false,
-                        );
-
-                        let info_dialog = gtk4::MessageDialog::builder()
-                            .transient_for(&dialog_for_result)
-                            .modal(true)
-                            .buttons(gtk4::ButtonsType::Ok)
-                            .text("Restauration terminee")
-                            .secondary_text(
-                                "La base a ete restauree et l'application va redemarrer.",
-                            )
-                            .build();
-                        let dialog_for_close = dialog_for_result.clone();
-                        let on_restore_completed = Rc::clone(&on_restore_completed);
-                        info_dialog.connect_response(move |message, _| {
-                            message.close();
-                            dialog_for_close.close();
-                            on_restore_completed();
-                        });
-                        info_dialog.show();
-                    }
-                    Ok(Err(error)) => {
-                        busy_for_result.set(false);
-                        Self::set_pending_state(
-                            &restore_button_for_result,
-                            &restore_spinner_for_result,
-                            false,
-                        );
-                        Self::show_feedback(&error_for_result, &error.to_string());
-                        update_action_state();
-                    }
-                    Err(_) => {
-                        busy_for_result.set(false);
-                        Self::set_pending_state(
-                            &restore_button_for_result,
-                            &restore_spinner_for_result,
-                            false,
-                        );
-                        Self::show_feedback(
-                            &error_for_result,
-                            "La restauration a ete interrompue avant son terme.",
-                        );
-                        update_action_state();
-                    }
-                }
-            });
-        });
-
-        dialog.present();
-    }
 }

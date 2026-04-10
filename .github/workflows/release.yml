@@ -63,7 +63,7 @@ jobs:
           WIX_EXE="$(cygpath -u "$USERPROFILE")/.dotnet/tools/wix.exe"
           "$WIX_EXE" build -acceptEula wix7 -arch x64 wix/main.wxs wix/dlls.wxs -o heelonvault-windows-x86_64.msi
 
-      - name: Smoke test – install MSI and verify binary
+      - name: Smoke test – install MSI and verify startup
         run: |
           MSI_PATH="$(cygpath -w "$PWD/heelonvault-windows-x86_64.msi")"
           "/c/Windows/System32/msiexec.exe" //i "$MSI_PATH" //qn //norestart
@@ -82,7 +82,7 @@ jobs:
             exit 1
           fi
 
-          "$APP_PATH" --version
+          "$APP_PATH" --startup-check
 
       - name: Compute MSI checksum
         run: sha256sum heelonvault-windows-x86_64.msi > heelonvault-windows-x86_64.msi.sha256

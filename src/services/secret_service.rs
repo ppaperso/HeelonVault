@@ -18,8 +18,8 @@ pub struct DecryptedSecret {
     pub secret_value: SecretBox<Vec<u8>>,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait SecretService {
+#[trait_variant::make(SecretService: Send)]
+pub trait LocalSecretService {
     #[allow(clippy::too_many_arguments)]
     async fn create_secret(
         &self,
@@ -355,8 +355,8 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{DecryptedSecret, SecretService, SecretServiceImpl};
     use crate::errors::AppError;
     use crate::models::{AuditAction, AuditLogEntry, BlobStorage, SecretItem, SecretType};

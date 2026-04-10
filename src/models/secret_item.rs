@@ -10,6 +10,27 @@ pub enum SecretType {
     SecureDocument,
 }
 
+impl SecretType {
+    pub fn from_dropdown_index(index: u32) -> Option<Self> {
+        match index {
+            0 => Some(Self::Password),
+            1 => Some(Self::ApiToken),
+            2 => Some(Self::SshKey),
+            3 => Some(Self::SecureDocument),
+            _ => None,
+        }
+    }
+
+    pub fn dropdown_index(self) -> u32 {
+        match self {
+            Self::Password => 0,
+            Self::ApiToken => 1,
+            Self::SshKey => 2,
+            Self::SecureDocument => 3,
+        }
+    }
+}
+
 #[derive(Debug, Clone, Copy, Serialize, Deserialize)]
 pub enum BlobStorage {
     Inline,

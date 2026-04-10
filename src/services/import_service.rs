@@ -13,8 +13,8 @@ use crate::models::SecretType;
 use crate::services::secret_service::SecretService;
 use crate::services::vault_service::VaultService;
 
-#[allow(async_fn_in_trait)]
-pub trait ImportService {
+#[trait_variant::make(ImportService: Send)]
+pub trait LocalImportService {
     async fn import_csv<TSecret, TVault>(
         &self,
         csv_file_path: &Path,

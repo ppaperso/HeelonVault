@@ -43,8 +43,8 @@ pub struct BackupMetadata {
     pub plaintext_size: usize,
 }
 
-#[allow(async_fn_in_trait)]
-pub trait BackupService {
+#[trait_variant::make(BackupService: Send)]
+pub trait LocalBackupService {
     fn generate_recovery_key(&self) -> Result<RecoveryKeyBundle, AppError>;
     fn export_hvb_with_recovery_key(
         &self,
@@ -164,19 +164,13 @@ impl BackupServiceImpl {
         if target_sqlite_db_path.exists() {
             let old_path = target_sqlite_db_path.with_extension("old");
             if old_path.exists() {
-                fs::remove_file(&old_path).map_err(|err| {
-                    AppError::Storage(format!("failed to remove existing .old database: {err}"))
-                })?;
+                fs::remove_file(&old_path).map_err(AppError::Io)?;
             }
 
-            fs::rename(target_sqlite_db_path, &old_path).map_err(|err| {
-                AppError::Storage(format!("failed to rotate previous database to .old: {err}"))
-            })?;
+            fs::rename(target_sqlite_db_path, &old_path).map_err(AppError::Io)?;
         }
 
-        fs::write(target_sqlite_db_path, plaintext).map_err(|err| {
-            AppError::Storage(format!("failed to write restored SQLite database: {err}"))
-        })
+        fs::write(target_sqlite_db_path, plaintext).map_err(AppError::Io)
     }
 
     fn encrypt_bytes(
@@ -288,9 +282,7 @@ impl BackupServiceImpl {
     fn ensure_parent_exists(path: &Path) -> Result<(), AppError> {
         match path.parent() {
             Some(parent) if !parent.as_os_str().is_empty() => {
-                fs::create_dir_all(parent).map_err(|err| {
-                    AppError::Storage(format!("failed to create parent directory: {err}"))
-                })
+                fs::create_dir_all(parent).map_err(AppError::Io)
             }
             _ => Ok(()),
         }
@@ -319,8 +311,7 @@ impl BackupService for BackupServiceImpl {
         backup_file_path: &Path,
         recovery_phrase: &SecretString,
     ) -> Result<BackupMetadata, AppError> {
-        let sqlite_bytes = fs::read(sqlite_db_path)
-            .map_err(|err| AppError::Storage(format!("failed to read SQLite database: {err}")))?;
+        let sqlite_bytes = fs::read(sqlite_db_path).map_err(AppError::Io)?;
         Self::validate_sqlite_bytes(sqlite_bytes.as_slice())?;
 
         let salt = Self::generate_recovery_salt()?;
@@ -341,12 +332,10 @@ impl BackupService for BackupServiceImpl {
             .map_err(|err| AppError::Storage(format!("failed to serialize hvb payload: {err}")))?;
 
         Self::ensure_parent_exists(backup_file_path)?;
-        fs::write(backup_file_path, json_bytes)
-            .map_err(|err| AppError::Storage(format!("failed to write .hvb file: {err}")))?;
+        fs::write(backup_file_path, json_bytes).map_err(AppError::Io)?;
 
         // Validate the written .hvb artifact end-to-end before reporting success.
-        let written_bytes = fs::read(backup_file_path)
-            .map_err(|err| AppError::Storage(format!("failed to reread .hvb file: {err}")))?;
+        let written_bytes = fs::read(backup_file_path).map_err(AppError::Io)?;
         let written_payload = Self::parse_hvb_payload(written_bytes.as_slice())?;
 
         if written_payload.version != 1 || written_payload.kdf != "argon2id" {
@@ -418,8 +407,7 @@ impl BackupService for BackupServiceImpl {
         Mnemonic::parse_in_normalized(Language::English, recovery_phrase.expose_secret())
             .map_err(|err| AppError::Validation(format!("invalid recovery phrase: {err}")))?;
 
-        let backup_bytes = fs::read(backup_file_path)
-            .map_err(|err| AppError::Storage(format!("failed to read .hvb file: {err}")))?;
+        let backup_bytes = fs::read(backup_file_path).map_err(AppError::Io)?;
         let payload = Self::parse_hvb_payload(backup_bytes.as_slice())?;
 
         if payload.version != 1 || payload.kdf != "argon2id" {
@@ -475,16 +463,14 @@ impl BackupService for BackupServiceImpl {
         backup_file_path: &Path,
         backup_key: SecretBox<Vec<u8>>,
     ) -> Result<BackupMetadata, AppError> {
-        let sqlite_bytes = fs::read(sqlite_db_path)
-            .map_err(|err| AppError::Storage(format!("failed to read SQLite database: {err}")))?;
+        let sqlite_bytes = fs::read(sqlite_db_path).map_err(AppError::Io)?;
 
         let (sha256_hex, nonce, ciphertext) =
             Self::encrypt_bytes(sqlite_bytes.as_slice(), &backup_key)?;
         let backup_bytes = Self::serialize_backup(&sha256_hex, nonce, ciphertext.as_slice())?;
 
         Self::ensure_parent_exists(backup_file_path)?;
-        fs::write(backup_file_path, backup_bytes)
-            .map_err(|err| AppError::Storage(format!("failed to write backup file: {err}")))?;
+        fs::write(backup_file_path, backup_bytes).map_err(AppError::Io)?;
 
         let exported_sha256 = Self::sha256_hex(sqlite_bytes.as_slice())?;
         if exported_sha256 != sha256_hex {
@@ -505,20 +491,15 @@ impl BackupService for BackupServiceImpl {
         target_sqlite_db_path: &Path,
         backup_key: SecretBox<Vec<u8>>,
     ) -> Result<BackupMetadata, AppError> {
-        let backup_bytes = fs::read(backup_file_path)
-            .map_err(|err| AppError::Storage(format!("failed to read backup file: {err}")))?;
+        let backup_bytes = fs::read(backup_file_path).map_err(AppError::Io)?;
         let (sha256_hex, nonce, ciphertext) = Self::parse_backup(backup_bytes.as_slice())?;
         let plaintext =
             Self::decrypt_bytes(&sha256_hex, nonce, ciphertext.as_slice(), &backup_key)?;
 
         Self::ensure_parent_exists(target_sqlite_db_path)?;
-        fs::write(target_sqlite_db_path, plaintext.as_slice()).map_err(|err| {
-            AppError::Storage(format!("failed to write restored SQLite database: {err}"))
-        })?;
+        fs::write(target_sqlite_db_path, plaintext.as_slice()).map_err(AppError::Io)?;
 
-        let restored_bytes = fs::read(target_sqlite_db_path).map_err(|err| {
-            AppError::Storage(format!("failed to reread restored SQLite database: {err}"))
-        })?;
+        let restored_bytes = fs::read(target_sqlite_db_path).map_err(AppError::Io)?;
         let restored_sha256 = Self::sha256_hex(restored_bytes.as_slice())?;
         if restored_sha256 != sha256_hex {
             return Err(AppError::Validation(
@@ -553,8 +534,7 @@ mod tests {
         fn new() -> Result<Self, AppError> {
             let path =
                 std::env::temp_dir().join(format!("heelonvault-backup-test-{}", Uuid::new_v4()));
-            fs::create_dir_all(&path)
-                .map_err(|err| AppError::Storage(format!("failed to create temp dir: {err}")))?;
+            fs::create_dir_all(&path).map_err(AppError::Io)?;
             Ok(Self { path })
         }
 
@@ -578,8 +558,7 @@ mod tests {
 
     fn write_sample_sqlite(path: &Path) -> Result<Vec<u8>, AppError> {
         let bytes = sample_sqlite_bytes();
-        fs::write(path, bytes.as_slice())
-            .map_err(|err| AppError::Storage(format!("failed to seed sqlite file: {err}")))?;
+        fs::write(path, bytes.as_slice()).map_err(AppError::Io)?;
         Ok(bytes)
     }
 
@@ -623,8 +602,7 @@ mod tests {
             Err(_) => return,
         };
 
-        let restored_bytes_result = fs::read(&restored_db_path)
-            .map_err(|err| AppError::Storage(format!("failed to read restored db: {err}")));
+        let restored_bytes_result = fs::read(&restored_db_path).map_err(AppError::Io);
         assert!(
             restored_bytes_result.is_ok(),
             "restored file should be readable"
@@ -696,8 +674,7 @@ mod tests {
             return;
         }
 
-        let backup_bytes_result = fs::read(&backup_path)
-            .map_err(|err| AppError::Storage(format!("failed to read backup file: {err}")));
+        let backup_bytes_result = fs::read(&backup_path).map_err(AppError::Io);
         assert!(backup_bytes_result.is_ok(), "backup should be readable");
         let mut backup_bytes = match backup_bytes_result {
             Ok(value) => value,

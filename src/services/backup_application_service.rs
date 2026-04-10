@@ -11,8 +11,8 @@ use crate::services::backup_service::{BackupMetadata, BackupService};
 
 /// Application-level authorization wrapper for backup operations.
 /// Enforces access control before delegating to the underlying backup service.
-#[allow(async_fn_in_trait)]
-pub trait BackupApplicationService {
+#[trait_variant::make(BackupApplicationService: Send)]
+pub trait LocalBackupApplicationService {
     /// Export backup with authorization check (admin-only).
     async fn export_backup_secured(
         &self,
@@ -110,8 +110,8 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use std::collections::HashMap;
     use std::sync::MutexGuard;
     use std::sync::{Arc, Mutex};

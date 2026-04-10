@@ -40,7 +40,7 @@ impl VaultKeyEnvelopeRepository for SqlxVaultEnvelopeRepository {
             .bind(vault_id.to_string())
             .fetch_optional(&self.pool)
             .await
-            .map_err(|err| AppError::Storage(format!("read vault envelope: {err}")))?;
+            .map_err(AppError::Database)?;
 
         let envelope = row_opt
             .and_then(|row| row.try_get::<Option<Vec<u8>>, _>("vault_key_envelope").ok())

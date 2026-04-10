@@ -5,8 +5,8 @@ use secrecy::SecretBox;
 use sqlx::{Row, SqlitePool};
 use uuid::Uuid;
 
-#[allow(async_fn_in_trait)]
-pub trait SecretRepository {
+#[trait_variant::make(SecretRepository: Send)]
+pub trait LocalSecretRepository {
     async fn get_by_id(&self, secret_id: Uuid) -> Result<Option<SecretItem>, AppError>;
     async fn list_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
     async fn list_trash_by_vault_id(&self, vault_id: Uuid) -> Result<Vec<SecretItem>, AppError>;
@@ -48,10 +48,6 @@ impl SqlxSecretRepository {
         Self { pool }
     }
 
-    fn map_storage_err(context: &str, error: impl ToString) -> AppError {
-        AppError::Storage(format!("{context}: {}", error.to_string()))
-    }
-
     fn to_secret_type_db(secret_type: SecretType) -> &'static str {
         match secret_type {
             SecretType::Password => "password",
@@ -91,59 +87,34 @@ impl SqlxSecretRepository {
     }
 
     fn row_to_secret_item(row: &sqlx::sqlite::SqliteRow) -> Result<SecretItem, AppError> {
-        let id_raw: String = row
-            .try_get("id")
-            .map_err(|err| Self::map_storage_err("read secret id", err))?;
-        let vault_id_raw: String = row
-            .try_get("vault_id")
-            .map_err(|err| Self::map_storage_err("read vault_id", err))?;
-        let secret_type_raw: String = row
-            .try_get("secret_type")
-            .map_err(|err| Self::map_storage_err("read secret_type", err))?;
-        let title: Option<String> = row
-            .try_get("title")
-            .map_err(|err| Self::map_storage_err("read title", err))?;
-        let metadata_json: Option<String> = row
-            .try_get("metadata_json")
-            .map_err(|err| Self::map_storage_err("read metadata_json", err))?;
-        let tags: Option<String> = row
-            .try_get("tags")
-            .map_err(|err| Self::map_storage_err("read tags", err))?;
-        let expires_at: Option<String> = row
-            .try_get("expires_at")
-            .map_err(|err| Self::map_storage_err("read expires_at", err))?;
-        let created_at: Option<String> = row
-            .try_get("created_at")
-            .map_err(|err| Self::map_storage_err("read created_at", err))?;
-        let modified_at: Option<String> = row
-            .try_get("modified_at")
-            .map_err(|err| Self::map_storage_err("read modified_at", err))?;
-        let usage_count: u32 = row
-            .try_get("usage_count")
-            .map_err(|err| Self::map_storage_err("read usage_count", err))?;
-        let blob_storage_raw: String = row
-            .try_get("blob_storage")
-            .map_err(|err| Self::map_storage_err("read blob_storage", err))?;
+        let id_raw: String = row.try_get("id")?;
+        let vault_id_raw: String = row.try_get("vault_id")?;
+        let secret_type_raw: String = row.try_get("secret_type")?;
+        let title: Option<String> = row.try_get("title")?;
+        let metadata_json: Option<String> = row.try_get("metadata_json")?;
+        let tags: Option<String> = row.try_get("tags")?;
+        let expires_at: Option<String> = row.try_get("expires_at")?;
+        let created_at: Option<String> = row.try_get("created_at")?;
+        let modified_at: Option<String> = row.try_get("modified_at")?;
+        let usage_count: u32 = row.try_get("usage_count")?;
+        let blob_storage_raw: String = row.try_get("blob_storage")?;
 
-        let id = Uuid::parse_str(&id_raw).map_err(|err| Self::map_storage_err("parse id", err))?;
+        let id = Uuid::parse_str(&id_raw)
+            .map_err(|err| AppError::Storage(format!("parse id: {err}")))?;
         let vault_id = Uuid::parse_str(&vault_id_raw)
-            .map_err(|err| Self::map_storage_err("parse vault_id", err))?;
+            .map_err(|err| AppError::Storage(format!("parse vault_id: {err}")))?;
         let secret_type = Self::parse_secret_type_db(&secret_type_raw)?;
         let blob_storage = Self::parse_blob_storage_db(&blob_storage_raw)?;
 
         let secret_blob_bytes = match blob_storage {
             BlobStorage::Inline => {
-                let raw: Option<Vec<u8>> = row
-                    .try_get("secret_blob")
-                    .map_err(|err| Self::map_storage_err("read inline secret_blob", err))?;
+                let raw: Option<Vec<u8>> = row.try_get("secret_blob")?;
                 raw.ok_or_else(|| {
                     AppError::Storage("missing inline secret_blob in storage".to_string())
                 })?
             }
             BlobStorage::File => {
-                let raw: Option<Vec<u8>> = row
-                    .try_get("file_blob_ref")
-                    .map_err(|err| Self::map_storage_err("read file blob reference", err))?;
+                let raw: Option<Vec<u8>> = row.try_get("file_blob_ref")?;
                 raw.ok_or_else(|| {
                     AppError::Storage("missing file blob reference in storage".to_string())
                 })?
@@ -179,8 +150,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(secret_id.to_string())
         .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("get secret by id", err))?;
+        .await?;
 
         match row_opt {
             Some(row) => Ok(Some(Self::row_to_secret_item(&row)?)),
@@ -197,8 +167,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(vault_id.to_string())
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list secrets by vault", err))?;
+        .await?;
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
@@ -217,8 +186,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(vault_id.to_string())
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list trashed secrets by vault", err))?;
+        .await?;
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
@@ -241,8 +209,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(owner_user_id.to_string())
         .fetch_all(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("list all trashed secrets by owner", err))?;
+        .await?;
 
         let mut items = Vec::with_capacity(rows.len());
         for row in rows {
@@ -284,8 +251,7 @@ impl SecretRepository for SqlxSecretRepository {
         .bind(secret_blob)
         .bind(file_blob_ref)
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("insert secret item", err))?;
+        .await?;
 
         Ok(())
     }
@@ -312,8 +278,7 @@ impl SecretRepository for SqlxSecretRepository {
         .bind(expires_at)
         .bind(secret_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("update secret metadata", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -336,14 +301,11 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(secret_id.to_string())
         .fetch_optional(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("load blob strategy for update", err))?;
+        .await?;
 
         let row = row_opt
             .ok_or_else(|| AppError::Storage("secret not found for blob update".to_string()))?;
-        let blob_storage_raw: String = row
-            .try_get("blob_storage")
-            .map_err(|err| Self::map_storage_err("read blob strategy", err))?;
+        let blob_storage_raw: String = row.try_get("blob_storage")?;
         let blob_storage = Self::parse_blob_storage_db(&blob_storage_raw)?;
 
         let result = match blob_storage {
@@ -369,8 +331,7 @@ impl SecretRepository for SqlxSecretRepository {
                 .execute(&self.pool)
                 .await
             }
-        }
-        .map_err(|err| Self::map_storage_err("update secret blob", err))?;
+        }?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -389,8 +350,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(secret_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("increment usage count", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -409,8 +369,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(secret_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("soft delete secret", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage("secret not found for delete".to_string()));
@@ -420,11 +379,7 @@ impl SecretRepository for SqlxSecretRepository {
     }
 
     async fn restore_secret(&self, secret_id: Uuid, vault_id: Uuid) -> Result<(), AppError> {
-        let mut tx = self
-            .pool
-            .begin()
-            .await
-            .map_err(|err| Self::map_storage_err("start restore transaction", err))?;
+        let mut tx = self.pool.begin().await?;
 
         let vault_deleted_at: Option<String> = sqlx::query_scalar(
             "SELECT deleted_at
@@ -433,8 +388,7 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(vault_id.to_string())
         .fetch_optional(&mut *tx)
-        .await
-        .map_err(|err| Self::map_storage_err("load vault state for restore", err))?
+        .await?
         .ok_or_else(|| AppError::Storage("vault not found for restore".to_string()))?;
 
         if vault_deleted_at.is_some() {
@@ -445,8 +399,7 @@ impl SecretRepository for SqlxSecretRepository {
             )
             .bind(vault_id.to_string())
             .execute(&mut *tx)
-            .await
-            .map_err(|err| Self::map_storage_err("restore parent vault", err))?;
+            .await?;
         }
 
         let result = sqlx::query(
@@ -457,16 +410,13 @@ impl SecretRepository for SqlxSecretRepository {
         .bind(secret_id.to_string())
         .bind(vault_id.to_string())
         .execute(&mut *tx)
-        .await
-        .map_err(|err| Self::map_storage_err("restore secret", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage("secret not found in trash".to_string()));
         }
 
-        tx.commit()
-            .await
-            .map_err(|err| Self::map_storage_err("commit restore transaction", err))?;
+        tx.commit().await?;
 
         Ok(())
     }
@@ -479,8 +429,7 @@ impl SecretRepository for SqlxSecretRepository {
         .bind(secret_id.to_string())
         .bind(vault_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("delete secret permanently", err))?;
+        .await?;
 
         if result.rows_affected() == 0 {
             return Err(AppError::Storage(
@@ -498,16 +447,15 @@ impl SecretRepository for SqlxSecretRepository {
         )
         .bind(vault_id.to_string())
         .execute(&self.pool)
-        .await
-        .map_err(|err| Self::map_storage_err("empty trash", err))?;
+        .await?;
 
         Ok(result.rows_affected() as usize)
     }
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use super::{SecretRepository, SqlxSecretRepository};
     use crate::errors::AppError;
     use crate::models::{BlobStorage, SecretItem, SecretType};

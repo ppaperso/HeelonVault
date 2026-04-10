@@ -758,10 +758,6 @@ impl ManageTeamsDialog {
         dialog.present();
     }
 
-    pub fn present(&self) {
-        self.window.present();
-    }
-
     pub fn take_content(&self) -> Option<gtk4::Widget> {
         let child = self.window.child();
         if child.is_some() {

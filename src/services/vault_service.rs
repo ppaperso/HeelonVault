@@ -14,16 +14,16 @@ use crate::services::crypto_service::{CryptoService, EncryptedPayload, NONCE_LEN
 
 pub const VAULT_KEY_LEN: usize = 32;
 
-#[allow(async_fn_in_trait)]
-pub trait VaultKeyEnvelopeRepository {
+#[trait_variant::make(VaultKeyEnvelopeRepository: Send)]
+pub trait LocalVaultKeyEnvelopeRepository {
     async fn get_vault_key_envelope(
         &self,
         vault_id: Uuid,
     ) -> Result<Option<SecretBox<Vec<u8>>>, AppError>;
 }
 
-#[allow(async_fn_in_trait)]
-pub trait VaultService {
+#[trait_variant::make(VaultService: Send)]
+pub trait LocalVaultService {
     async fn create_vault(
         &self,
         owner_user_id: Uuid,
@@ -207,8 +207,7 @@ where
             .await?
             .ok_or_else(|| AppError::NotFound("vault not found".to_string()))?;
 
-        self.open_vault_for_user(vault.owner_user_id, vault_id, master_key)
-            .await
+        VaultService::open_vault_for_user(self, vault.owner_user_id, vault_id, master_key).await
     }
 
     async fn open_vault_for_user(
@@ -433,8 +432,8 @@ where
 }
 
 #[cfg(test)]
-#[allow(clippy::disallowed_methods)]
 mod tests {
+    #![allow(clippy::disallowed_methods)]
     use std::collections::HashMap;
     use std::sync::{Arc, Mutex};
 
