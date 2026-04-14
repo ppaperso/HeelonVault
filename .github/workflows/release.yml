@@ -281,14 +281,6 @@ jobs:
       - name: Checkout
         uses: actions/checkout@v5
 
-      - name: Cache Homebrew packages
-        uses: actions/cache@v4
-        with:
-          path: |
-            ~/Library/Caches/Homebrew
-            /opt/homebrew/Cellar
-          key: brew-macos-arm64-gtk4-libadwaita-${{ hashFiles('.github/workflows/release.yml') }}
-
       - name: Install macOS build dependencies
         run: |
           for formula in gtk4 libadwaita gdk-pixbuf sqlite pkgconf dylibbundler create-dmg; do
