@@ -325,7 +325,6 @@ equivalent). The full license texts are available via
 | quote | 1.0.45 | MIT OR Apache-2.0 |
 | r-efi | 5.3.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
 | r-efi | 6.0.0 | MIT OR Apache-2.0 OR LGPL-2.1-or-later |
-| rand | 0.8.5 | MIT OR Apache-2.0 |
 | rand | 0.9.3 | MIT OR Apache-2.0 |
 | rand_chacha | 0.3.1 | MIT OR Apache-2.0 |
 | rand_chacha | 0.9.0 | MIT OR Apache-2.0 |
@@ -381,8 +380,6 @@ equivalent). The full license texts are available via
 | sqlx-core | 0.8.6 | MIT OR Apache-2.0 |
 | sqlx-macros | 0.8.6 | MIT OR Apache-2.0 |
 | sqlx-macros-core | 0.8.6 | MIT OR Apache-2.0 |
-| sqlx-mysql | 0.8.6 | MIT OR Apache-2.0 |
-| sqlx-postgres | 0.8.6 | MIT OR Apache-2.0 |
 | sqlx-sqlite | 0.8.6 | MIT OR Apache-2.0 |
 | stable_deref_trait | 1.2.1 | MIT OR Apache-2.0 |
 | stringprep | 0.1.5 | MIT/Apache-2.0 |

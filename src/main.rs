@@ -732,7 +732,9 @@ async fn initialize_app_context() -> Result<AppStartMode> {
             )
         })?;
 
-    sqlx::migrate!()
+    sqlx::migrate::Migrator::new(Path::new("./migrations"))
+        .await
+        .context("failed to load sqlx migrations")?
         .run(&pool)
         .await
         .context("failed to run sqlx migrations")?;

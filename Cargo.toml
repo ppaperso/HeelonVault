@@ -41,7 +41,7 @@ serde_json = "1.0"
 # - time : uniquement pour le calcul expires_at UTC dans add_edit_dialog.rs
 #   (OffsetDateTime::now_utc() + Duration::days). Aucun usage d'offset local.
 #   Present aussi comme dependance transitive de sqlx (feature time).
-sqlx = { version = "0.8", default-features = false, features = ["sqlite", "macros", "migrate", "runtime-tokio-rustls", "time", "uuid"] }
+sqlx = { path = "crates/sqlx-shim" }
 thiserror = "2.0"
 time = { version = "0.3", features = ["serde", "formatting", "parsing"] }
 tokio = { version = "1.44", features = ["macros", "rt-multi-thread", "sync"] }

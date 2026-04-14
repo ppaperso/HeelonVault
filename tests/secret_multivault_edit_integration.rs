@@ -121,7 +121,9 @@ async fn setup_ctx() -> Result<TestCtx, String> {
         .await
         .map_err(|err| format!("connect sqlite memory: {err}"))?;
 
-    sqlx::migrate!("./migrations")
+    sqlx::migrate::Migrator::new(std::path::Path::new("./migrations"))
+        .await
+        .map_err(|err| format!("load migrations: {err}"))?
         .run(&pool)
         .await
         .map_err(|err| format!("run migrations: {err}"))?;
