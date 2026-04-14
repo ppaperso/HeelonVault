@@ -215,7 +215,7 @@ jobs:
 
       - name: Install macOS build dependencies
         run: |
-          for formula in gtk4 libadwaita sqlite pkgconf; do
+          for formula in gtk4 libadwaita gdk-pixbuf sqlite pkgconf; do
             brew list "$formula" >/dev/null 2>&1 || brew install "$formula"
           done
 
