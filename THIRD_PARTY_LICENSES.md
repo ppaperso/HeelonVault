@@ -5,7 +5,11 @@ Language: EN | [FR](THIRD_PARTY_LICENSES.fr.md)
 HeelonVault incorporates or links against third-party software. This document
 lists those components and their license terms.
 
----
+> **Machine-readable inventory:** The full SBOM (Software Bill of Materials) in
+> CycloneDX 1.4 JSON format is available at [`sbom.cyclonedx.json`](sbom.cyclonedx.json).
+> It is regenerated automatically on every release and can be ingested by tools
+> such as OWASP Dependency-Track, Grype, or Trivy.
+
 
 ## 1. System Libraries (dynamically linked at runtime)
 

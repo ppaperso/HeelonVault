@@ -1,10 +1,16 @@
 [package]
 name = "heelonvault-rust"
-version = "1.0.3"
+version = "1.0.4"
 edition = "2021"
+rust-version = "1.80"
+authors = ["ppaperso <ppaperso@users.noreply.github.com>"]
 license = "Apache-2.0"
-description = "HeelonVault Rust migration skeleton (security-first architecture)"
-repository = "<private>"
+description = "HeelonVault — Security-first password manager built with Rust and GTK4/Libadwaita"
+homepage = "https://github.com/ppaperso/HeelonVault"
+repository = "https://github.com/ppaperso/HeelonVault"
+readme = "README.md"
+keywords = ["password-manager", "vault", "gtk4", "security", "encryption"]
+categories = ["cryptography", "authentication"]
 
 [[bin]]
 name = "heelonvault"
