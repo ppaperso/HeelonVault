@@ -143,7 +143,9 @@ echo "[7/11] Staging GDK-Pixbuf loaders..."
 PIXBUF_DST_ROOT="${RESOURCES_DIR}/lib/gdk-pixbuf-2.0"
 
 if [[ -d "${PIXBUF_LOADERS_DIR}" ]]; then
-    cp -R "${PIXBUF_LOADERS_DIR}/" "${PIXBUF_DST_ROOT}/"
+    mkdir -p "${PIXBUF_DST_ROOT}"
+    # Copy the tree contents and resolve Homebrew symlinks so bundle paths are self-contained.
+    cp -RL "${PIXBUF_LOADERS_DIR}/." "${PIXBUF_DST_ROOT}/"
     # Regenerate loaders.cache with bundle-relative paths
     GDK_PIXBUF_MODULEDIR="${PIXBUF_DST_ROOT}/2.10.0/loaders" \
         gdk-pixbuf-query-loaders > "${PIXBUF_DST_ROOT}/2.10.0/loaders.cache"
