@@ -7,6 +7,31 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [1.0.4] — 2026-04-14
+
+### Sécurité dépendances
+
+- Correction de l'alerte `rand` (issue Dependabot): retrait du chemin vulnérable `rand 0.8.5` du graphe résolu, pin sur `rand 0.9.3`.
+- Génération de clé de récupération BIP39 migrée vers entropie `getrandom` explicite, sans feature `bip39/rand`.
+- Sortie de l'agrégateur `sqlx` vers un shim SQLite-only (`crates/sqlx-shim`) pour supprimer les dépendances inutiles (`sqlx-mysql`, `sqlx-postgres`) du lockfile/SBOM.
+
+### SBOM, attestation et release
+
+- Industrialisation SBOM CycloneDX 1.4: script local `scripts/generate-sbom.sh`, contrôle CI d'obsolescence (`check-sbom`) et publication release (`generate-sbom-artifact`).
+- Publication des artefacts SBOM `sbom.cyclonedx.json` + `sbom.cyclonedx.json.sha256` avec attestation de provenance GitHub (`actions/attest-build-provenance@v4`).
+- Homogénéisation des jobs release Linux/Windows/macOS avec checksums et upload via `gh release`.
+
+### CI/CD et robustesse macOS
+
+- Correction du packaging macOS `.app/.dmg` (staging GDK-Pixbuf, symlinks Homebrew résolus, checksum DMG via `shasum -a 256`).
+- Ajout explicite de `gdk-pixbuf` dans les dépendances Homebrew des workflows macOS.
+- Suppression des warnings Node 20 résiduels en retirant le cache Homebrew `actions/cache@v4` des jobs macOS.
+
+### Documentation et conformité
+
+- Mise à jour de `README.md` / `README.en.md` en 1.0.4 et ajout de la section SBOM signé.
+- Alignement de `THIRD_PARTY_LICENSES.md` et `sbom.cyclonedx.json` avec le graphe dépendances final.
+
 ## [1.0.3] — 2026-04-10
 
 ### Refactoring UI

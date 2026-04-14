@@ -1,4 +1,4 @@
-# HeelonVault 1.0.3
+# HeelonVault 1.0.4
 
 Language: EN | [FR](README.md)
 
@@ -38,6 +38,7 @@ HeelonVault follows a security-first approach for GDPR-oriented data protection.
 
 - Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](LEGAL.md) for trademark and Authenticity Seal terms.
 - **Dependency inventory**: complete third-party component list and licenses are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- **Signed CycloneDX SBOM**: release workflow publishes `sbom.cyclonedx.json` and `sbom.cyclonedx.json.sha256`, with GitHub Actions provenance attestation.
 - **LGPL runtime linking**: GTK4/libadwaita are dynamically linked by the operating system.
 
 ### Cryptographic primitives
