@@ -215,3 +215,130 @@ jobs:
           else
             gh release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
           fi
+
+  generate-sbom-artifact:
+    name: Generate & publish SBOM
+    runs-on: ubuntu-24.04
+
+    permissions:
+      contents: write
+      id-token: write
+      attestations: write
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-cyclonedx (pre-compiled binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-cyclonedx
+
+      - name: Generate SBOM for release
+        run: |
+          cargo cyclonedx \
+            --format json \
+            --spec-version 1.4 \
+            --override-filename sbom.cyclonedx
+          echo "Components: $(jq '.components | length' sbom.cyclonedx.json)"
+
+      - name: Compute SBOM checksum
+        run: sha256sum sbom.cyclonedx.json > sbom.cyclonedx.json.sha256
+
+      - name: Attest SBOM build provenance
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: sbom.cyclonedx.json
+
+      - name: Publish SBOM to GitHub Release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release upload "${{ github.ref_name }}" \
+            sbom.cyclonedx.json \
+            sbom.cyclonedx.json.sha256
+
+  build-and-release-macos:
+    runs-on: macos-14
+    env:
+      FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew/Cellar
+          key: brew-macos-arm64-gtk4-libadwaita-${{ hashFiles('.github/workflows/release.yml') }}
+
+      - name: Install macOS build dependencies
+        run: |
+          brew install gtk4 libadwaita sqlite pkg-config dylibbundler create-dmg
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build macOS release binary
+        run: cargo build --release --locked
+
+      - name: Create .app bundle and DMG
+        run: |
+          VERSION="${GITHUB_REF_NAME#v}"
+          bash scripts/create-macos-bundle.sh \
+            --binary target/release/heelonvault \
+            --version "${VERSION}" \
+            --out heelonvault-macos-arm64.dmg
+
+      - name: Smoke test – validate DMG structure
+        run: |
+          set -euo pipefail
+          hdiutil attach heelonvault-macos-arm64.dmg -mountpoint /tmp/dmg_test -nobrowse -quiet
+
+          test -x /tmp/dmg_test/HeelonVault.app/Contents/MacOS/heelonvault
+          test -x /tmp/dmg_test/HeelonVault.app/Contents/MacOS/heelonvault-bin
+          test -f /tmp/dmg_test/HeelonVault.app/Contents/Info.plist
+
+          # Verify no unresolved external dylibs remain (all must be @rpath, /usr/lib or /System)
+          UNEXPECTED=$(otool -L /tmp/dmg_test/HeelonVault.app/Contents/MacOS/heelonvault-bin \
+            | tail -n +2 \
+            | grep -v '@executable_path\|@rpath\|@loader_path\|/usr/lib\|/System/Library' || true)
+          if [[ -n "$UNEXPECTED" ]]; then
+            echo "[ERROR] Unresolved dylib references found:" >&2
+            echo "${UNEXPECTED}" >&2
+            hdiutil detach /tmp/dmg_test -quiet || true
+            exit 1
+          fi
+
+          hdiutil detach /tmp/dmg_test -quiet
+
+      - name: Compute DMG checksum
+        run: sha256sum heelonvault-macos-arm64.dmg > heelonvault-macos-arm64.dmg.sha256
+
+      - name: Generate DMG Artifact Attestation
+        uses: actions/attest-build-provenance@v4
+        with:
+          subject-path: heelonvault-macos-arm64.dmg
+
+      - name: Publish macOS DMG to GitHub release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          TAG="${GITHUB_REF_NAME}"
+          ASSET="heelonvault-macos-arm64.dmg"
+          CHECKSUM="${ASSET}.sha256"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            gh release upload "$TAG" "$ASSET" "$CHECKSUM" --clobber
+          else
+            gh release create "$TAG" "$ASSET" "$CHECKSUM" --prerelease --generate-notes
+          fi

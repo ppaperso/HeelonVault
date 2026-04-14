@@ -194,3 +194,80 @@ jobs:
         run: |
           ls -lh target/release/heelonvault.exe
           sha256sum target/release/heelonvault.exe
+
+  build-and-verify-macos:
+    runs-on: macos-14
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Cache Homebrew packages
+        uses: actions/cache@v4
+        with:
+          path: |
+            ~/Library/Caches/Homebrew
+            /opt/homebrew/Cellar
+          key: brew-macos-arm64-gtk4-libadwaita-${{ hashFiles('.github/workflows/ci.yml') }}
+
+      - name: Install macOS build dependencies
+        run: |
+          brew install gtk4 libadwaita sqlite pkg-config
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Rust Cache
+        uses: Swatinem/rust-cache@v2
+
+      - name: Build
+        run: cargo build --release --locked
+
+      - name: Validate binary (static – no display server available)
+        run: |
+          file target/release/heelonvault
+          otool -L target/release/heelonvault
+
+  check-sbom:
+    name: Check SBOM is up-to-date
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Install cargo-cyclonedx (pre-compiled binary)
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-cyclonedx
+
+      - name: Generate fresh SBOM
+        run: |
+          cargo cyclonedx \
+            --format json \
+            --spec-version 1.4 \
+            --override-filename /tmp/sbom-fresh
+
+      - name: Compare pURLs (order-insensitive, ignores volatile fields)
+        run: |
+          extract_purls() {
+            jq -r '.components[]? | .purl // empty' "$1" | sort -u
+          }
+
+          COMMITTED=$(extract_purls sbom.cyclonedx.json)
+          FRESH=$(extract_purls /tmp/sbom-fresh.json)
+
+          if [ "$COMMITTED" != "$FRESH" ]; then
+            echo "::error::sbom.cyclonedx.json is out of date."
+            echo "::error::Run './scripts/generate-sbom.sh' and commit the result."
+            echo ""
+            echo "--- Diff (committed vs fresh) ---"
+            diff <(echo "$COMMITTED") <(echo "$FRESH") || true
+            exit 1
+          fi
+
+          COUNT=$(echo "$FRESH" | wc -l | tr -d ' ')
+          echo "SBOM is up-to-date (${COUNT} pURLs matched)."
