@@ -255,7 +255,8 @@ jobs:
           cargo cyclonedx \
             --format json \
             --spec-version 1.4 \
-            --override-filename /tmp/sbom-fresh
+            --override-filename sbom-fresh
+          mv sbom-fresh.json /tmp/sbom-fresh.json
 
       - name: Compare pURLs (order-insensitive, ignores volatile fields)
         run: |
