@@ -297,7 +297,11 @@ impl Default for BackupServiceImpl {
 
 impl BackupService for BackupServiceImpl {
     fn generate_recovery_key(&self) -> Result<RecoveryKeyBundle, AppError> {
-        let mnemonic = Mnemonic::generate_in(Language::English, 24)
+        let mut entropy = [0_u8; 32];
+        getrandom::fill(&mut entropy)
+            .map_err(|err| AppError::Crypto(format!("failed to gather recovery entropy: {err}")))?;
+
+        let mnemonic = Mnemonic::from_entropy_in(Language::English, &entropy)
             .map_err(|err| AppError::Crypto(format!("failed to generate bip39 mnemonic: {err}")))?;
 
         Ok(RecoveryKeyBundle {
