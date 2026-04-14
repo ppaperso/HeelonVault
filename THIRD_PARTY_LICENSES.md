@@ -10,7 +10,6 @@ lists those components and their license terms.
 > It is regenerated automatically on every release and can be ingested by tools
 > such as OWASP Dependency-Track, Grype, or Trivy.
 
-
 ## 1. System Libraries (dynamically linked at runtime)
 
 These libraries are **not embedded** in the HeelonVault binary. They are loaded
@@ -66,6 +65,8 @@ equivalent). The full license texts are available via
 | secrecy | 0.10.3 | Apache-2.0 OR MIT | Secret value zeroization |
 
 ### 2.2 Full Transitive Dependency Table
+
+<!-- markdownlint-disable MD013 -->
 
 | Crate | Version | License |
 | ----- | ------- | ------- |
@@ -458,6 +459,8 @@ equivalent). The full license texts are available via
 | weezl | 0.1.12 | MIT OR Apache-2.0 |
 | zxcvbn | 2.2.2 | MIT |
 
+<!-- markdownlint-enable MD013 -->
+
 ---
 
 ## 3. License Summary
@@ -468,13 +471,13 @@ equivalent). The full license texts are available via
 | MIT only | ~89 | Fully permissive |
 | Unicode-3.0 | 18 | Permissive (Unicode data) |
 | BSD-2-Clause / BSD-3-Clause | 8 | Permissive |
-| Apache-2.0 WITH LLVM-exception | 14 | Permissive (LLVM exception removes copyleft concern) |
+| Apache-2.0 WITH LLVM-exception | 14 | Permissive (LLVM exception) |
 | Apache-2.0 AND ISC | 1 | `ring` — permissive |
 | ISC | 3 | Permissive |
 | CC0-1.0 | 3 | Public domain equivalent |
 | Unlicense/MIT | 5 | Public domain / permissive |
 | Zlib | 1 | Permissive |
-| CDLA-Permissive-2.0 | 2 | `webpki-roots` — permissive for data |
+| CDLA-Permissive-2.0 | 2 | `webpki-roots` data license |
 
 > No copyleft licenses (GPL, LGPL, AGPL, EUPL) are present in the statically
 > compiled Rust dependency tree. The only LGPL components are the system

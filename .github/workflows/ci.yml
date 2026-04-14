@@ -7,6 +7,9 @@ on:
       - main
       - develop
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: read
 
@@ -212,7 +215,9 @@ jobs:
 
       - name: Install macOS build dependencies
         run: |
-          brew install gtk4 libadwaita sqlite pkg-config
+          for formula in gtk4 libadwaita sqlite pkgconf; do
+            brew list "$formula" >/dev/null 2>&1 || brew install "$formula"
+          done
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
@@ -239,10 +244,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-cyclonedx (pre-compiled binary)
+      - name: Install cargo-cyclonedx (pinned pre-compiled binary)
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-cyclonedx
+          tool: cargo-cyclonedx@0.5.9
+          fallback: none
 
       - name: Generate fresh SBOM
         run: |

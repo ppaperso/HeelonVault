@@ -243,6 +243,10 @@ fn main() -> Result<()> {
         return Ok(());
     }
 
+    // Force OpenGL renderer to avoid Vulkan swapchain suboptimal warnings
+    // (benign but verbose). OpenGL is more stable and consistent across platforms.
+    env::set_var("GSK_RENDERER", "gl");
+
     let application = adw::Application::builder()
         .application_id(APP_ID)
         .flags(gio::ApplicationFlags::empty())
@@ -905,6 +909,32 @@ mod tests {
             Path::new("C:/Users/test/AppData/Local/heelonvault").join("logs")
         );
     }
+
+    #[test]
+    fn macos_database_path_uses_app_support_layout() {
+        let bundle_dir = Path::new("/Applications/HeelonVault.app/Contents/MacOS");
+        let runtime_root =
+            Some(Path::new("/Users/test/Library/Application Support/heelonvault").to_path_buf());
+
+        assert_eq!(
+            resolve_default_database_path_for(bundle_dir, runtime_root),
+            Path::new("/Users/test/Library/Application Support/heelonvault")
+                .join("data")
+                .join("heelonvault-rust.db")
+        );
+    }
+
+    #[test]
+    fn macos_log_dir_uses_app_support_layout() {
+        let bundle_dir = Path::new("/Applications/HeelonVault.app/Contents/MacOS");
+        let runtime_root =
+            Some(Path::new("/Users/test/Library/Application Support/heelonvault").to_path_buf());
+
+        assert_eq!(
+            resolve_default_log_dir_for(bundle_dir, runtime_root),
+            Path::new("/Users/test/Library/Application Support/heelonvault").join("logs")
+        );
+    }
 }
 
 fn build_restore_staging_path(database_path: &Path) -> PathBuf {
@@ -1147,14 +1177,14 @@ fn resolve_database_path() -> Result<PathBuf> {
 }
 
 fn resolve_default_database_path(current_dir: &Path) -> PathBuf {
-    resolve_default_database_path_for(current_dir, resolve_windows_runtime_root())
+    resolve_default_database_path_for(current_dir, resolve_platform_runtime_root())
 }
 
 fn resolve_default_database_path_for(
     current_dir: &Path,
-    windows_runtime_root: Option<PathBuf>,
+    platform_runtime_root: Option<PathBuf>,
 ) -> PathBuf {
-    if let Some(runtime_root) = windows_runtime_root {
+    if let Some(runtime_root) = platform_runtime_root {
         return runtime_root.join("data").join("heelonvault-rust.db");
     }
 
@@ -1169,23 +1199,25 @@ fn resolve_default_database_path_for(
 }
 
 fn resolve_default_log_dir(current_dir: &Path) -> PathBuf {
-    resolve_default_log_dir_for(current_dir, resolve_windows_runtime_root())
+    resolve_default_log_dir_for(current_dir, resolve_platform_runtime_root())
 }
 
 fn resolve_default_log_dir_for(
     current_dir: &Path,
-    windows_runtime_root: Option<PathBuf>,
+    platform_runtime_root: Option<PathBuf>,
 ) -> PathBuf {
-    if let Some(runtime_root) = windows_runtime_root {
+    if let Some(runtime_root) = platform_runtime_root {
         return runtime_root.join("logs");
     }
 
     current_dir.join("logs")
 }
 
-fn resolve_windows_runtime_root() -> Option<PathBuf> {
+fn resolve_platform_runtime_root() -> Option<PathBuf> {
     if cfg!(target_os = "windows") {
         dirs::data_local_dir().map(|path| path.join("heelonvault"))
+    } else if cfg!(target_os = "macos") {
+        dirs::data_dir().map(|path| path.join("heelonvault"))
     } else {
         None
     }

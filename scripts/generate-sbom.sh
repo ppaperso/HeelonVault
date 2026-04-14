@@ -11,14 +11,21 @@
 
 set -euo pipefail
 
+SBOM_TOOL_VERSION="0.5.9"
+
 SCRIPT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 PROJECT_ROOT="$(cd "$SCRIPT_DIR/.." && pwd)"
 
 cd "$PROJECT_ROOT"
 
-if ! command -v cargo-cyclonedx &>/dev/null; then
-    echo "[SBOM] cargo-cyclonedx not found — installing..."
-    cargo install cargo-cyclonedx
+CURRENT_TOOL_VERSION=""
+if command -v cargo-cyclonedx &>/dev/null; then
+    CURRENT_TOOL_VERSION="$(cargo cyclonedx --version 2>/dev/null | awk '{print $2}')"
+fi
+
+if [[ "$CURRENT_TOOL_VERSION" != "$SBOM_TOOL_VERSION" ]]; then
+    echo "[SBOM] syncing cargo-cyclonedx to ${SBOM_TOOL_VERSION}..."
+    cargo install cargo-cyclonedx --version "$SBOM_TOOL_VERSION" --locked --force
 fi
 
 echo "[SBOM] Generating sbom.cyclonedx.json..."

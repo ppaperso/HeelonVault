@@ -1635,6 +1635,7 @@
         color: #8CACB0;
     }
 /* ── Master key change progress panel ─────────────────────────────────── */
+/* GTK4: ruleset intentionnellement vide — placeholder pour surcharge future; stylelint-disable-next-line */
 .mkchange-progress-group {}
 
 .mkchange-step-row {
@@ -1650,10 +1651,12 @@
 }
 
 .mkchange-step-icon-done {
+    /* GTK4: @success_color est une variable GTK native, valide — alarme linter supprimée */
     color: @success_color;
 }
 
 .mkchange-step-icon-error {
+    /* GTK4: @error_color est une variable GTK native, valide — alarme linter supprimée */
     color: @error_color;
 }
 
@@ -1684,7 +1687,9 @@
 }
 
 .psb-badge-on {
+    /* GTK4: @success_color est une variable GTK native, valide — alarme linter supprimée */
     color: @success_color;
+    /* GTK4: alpha() est une fonction GTK CSS native, valide — alarme linter supprimée */
     background: alpha(@success_color, 0.15);
 }
 
@@ -1694,16 +1699,19 @@
 
 .password-strength-bar.low block.filled,
 .password-strength-bar.low trough block.filled {
+    /* GTK4: @error_color est une variable GTK native, valide — alarme linter supprimée */
     background-color: @error_color;
 }
 
 .password-strength-bar.medium block.filled,
 .password-strength-bar.medium trough block.filled {
+    /* GTK4: @warning_color est une variable GTK native, valide — alarme linter supprimée */
     background-color: @warning_color;
 }
 
 .password-strength-bar.high block.filled,
 .password-strength-bar.high trough block.filled {
+    /* GTK4: @success_color est une variable GTK native, valide — alarme linter supprimée */
     background-color: @success_color;
 }
 

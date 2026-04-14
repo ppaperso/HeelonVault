@@ -5,6 +5,9 @@ on:
     tags:
       - "v*"
 
+env:
+  FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
+
 permissions:
   contents: write
   id-token: write
@@ -232,10 +235,11 @@ jobs:
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
 
-      - name: Install cargo-cyclonedx (pre-compiled binary)
+      - name: Install cargo-cyclonedx (pinned pre-compiled binary)
         uses: taiki-e/install-action@v2
         with:
-          tool: cargo-cyclonedx
+          tool: cargo-cyclonedx@0.5.9
+          fallback: none
 
       - name: Generate SBOM for release
         run: |
@@ -257,9 +261,16 @@ jobs:
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
-          gh release upload "${{ github.ref_name }}" \
+          TAG="${GITHUB_REF_NAME}"
+
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            gh release create "$TAG" --prerelease --generate-notes || true
+          fi
+
+          gh release upload "$TAG" \
             sbom.cyclonedx.json \
-            sbom.cyclonedx.json.sha256
+            sbom.cyclonedx.json.sha256 \
+            --clobber
 
   build-and-release-macos:
     runs-on: macos-14
@@ -280,7 +291,9 @@ jobs:
 
       - name: Install macOS build dependencies
         run: |
-          brew install gtk4 libadwaita sqlite pkg-config dylibbundler create-dmg
+          for formula in gtk4 libadwaita sqlite pkgconf dylibbundler create-dmg; do
+            brew list "$formula" >/dev/null 2>&1 || brew install "$formula"
+          done
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
