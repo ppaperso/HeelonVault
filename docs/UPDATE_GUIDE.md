@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](UPDATE_GUIDE.en.md)
 
-Version documentée: `1.0.3`
+Version documentée: `1.1.0`
 
 Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
@@ -17,7 +17,7 @@ Ce guide decrit la mise a jour de HeelonVault dans son architecture Rust-only.
 
 ## Prerequis
 
-1. L'application est deja installee via `install.sh` (auto-détection OS), ou explicitement via `install-ubuntu.sh` / `install-rhel.sh`.
+1. L'application est deja installee via `scripts/install.sh` (auto-détection OS), ou explicitement via `scripts/install-ubuntu.sh` / `scripts/install-rhel.sh`.
 2. Vous avez les droits `sudo`.
 3. Le toolchain Rust est disponible (`cargo`).
 4. Vous etes dans le dossier source qui contient `update.sh`.
@@ -76,6 +76,10 @@ Verifications fonctionnelles recommandees:
 5. En tant qu'admin, ouvrir `Equipes` puis lancer un partage: un sélecteur explicite de coffre doit être proposé avant confirmation.
 6. Vérifier qu'un membre de team reçoit bien le coffre partagé et peut l'ouvrir selon son rôle (READ/WRITE/ADMIN).
 7. Vérifier le marquage visuel d'un coffre partagé: icône de partage visible sur les coffres partagés, sans badge texte redondant côté propriétaire/admin.
+8. Enchaîner plusieurs échecs d'authentification et vérifier que l'attente augmente progressivement avant nouvelle tentative (backoff).
+9. Si la 2FA est activée, vérifier qu'un code TOTP valide ne peut pas être réutilisé immédiatement (anti-rejeu).
+10. Importer un CSV de test et vérifier que les URL non `http/https`, les fichiers trop volumineux et les champs anormalement longs sont rejetés.
+11. Après export backup/restauration, vérifier les permissions Linux avec `stat -c "%a %n" /chemin/backup.hvb` et `stat -c "%a %n" /chemin/heelonvault-rust.db` (valeur attendue: `600`).
 
 ## Bonnes pratiques
 

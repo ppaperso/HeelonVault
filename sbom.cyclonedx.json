@@ -2,9 +2,9 @@
   "bomFormat": "CycloneDX",
   "specVersion": "1.4",
   "version": 1,
-  "serialNumber": "urn:uuid:7c861a26-06a5-4a40-8986-30c7e35e3d61",
+  "serialNumber": "urn:uuid:4050fa56-117d-478e-be57-38405252c4af",
   "metadata": {
-    "timestamp": "2026-04-14T12:57:29.691775526Z",
+    "timestamp": "2026-05-13T15:40:03.634116956Z",
     "tools": [
       {
         "vendor": "CycloneDX",
@@ -20,10 +20,10 @@
     ],
     "component": {
       "type": "application",
-      "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.0.4",
+      "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.1.0",
       "author": "ppaperso <ppaperso@users.noreply.github.com>",
       "name": "heelonvault-rust",
-      "version": "1.0.4",
+      "version": "1.1.0",
       "description": "HeelonVault — Security-first password manager built with Rust and GTK4/Libadwaita",
       "scope": "required",
       "licenses": [
@@ -31,7 +31,7 @@
           "expression": "Apache-2.0"
         }
       ],
-      "purl": "pkg:cargo/heelonvault-rust@1.0.4?download_url=file://.",
+      "purl": "pkg:cargo/heelonvault-rust@1.1.0?download_url=file://.",
       "externalReferences": [
         {
           "type": "website",
@@ -45,17 +45,17 @@
       "components": [
         {
           "type": "library",
-          "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.0.4 bin-target-0",
+          "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.1.0 bin-target-0",
           "name": "heelonvault_rust",
-          "version": "1.0.4",
-          "purl": "pkg:cargo/heelonvault-rust@1.0.4?download_url=file://.#src/lib.rs"
+          "version": "1.1.0",
+          "purl": "pkg:cargo/heelonvault-rust@1.1.0?download_url=file://.#src/lib.rs"
         },
         {
           "type": "application",
-          "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.0.4 bin-target-1",
+          "bom-ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.1.0 bin-target-1",
           "name": "heelonvault",
-          "version": "1.0.4",
-          "purl": "pkg:cargo/heelonvault-rust@1.0.4?download_url=file://.#src/main.rs"
+          "version": "1.1.0",
+          "purl": "pkg:cargo/heelonvault-rust@1.1.0?download_url=file://.#src/main.rs"
         }
       ]
     },
@@ -12130,7 +12130,7 @@
   ],
   "dependencies": [
     {
-      "ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.0.4",
+      "ref": "path+file:///home/ppaadmin/Vscode/HeelonVault#heelonvault-rust@1.1.0",
       "dependsOn": [
         "registry+https://github.com/rust-lang/crates.io-index#aes-gcm@0.10.3",
         "registry+https://github.com/rust-lang/crates.io-index#anyhow@1.0.102",
@@ -12165,6 +12165,7 @@
         "registry+https://github.com/rust-lang/crates.io-index#tracing-subscriber@0.3.23",
         "registry+https://github.com/rust-lang/crates.io-index#trait-variant@0.1.2",
         "registry+https://github.com/rust-lang/crates.io-index#unic-langid@0.9.6",
+        "registry+https://github.com/rust-lang/crates.io-index#url@2.5.8",
         "registry+https://github.com/rust-lang/crates.io-index#uuid@1.22.0",
         "registry+https://github.com/rust-lang/crates.io-index#zeroize@1.8.2",
         "registry+https://github.com/rust-lang/crates.io-index#zxcvbn@2.2.2"

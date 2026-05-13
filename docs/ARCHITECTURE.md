@@ -2,7 +2,7 @@
 
 Langue : FR | [EN](ARCHITECTURE.en.md)
 
-Version cible documentée: `1.0.3`
+Version cible documentée: `1.1.0`
 
 ## Vue d'ensemble
 
@@ -12,7 +12,7 @@ HeelonVault est désormais un runtime Rust-only orienté desktop GTK.
 - UI desktop: GTK4 + libadwaita
 - Base de donnees: SQLite
 - Migrations SQL: `sqlx::migrate!` au demarrage
-- Launchers racine: `run.sh` (prod), `run-dev.sh` (dev)
+- Launchers scripts: `scripts/run.sh` (prod), `scripts/run-dev.sh` (dev)
 
 ## Couches logiques
 
@@ -38,16 +38,16 @@ HeelonVault/
 ├── migrations/                     # Migrations SQL appliquees au demarrage
 ├── tests/                          # Tests integration/securite
 ├── Cargo.toml
-├── run.sh                          # Launcher production
-├── run-dev.sh                      # Launcher developpement
-├── install.sh                      # Installation unifiée (détection OS)
-├── install-core.sh                 # Bibliothèque commune install Linux
-├── install-ubuntu.sh               # Installation Ubuntu / Debian
-├── install-rhel.sh                 # Installation Fedora / RHEL / Rocky / AlmaLinux
-├── remove.sh                       # Désinstallation unifiée (détection OS)
-├── remove-core.sh                  # Bibliothèque commune désinstallation Linux
-├── remove-ubuntu.sh                # Désinstallation Ubuntu / Debian
-├── remove-rhel.sh                  # Désinstallation Fedora / RHEL / Rocky / AlmaLinux
+├── scripts/run.sh                  # Launcher production
+├── scripts/run-dev.sh              # Launcher developpement
+├── scripts/install.sh              # Installation unifiée (détection OS)
+├── scripts/install-core.sh         # Bibliothèque commune install Linux
+├── scripts/install-ubuntu.sh               # Installation Ubuntu / Debian
+├── scripts/install-rhel.sh                 # Installation Fedora / RHEL / Rocky / AlmaLinux
+├── scripts/remove.sh               # Désinstallation unifiée (détection OS)
+├── scripts/remove-core.sh          # Bibliothèque commune désinstallation Linux
+├── scripts/remove-ubuntu.sh                # Désinstallation Ubuntu / Debian
+├── scripts/remove-rhel.sh                  # Désinstallation Fedora / RHEL / Rocky / AlmaLinux
 ├── update.sh                       # Mise a jour Rust-only + backup
 └── docs/
 ```
@@ -123,10 +123,10 @@ Exemples:
 
 ```bash
 # Compat standard Rust (prioritaire)
-RUST_LOG=info,heelonvault_rust::ui=debug ./run-dev.sh
+RUST_LOG=info,heelonvault_rust::ui=debug ./scripts/run-dev.sh
 
 # Ou via variable applicative
-HEELONVAULT_LOG_LEVEL=warn ./run.sh
+HEELONVAULT_LOG_LEVEL=warn ./scripts/run.sh
 ```
 
 ## Tests et validation

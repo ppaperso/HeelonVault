@@ -4,7 +4,7 @@
 # Usage:
 #   bash scripts/create-macos-bundle.sh \
 #       --binary  target/release/heelonvault \
-#       --version 1.0.4 \
+#       --version 1.1.0 \
 #       --out     heelonvault-macos-arm64.dmg
 #
 # Required tools (install via Homebrew):
@@ -61,7 +61,7 @@ MACOS_DIR="${CONTENTS}/MacOS"
 FRAMEWORKS_DIR="${CONTENTS}/Frameworks"
 RESOURCES_DIR="${CONTENTS}/Resources"
 
-ICON_SRC="${REPO_ROOT}/resources/icons/hicolor/256x256/apps/heelonvault.png"
+ICON_SRC="${REPO_ROOT}/assets/icons/hicolor/256x256/apps/heelonvault.png"
 ICONSET_DIR="${RESOURCES_DIR}/heelonvault.iconset"
 ICNS_OUT="${RESOURCES_DIR}/heelonvault.icns"
 

@@ -2,7 +2,7 @@
 
 Language: EN | [FR](ARCHITECTURE.md)
 
-Documented target version: `1.0.3`
+Documented target version: `1.1.0`
 
 ## Overview
 
@@ -12,7 +12,7 @@ HeelonVault now runs as a Rust-only desktop runtime.
 - Desktop UI: GTK4 + libadwaita
 - Database: SQLite
 - SQL migrations: `sqlx::migrate!` at startup
-- Launchers: `run.sh` (prod), `run-dev.sh` (dev)
+- Launchers: `scripts/run.sh` (prod), `scripts/run-dev.sh` (dev)
 
 ## Logical Layers
 
@@ -38,16 +38,16 @@ HeelonVault/
 ├── migrations/
 ├── tests/
 ├── Cargo.toml
-├── run.sh
-├── run-dev.sh
-├── install.sh                      # Unified installer (OS detection)
-├── install-core.sh                 # Shared Linux install library
-├── install-ubuntu.sh               # Ubuntu / Debian installer
-├── install-rhel.sh                 # Fedora / RHEL / Rocky Linux / AlmaLinux installer
-├── remove.sh                       # Unified uninstaller (OS detection)
-├── remove-core.sh                  # Shared Linux uninstall library
-├── remove-ubuntu.sh                # Ubuntu / Debian uninstaller
-├── remove-rhel.sh                  # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
+├── scripts/run.sh
+├── scripts/run-dev.sh
+├── scripts/install.sh              # Unified installer (OS detection)
+├── scripts/install-core.sh         # Shared Linux install library
+├── scripts/install-ubuntu.sh               # Ubuntu / Debian installer
+├── scripts/install-rhel.sh                 # Fedora / RHEL / Rocky Linux / AlmaLinux installer
+├── scripts/remove.sh               # Unified uninstaller (OS detection)
+├── scripts/remove-core.sh          # Shared Linux uninstall library
+├── scripts/remove-ubuntu.sh                # Ubuntu / Debian uninstaller
+├── scripts/remove-rhel.sh                  # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
 └── docs/
 ```
 
@@ -108,8 +108,8 @@ Engine behavior:
 Examples:
 
 ```bash
-RUST_LOG=info,heelonvault_rust::ui=debug ./run-dev.sh
-HEELONVAULT_LOG_LEVEL=warn ./run.sh
+RUST_LOG=info,heelonvault_rust::ui=debug ./scripts/run-dev.sh
+HEELONVAULT_LOG_LEVEL=warn ./scripts/run.sh
 ```
 
 ## Validation

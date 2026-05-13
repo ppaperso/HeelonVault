@@ -2,7 +2,7 @@
 
 Language: EN | [FR](UPDATE_GUIDE.md)
 
-Documented version: `1.0.3`
+Documented version: `1.1.0`
 
 This guide explains how to update HeelonVault in its Rust-only architecture.
 
@@ -17,7 +17,7 @@ This guide explains how to update HeelonVault in its Rust-only architecture.
 
 ## Prerequisites
 
-1. Application already installed with `install.sh` (OS auto-detection), or explicitly with `install-ubuntu.sh` / `install-rhel.sh`.
+1. Application already installed with `scripts/install.sh` (OS auto-detection), or explicitly with `scripts/install-ubuntu.sh` / `scripts/install-rhel.sh`.
 2. `sudo` access.
 3. Rust toolchain available (`cargo`).
 4. You are in the source folder containing `update.sh`.
@@ -61,6 +61,10 @@ Recommended functional checks:
 5. As admin, open Teams and start a share action: an explicit vault selector must be shown before confirmation.
 6. Verify that a team member receives the shared vault and can open it according to assigned role (READ/WRITE/ADMIN).
 7. Verify shared-state visual marker behavior: shared icon visible on shared vaults, without redundant owner/admin text badge.
+8. Trigger repeated authentication failures and verify retry delay increases progressively before next attempt (backoff).
+9. When 2FA is enabled, verify a valid TOTP code cannot be reused immediately (replay guard).
+10. Import a test CSV and verify non-`http/https` URLs, oversized files, and abnormally long fields are rejected.
+11. After backup export/restore, verify Linux file permissions with `stat -c "%a %n" /path/to/backup.hvb` and `stat -c "%a %n" /path/to/heelonvault-rust.db` (expected value: `600`).
 
 ## Rollback
 

@@ -1,11 +1,11 @@
-# HeelonVault 1.0.4
+# HeelonVault 1.1.0
 
 Langue: FR | [EN](README.en.md)
 
 HeelonVault est un gestionnaire de secrets desktop **local-first**, écrit en Rust et construit
 avec GTK4 / libadwaita et SQLite.
 
-> Distribué sous licence Apache 2.0. Voir [LICENSE](LICENSE) pour le logiciel et [LEGAL.md](LEGAL.md) pour les conditions relatives à la marque et au Sceau d'Authenticité.
+> Distribué sous licence Apache 2.0. Voir [LICENSE](LICENSE) pour le logiciel et [LEGAL.md](docs/LEGAL.md) pour les conditions relatives à la marque et au Sceau d'Authenticité.
 
 ---
 
@@ -38,9 +38,9 @@ et la protection des données utilisateurs.
 
 ### Licence et transparence
 
-- Distribué sous licence Apache 2.0. Voir [LICENSE](LICENSE) pour le logiciel et [LEGAL.md](LEGAL.md) pour les conditions relatives à la marque et au Sceau d'Authenticité.
+- Distribué sous licence Apache 2.0. Voir [LICENSE](LICENSE) pour le logiciel et [LEGAL.md](docs/LEGAL.md) pour les conditions relatives à la marque et au Sceau d'Authenticité.
 - **Inventaire des dépendances** : la totalité des bibliothèques tierces (Rust + système)
-  et leurs licences exactes sont documentées dans [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+  et leurs licences exactes sont documentées dans [THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).
 - **SBOM CycloneDX signé** : la release publie `sbom.cyclonedx.json` et `sbom.cyclonedx.json.sha256`, avec attestation de provenance GitHub Actions.
 - **Aucune dépendance copyleft** compilée statiquement dans le binaire — les seules bibliothèques
   LGPL (GTK4, libadwaita) sont liées dynamiquement par le système d'exploitation.
@@ -85,7 +85,8 @@ HeelonVault/
 │   ├── models/            # Types de domaine
 │   └── ui/                # Widgets GTK4 / libadwaita
 ├── migrations/            # 14 migrations SQL (sqlx)
-├── resources/             # Ressources GTK (CSS, icônes, GResource)
+├── assets/                # Assets GTK embarqués (CSS, icônes, images)
+├── resources/             # Ressources non délocalisées (fonts)
 ├── tests/                 # Tests d'intégration Rust
 ├── docs/                  # Documentation technique et architecture
 ├── data/                  # Base de données dev locale
@@ -93,16 +94,16 @@ HeelonVault/
 ├── Cargo.toml             # Manifest Cargo
 ├── clippy.toml            # Politique Clippy sécurité
 ├── LICENSE                # Licence Apache 2.0
-├── THIRD_PARTY_LICENSES.md# Inventaire des bibliothèques tierces
+├── docs/THIRD_PARTY_LICENSES.md  # Inventaire des bibliothèques tierces
 ├── SECURITY.md            # Politique de divulgation
-├── run-dev.sh             # Lancement développement
-├── run.sh                 # Lancement production (généré par les scripts d'installation)
-├── install.sh             # Installateur unifié (détection OS)
-├── install-ubuntu.sh      # Installateur Ubuntu / Debian
-├── install-rhel.sh        # Installateur Fedora / RHEL / Rocky / AlmaLinux
-├── remove.sh              # Désinstallateur unifié (détection OS)
-├── remove-ubuntu.sh       # Désinstallateur Ubuntu / Debian
-└── remove-rhel.sh         # Désinstallateur Fedora / RHEL / Rocky / AlmaLinux
+├── scripts/run-dev.sh     # Lancement développement
+├── scripts/run.sh         # Lancement production (généré par les scripts d'installation)
+├── scripts/install.sh     # Installateur unifié (détection OS)
+├── scripts/install-ubuntu.sh      # Installateur Ubuntu / Debian
+├── scripts/install-rhel.sh        # Installateur Fedora / RHEL / Rocky / AlmaLinux
+├── scripts/remove.sh      # Désinstallateur unifié (détection OS)
+├── scripts/remove-ubuntu.sh       # Désinstallateur Ubuntu / Debian
+└── scripts/remove-rhel.sh         # Désinstallateur Fedora / RHEL / Rocky / AlmaLinux
 ```
 
 ---
@@ -112,7 +113,7 @@ HeelonVault/
 ### Développement
 
 ```bash
-./run-dev.sh
+./scripts/run-dev.sh
 ```
 
 Base de données dev : `data/heelonvault-rust-dev.db`
@@ -138,16 +139,16 @@ Le tarball de release (`heelonvault-linux-x86_64.tar.gz`) installe :
 ```bash
 tar -xzf heelonvault-linux-x86_64.tar.gz
 cd heelonvault-linux-x86_64
-sudo ./install.sh
+sudo ./scripts/install.sh
 ```
 
 Prévisualisation sans modifier le système (dry-run) :
 
 ```bash
-sudo env HEELONVAULT_DRY_RUN=1 ./install.sh
+sudo env HEELONVAULT_DRY_RUN=1 ./scripts/install.sh
 ```
 
-En cas de besoin (forçage explicite), vous pouvez lancer `install-ubuntu.sh` ou `install-rhel.sh`.
+En cas de besoin (forçage explicite), vous pouvez lancer `scripts/install-ubuntu.sh` ou `scripts/install-rhel.sh`.
 
 Sécurité release : si le fichier `heelonvault.sha256` est présent dans l'archive, l'installateur vérifie automatiquement l'intégrité du binaire avant installation.
 
@@ -158,12 +159,12 @@ Pour des performances optimales, la base de données du mode Entreprise doit ré
 Désinstallation :
 
 ```bash
-sudo ./remove.sh
+sudo ./scripts/remove.sh
 ```
 
-En cas de besoin, vous pouvez lancer `remove-ubuntu.sh` ou `remove-rhel.sh` explicitement.
+En cas de besoin, vous pouvez lancer `scripts/remove-ubuntu.sh` ou `scripts/remove-rhel.sh` explicitement.
 
-Consulter [QUICKSTART.md](QUICKSTART.md) pour les détails post-installation.
+Consulter [QUICKSTART.md](docs/QUICKSTART.md) pour les détails post-installation.
 
 ### Tests
 
@@ -177,10 +178,10 @@ cargo test
 
 | Fichier | Contenu |
 | ------- | ------- |
-| [CHANGELOG.md](CHANGELOG.md) | Journal des modifications (FR) |
-| [CHANGELOG.en.md](CHANGELOG.en.md) | Changelog (EN) |
-| [QUICKSTART.md](QUICKSTART.md) | Installation et premiers pas |
-| [QUICKSTART.fr.md](QUICKSTART.fr.md) | Guide de démarrage rapide (FR) |
+| [CHANGELOG.md](docs/CHANGELOG.md) | Journal des modifications (FR) |
+| [CHANGELOG.en.md](docs/CHANGELOG.en.md) | Changelog (EN) |
+| [QUICKSTART.md](docs/QUICKSTART.md) | Installation et premiers pas |
+| [QUICKSTART.fr.md](docs/QUICKSTART.fr.md) | Guide de démarrage rapide (FR) |
 | [docs/README.md](docs/README.md) | Index central de la documentation bilingue |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Architecture technique détaillée |
 | [docs/ARCHITECTURE.en.md](docs/ARCHITECTURE.en.md) | Technical architecture (EN) |
@@ -195,9 +196,9 @@ cargo test
 | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) | Code de conduite (FR) |
 | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | Code of Conduct (EN) |
 | [LICENSE](LICENSE) | Licence Apache 2.0 |
-| [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | Inventaire complet des dépendances tierces |
-| [THIRD_PARTY_LICENSES.fr.md](THIRD_PARTY_LICENSES.fr.md) | Guide FR des licences tierces |
+| [THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md) | Inventaire complet des dépendances tierces |
+| [THIRD_PARTY_LICENSES.fr.md](docs/THIRD_PARTY_LICENSES.fr.md) | Guide FR des licences tierces |
 
 ---
 
-> Les notes de version détaillées sont dans [CHANGELOG.md](CHANGELOG.md).
+> Les notes de version détaillées sont dans [CHANGELOG.md](docs/CHANGELOG.md).

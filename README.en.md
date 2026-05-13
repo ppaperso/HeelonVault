@@ -1,10 +1,10 @@
-# HeelonVault 1.0.4
+# HeelonVault 1.1.0
 
 Language: EN | [FR](README.md)
 
 HeelonVault is a local-first desktop secrets manager built in Rust with GTK4/libadwaita and SQLite.
 
-> Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](LEGAL.md) for trademark and Authenticity Seal terms.
+> Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](docs/LEGAL.md) for trademark and Authenticity Seal terms.
 
 ---
 
@@ -36,8 +36,8 @@ HeelonVault follows a security-first approach for GDPR-oriented data protection.
 
 ### License and transparency
 
-- Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](LEGAL.md) for trademark and Authenticity Seal terms.
-- **Dependency inventory**: complete third-party component list and licenses are documented in [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md).
+- Distributed under the Apache 2.0 License. See [LICENSE](LICENSE) for software terms and [LEGAL.md](docs/LEGAL.md) for trademark and Authenticity Seal terms.
+- **Dependency inventory**: complete third-party component list and licenses are documented in [THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md).
 - **Signed CycloneDX SBOM**: release workflow publishes `sbom.cyclonedx.json` and `sbom.cyclonedx.json.sha256`, with GitHub Actions provenance attestation.
 - **LGPL runtime linking**: GTK4/libadwaita are dynamically linked by the operating system.
 
@@ -68,19 +68,20 @@ HeelonVault/
 │   ├── models/            # Domain types
 │   └── ui/                # GTK4 / libadwaita UI
 ├── migrations/            # SQL migrations
-├── resources/             # GTK resources (CSS, icons, GResource)
+├── assets/                # Bundled GTK assets (CSS, icons, images)
+├── resources/             # Non-migrated resources (fonts)
 ├── tests/                 # Rust integration tests
 ├── docs/                  # Technical documentation
 ├── data/                  # Local dev database
 ├── logs/                  # Runtime logs
 ├── LICENSE                # Apache 2.0 license
-├── THIRD_PARTY_LICENSES.md# Third-party dependency licenses
-├── install.sh             # Unified installer (OS detection)
-├── install-ubuntu.sh      # Ubuntu / Debian installer
-├── install-rhel.sh        # Fedora / RHEL / Rocky Linux / AlmaLinux installer
-├── remove.sh              # Unified uninstaller (OS detection)
-├── remove-ubuntu.sh       # Ubuntu / Debian uninstaller
-└── remove-rhel.sh         # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
+├── docs/THIRD_PARTY_LICENSES.md  # Third-party dependency licenses
+├── scripts/install.sh     # Unified installer (OS detection)
+├── scripts/install-ubuntu.sh      # Ubuntu / Debian installer
+├── scripts/install-rhel.sh        # Fedora / RHEL / Rocky Linux / AlmaLinux installer
+├── scripts/remove.sh      # Unified uninstaller (OS detection)
+├── scripts/remove-ubuntu.sh       # Ubuntu / Debian uninstaller
+└── scripts/remove-rhel.sh         # Fedora / RHEL / Rocky Linux / AlmaLinux uninstaller
 ```
 
 ---
@@ -90,7 +91,7 @@ HeelonVault/
 ### Development
 
 ```bash
-./run-dev.sh
+./scripts/run-dev.sh
 ```
 
 Dev database: `data/heelonvault-rust-dev.db`
@@ -112,16 +113,16 @@ The installer asks for a deployment profile:
 ```bash
 tar -xzf heelonvault-linux-x86_64.tar.gz
 cd heelonvault-linux-x86_64
-sudo ./install.sh
+sudo ./scripts/install.sh
 ```
 
 Preview mode without changing the system (dry-run):
 
 ```bash
-sudo env HEELONVAULT_DRY_RUN=1 ./install.sh
+sudo env HEELONVAULT_DRY_RUN=1 ./scripts/install.sh
 ```
 
-If needed, you can still run `install-ubuntu.sh` or `install-rhel.sh` explicitly.
+If needed, you can still run `scripts/install-ubuntu.sh` or `scripts/install-rhel.sh` explicitly.
 
 Release security: if `heelonvault.sha256` is present in the archive, installer verifies binary integrity before installation.
 
@@ -132,12 +133,12 @@ For optimal performance, Enterprise mode database should be hosted on low-latenc
 Uninstall:
 
 ```bash
-sudo ./remove.sh
+sudo ./scripts/remove.sh
 ```
 
-If needed, you can still run `remove-ubuntu.sh` or `remove-rhel.sh` explicitly.
+If needed, you can still run `scripts/remove-ubuntu.sh` or `scripts/remove-rhel.sh` explicitly.
 
-See [QUICKSTART.md](QUICKSTART.md) and [QUICKSTART.fr.md](QUICKSTART.fr.md).
+See [QUICKSTART.md](docs/QUICKSTART.md) and [QUICKSTART.fr.md](docs/QUICKSTART.fr.md).
 
 ### Tests
 
@@ -153,9 +154,9 @@ Central index: [docs/README.md](docs/README.md)
 
 | Document | English | French |
 | -------- | ------- | ------ |
-| Changelog | [CHANGELOG.en.md](CHANGELOG.en.md) | [CHANGELOG.md](CHANGELOG.md) |
+| Changelog | [CHANGELOG.en.md](docs/CHANGELOG.en.md) | [CHANGELOG.md](docs/CHANGELOG.md) |
 | Overview | [README.en.md](README.en.md) | [README.md](README.md) |
-| Quickstart | [QUICKSTART.md](QUICKSTART.md) | [QUICKSTART.fr.md](QUICKSTART.fr.md) |
+| Quickstart | [QUICKSTART.md](docs/QUICKSTART.md) | [QUICKSTART.fr.md](docs/QUICKSTART.fr.md) |
 | Contributing | [CONTRIBUTING.md](CONTRIBUTING.md) | [CONTRIBUTING.fr.md](CONTRIBUTING.fr.md) |
 | Security | [SECURITY.md](SECURITY.md) | [SECURITY.fr.md](SECURITY.fr.md) |
 | Code of Conduct | [CODE_OF_CONDUCT.en.md](CODE_OF_CONDUCT.en.md) | [CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md) |
@@ -165,8 +166,8 @@ Central index: [docs/README.md](docs/README.md)
 | Data folder | [data/README.md](data/README.md) | [data/README.fr.md](data/README.fr.md) |
 | Scripts | [scripts/README.md](scripts/README.md) | [scripts/README.fr.md](scripts/README.fr.md) |
 | Tests | [tests/README.en.md](tests/README.en.md) | [tests/README.md](tests/README.md) |
-| Third-party licenses | [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) | [THIRD_PARTY_LICENSES.fr.md](THIRD_PARTY_LICENSES.fr.md) |
+| Third-party licenses | [THIRD_PARTY_LICENSES.md](docs/THIRD_PARTY_LICENSES.md) | [THIRD_PARTY_LICENSES.fr.md](docs/THIRD_PARTY_LICENSES.fr.md) |
 
 ---
 
-> Detailed release notes are in [CHANGELOG.en.md](CHANGELOG.en.md).
+> Detailed release notes are in [CHANGELOG.en.md](docs/CHANGELOG.en.md).

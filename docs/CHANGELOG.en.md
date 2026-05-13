@@ -7,6 +7,53 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [Unreleased] — v1.1.0 sprint
+
+### v1.1.0 technical debt (issues #5, #6, #7, #8, #9)
+
+- `main`: moved `env::set_var("GSK_RENDERER", "gl")` before Tokio runtime initialization.
+- `import_service`: removed the global `clippy::disallowed_methods` bypass and hardened CSV parsing (explicit required-field extraction with typed validation errors).
+- `main`: split orchestration into focused units (startup flags, runtime/UI execution, service builders) to reduce complexity and duplication.
+- `team_service`: decomposed `share_vault_with_team` and `rotate_vault_key` into internal helpers (member-key resolution, share persistence, audit recording).
+
+### API documentation (issue #10)
+
+- Added/completed `///` docs on public service traits (`vault_service`, `secret_service`) to clarify preconditions, error paths, and security contracts.
+
+### Validation
+
+- Automated validation run after refactor: `cargo test --workspace` and `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## [1.1.0] — 2026-05-13
+
+### Authentication and 2FA security
+
+- Hardened password change flow: old/new password comparison now uses constant-time equality in `auth_service`.
+- Hardened login failure accounting: invalid passwords now correctly increment `auth_policy.failed_attempts` in the login path.
+- Added server-side TOTP replay guard: a code that was already accepted cannot be reused immediately in the same time window.
+
+### Brute-force mitigation and lock UX
+
+- Added progressive retry backoff in `auth_policy_service` (bounded exponential growth), complementing the existing lock window behavior.
+
+### CSV import hardening
+
+- Added security limits for CSV import: max file size, max row count, and max field length.
+- Added strict URL validation for import: only `http://` and `https://` schemes are accepted.
+
+### Sensitive file permissions
+
+- Backup exports (`.bak` and `.hvb`) now apply owner-only permissions (`0600` on Unix).
+- Restored SQLite files now apply owner-only permissions (`0600` on Unix).
+
+### Tests
+
+- Added unit tests for:
+  - identical password change rejection,
+  - CSV URL validation,
+  - auth policy backoff calculations.
+- Full validation run completed: `cargo test` passes after changes.
+
 ## [1.0.4] — 2026-04-14
 
 ### Dependency security
@@ -43,9 +90,9 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 ### Technical cleanup
 
 - Removed unreferenced intermediate split files left behind during the refactor.
-- Verified that `resources/images/user-guide` images remain documentation-only assets and are not unintentionally bundled at runtime.
+- Verified that `assets/images/user-guide` images remain documentation-only assets and are not unintentionally bundled at runtime.
 
-### Validation
+### Validation-
 
 - Validated the release state with `cargo check`, `cargo clippy`, `cargo test`, and `cargo fmt --all -- --check`.
 
@@ -63,7 +110,7 @@ Format inspired by [Keep a Changelog](https://keepachangelog.com/).
 
 ### CI/CD and Linux packaging
 
-- Added a shared smoke test (`tests/smoke-test.sh`) with `--install/--remove`, permissions checks, and desktop-entry validation.
+- Added a shared smoke test (`scripts/smoke-test.sh`) with `--install/--remove`, permissions checks, and desktop-entry validation.
 - Hardened CI/Release workflows: Rust cache, Fedora container job, external `.sha256` checksum asset, build provenance attestation, and core script inclusion in `dist/`.
 
 ### Version1

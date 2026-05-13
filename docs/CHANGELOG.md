@@ -7,6 +7,53 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
 ---
 
+## [Unreleased] — Sprint v1.1.0
+
+### Dette technique v1.1.0 (issues #5, #6, #7, #8, #9)
+
+- `main`: déplacement de `env::set_var("GSK_RENDERER", "gl")` avant l'initialisation du runtime Tokio.
+- `import_service`: suppression du bypass global `clippy::disallowed_methods` et durcissement du parsing CSV (champs requis explicites, erreurs de validation métier).
+- `main`: décomposition en sous-unités (flags de démarrage, orchestration runtime/UI, builders de services) pour réduire la complexité et la duplication.
+- `team_service`: décomposition de `share_vault_with_team` et `rotate_vault_key` en helpers internes pour isoler résolution de clés membres, persistance des partages, et audit.
+
+### Documentation API (issue #10)
+
+- Ajout/complément de documentation `///` sur les traits de services publics (`vault_service`, `secret_service`) afin de clarifier les préconditions, erreurs et contrats de sécurité.
+
+### Validation-
+
+- Validation automatique exécutée après refactor: `cargo test --workspace` et `cargo clippy --workspace --all-targets -- -D warnings`.
+
+## [1.1.0] — 2026-05-13
+
+### Sécurité authentification et 2FA
+
+- Durcissement du changement de mot de passe: comparaison de l'ancien et du nouveau mot de passe en mode constant-time dans `auth_service`.
+- Durcissement du flux login: un mot de passe invalide incrémente désormais correctement `auth_policy.failed_attempts` (les tentatives ne sont plus perdues dans ce chemin).
+- Ajout d'un garde anti-rejeu TOTP côté service: un code TOTP déjà validé ne peut pas être réutilisé immédiatement dans la même fenêtre temporelle.
+
+### Anti brute-force et UX de verrouillage
+
+- Ajout d'un backoff progressif sur les tentatives échouées dans `auth_policy_service` (croissance exponentielle bornée), en complément de la fenêtre de verrouillage existante.
+
+### Durcissement import CSV
+
+- Ajout de limites de sécurité sur l'import CSV: taille maximale de fichier, nombre maximal de lignes et longueur maximale par champ.
+- Validation stricte des URL importées: seuls les schémas `http://` et `https://` sont acceptés.
+
+### Permissions fichiers sensibles
+
+- Export backup `.bak` et `.hvb`: permissions fichiers durcies en mode propriétaire (`0600` sur Unix).
+- Restauration backup: base SQLite restaurée avec permissions durcies (`0600` sur Unix).
+
+### Tests
+
+- Nouveaux tests unitaires ajoutés pour:
+  - rejet d'un changement de mot de passe identique,
+  - validation URL import CSV,
+  - calcul du backoff auth policy.
+- Validation complète exécutée: `cargo test` vert après changements.
+
 ## [1.0.4] — 2026-04-14
 
 ### Sécurité dépendances
@@ -43,7 +90,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 ### Nettoyage technique
 
 - Suppression des fichiers de split intermédiaires non référencés laissés pendant le refactoring.
-- Vérification que les images `resources/images/user-guide` restent uniquement consommées par la documentation, sans embarquement runtime involontaire.
+- Vérification que les images `assets/images/user-guide` restent uniquement consommées par la documentation, sans embarquement runtime involontaire.
 
 ### Validation
 
@@ -63,7 +110,7 @@ Format inspiré de [Keep a Changelog](https://keepachangelog.com/).
 
 ### CI/CD et packaging Linux
 
-- Smoke test mutualisé (`tests/smoke-test.sh`) avec mode `--install/--remove`, validation des permissions et des entrées desktop.
+- Smoke test mutualisé (`scripts/smoke-test.sh`) avec mode `--install/--remove`, validation des permissions et des entrées desktop.
 - Renforcement des workflows CI/Release : cache Rust, job Fedora en conteneur, checksum externe `.sha256`, attestation de provenance, inclusion des scripts core dans `dist/`.
 
 ### Version0
