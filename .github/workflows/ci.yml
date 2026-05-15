@@ -155,7 +155,7 @@ jobs:
         run: ./dist/smoke-test.sh --remove ./dist/remove.sh
 
   build-and-verify-windows:
-    runs-on: windows-2025
+    runs-on: windows-2022
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
     defaults:
@@ -207,8 +207,9 @@ jobs:
 
       - name: Install macOS build dependencies
         run: |
+          brew update || true
           for formula in gtk4 libadwaita gdk-pixbuf sqlite pkgconf; do
-            brew list "$formula" >/dev/null 2>&1 || brew install "$formula"
+            brew list "$formula" >/dev/null 2>&1 || (brew install "$formula" || brew install --no-quarantine "$formula")
           done
 
       - name: Install Rust toolchain
