@@ -14,7 +14,34 @@ permissions:
   contents: read
 
 jobs:
+  validate-source:
+    name: Validate source code quality
+    runs-on: ubuntu-24.04
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v5
+
+      - name: Install Linux dependencies for validation
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            desktop-file-utils
+
+      - name: Install Rust toolchain
+        uses: dtolnay/rust-toolchain@stable
+
+      - name: Check formatting
+        run: cargo fmt --all -- --check
+
+      - name: Lint – security and best practices
+        run: cargo clippy --all-targets --all-features -- -D warnings
+
+      - name: Validate desktop entry
+        run: desktop-file-validate heelonvault.desktop
+
   build-and-verify:
+    needs: [validate-source]
     runs-on: ubuntu-24.04
 
     steps:
@@ -40,20 +67,11 @@ jobs:
       - name: Rust Cache
         uses: Swatinem/rust-cache@v2
 
-      - name: Check formatting
-        run: cargo fmt --all -- --check
-
-      - name: Lint
-        run: cargo clippy --all-targets --all-features -- -D warnings
-
       - name: Build
         run: cargo build --release --locked
 
       - name: Compile tests
         run: cargo test --locked --all-targets --no-run
-
-      - name: Validate desktop entry
-        run: desktop-file-validate heelonvault.desktop
 
       - name: Package dist
         run: |
@@ -85,6 +103,7 @@ jobs:
         run: ./dist/smoke-test.sh --remove ./dist/remove.sh
 
   build-and-verify-fedora:
+    needs: [validate-source]
     runs-on: ubuntu-24.04
     container: fedora:latest
 
@@ -155,6 +174,7 @@ jobs:
         run: ./dist/smoke-test.sh --remove ./dist/remove.sh
 
   build-and-verify-windows:
+    needs: [validate-source]
     runs-on: windows-2022
     env:
       FORCE_JAVASCRIPT_ACTIONS_TO_NODE24: "true"
@@ -199,6 +219,7 @@ jobs:
           sha256sum target/release/heelonvault.exe
 
   build-and-verify-macos:
+    needs: [validate-source]
     runs-on: macos-14
 
     steps:
@@ -228,6 +249,11 @@ jobs:
 
   check-sbom:
     name: Check SBOM is up-to-date
+    needs:
+      - build-and-verify
+      - build-and-verify-fedora
+      - build-and-verify-macos
+      - build-and-verify-windows
     runs-on: ubuntu-24.04
 
     steps:
