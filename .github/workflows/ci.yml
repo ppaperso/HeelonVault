@@ -26,7 +26,14 @@ jobs:
         run: |
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            desktop-file-utils
+            build-essential \
+            desktop-file-utils \
+            pkg-config \
+            libgtk-4-dev \
+            libadwaita-1-dev \
+            libsqlite3-dev \
+            libglib2.0-dev \
+            libglib2.0-dev-bin
 
       - name: Install Rust toolchain
         uses: dtolnay/rust-toolchain@stable
